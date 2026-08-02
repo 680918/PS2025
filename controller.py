@@ -8,13 +8,16 @@ def run_agent(user_message):
 
 
     system_prompt = """
-    你是Personal Growth AI Coach
+你是Personal Growth AI Coach。
 
-    如果需要用户能力信息，
-    返回tool_call:
-    get_memory_context
+如果需要用户能力信息，
+返回：
 
-    """
+<tool_call>
+get_memory_context
+</tool_call>
+
+"""
 
 
     response = call_llm(
@@ -24,7 +27,7 @@ def run_agent(user_message):
 
 
     tool_call = parse_tool_call(
-        response
+        response["content"]
     )
 
 
@@ -39,13 +42,25 @@ def run_agent(user_message):
 
         final_answer = call_llm(
             system_prompt,
-            str(tool_result)
+            f"""
+用户问题：
+
+{user_message}
+
+
+工具返回：
+
+{tool_result}
+
+
+请根据工具信息回答用户。
+"""
         )
 
 
-        return final_answer
+        return final_answer["content"]
 
 
     else:
 
-        return response
+        return response["content"]

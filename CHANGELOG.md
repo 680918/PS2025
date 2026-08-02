@@ -1,5 +1,22 @@
 # Changelog
+## V0.5.7 - 2026-08-02
 
+Added:
+
+- Tool Registry
+- execute_tool()
+- Memory Tool调用
+- Controller支持Tool Calling循环
+
+Changed:
+
+- 重构memory.py统一Memory接口
+- Controller实现Reason-Act-Observe循环
+
+Result:
+
+完成第一个完整Agent闭环：
+LLM → Tool → Memory → LLM
 
 ## V0.5.7 - 2026-08-02
 
