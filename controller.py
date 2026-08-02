@@ -1,26 +1,51 @@
 from llm_client import call_llm
+from tools.tools import execute_tool
+from tools.parser import parse_tool_call
 
 
 
-def run_agent(user_input):
+def run_agent(user_message):
 
 
     system_prompt = """
-你是Personal Growth AI Coach。
+    你是Personal Growth AI Coach
 
-你的目标：
-帮助用户系统学习AI Agent。
+    如果需要用户能力信息，
+    返回tool_call:
+    get_memory_context
 
-回答要求：
-先分析用户需求，
-再给出学习建议。
-"""
+    """
 
 
-    answer = call_llm(
+    response = call_llm(
         system_prompt,
-        user_input
+        user_message
     )
 
 
-    return answer
+    tool_call = parse_tool_call(
+        response
+    )
+
+
+    if tool_call:
+
+
+        tool_result = execute_tool(
+            tool_call["name"],
+            tool_call["arguments"]
+        )
+
+
+        final_answer = call_llm(
+            system_prompt,
+            str(tool_result)
+        )
+
+
+        return final_answer
+
+
+    else:
+
+        return response

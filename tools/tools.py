@@ -1,29 +1,69 @@
-from memory.memory import get_memory, get_skills
+from memory.memory import get_memory_context
+
+def get_memory():
+
+    return get_memory_context(
+        "skill"
+    )
+
+
+TOOLS = {
+
+
+    "get_memory_context":
+    get_memory
+
+
+}
 
 
 
-def get_learning_history():
+def execute_tool(
+    tool_name,
+    arguments=None
+):
 
-    """
-    Tool:
 
-    查询学习历史
-    """
+    tool = TOOLS.get(
+        tool_name
+    )
 
-    history = get_memory()
 
-    return history
+    if tool is None:
 
-# 新增Tool
+        return {
 
-def get_skill_map():
+            "status":
+            "error",
 
-    """
-    Tool:
+            "message":
+            f"Unknown tool:{tool_name}"
 
-    查询能力地图
-    """
+        }
 
-    skills = get_skills()
 
-    return skills
+    try:
+
+        if arguments:
+
+            return tool(
+                **arguments
+            )
+
+        else:
+
+            return tool()
+
+
+    except Exception as e:
+
+
+        return {
+
+            "status":
+            "error",
+
+            "message":
+            str(e)
+
+        }
