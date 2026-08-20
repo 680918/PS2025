@@ -23,6 +23,6 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
-          python -m pytest
+          python -m pytest --cov=agent --cov=planning --cov=tools --cov=memory --cov-report=term-missing --cov-fail-under=90
