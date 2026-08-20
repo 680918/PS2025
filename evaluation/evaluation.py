@@ -1,39 +1,71 @@
-def evaluate_learning(
-    topic,
-    user_feedback,
-    practice_result
+def evaluate_learning_plan(
+    plan,
+    skill_map
 ):
 
-    result = {
+    if skill_map["Python"]["level"] < 20:
 
-        "topic": topic,
+        return {
 
-        "understanding": 0,
+        "status":"success",
 
-        "strengths": [],
+        "score":70,
 
-        "weaknesses": [],
+        "passed":False,
 
-        "next_step": []
+        "feedback":
+        "Python基础不足"
+
+        }
+
+    else:
+
+        return {
+
+        "status":"success",
+
+        "score":90,
+
+        "passed":True
+
+        }
+
+def evaluate_learning_plan(
+    plan,
+    user_profile,
+    skill_map
+):
+
+    score = 100
+
+    feedback=[]
+
+
+    python_level = (
+        skill_map["Python"]["level"]
+    )
+
+
+    if python_level < 20:
+
+        feedback.append(
+            "Python基础不足，需要增加基础阶段"
+        )
+
+        score -= 20
+
+
+    passed = score >= 80
+
+
+    return {
+
+        "status":"success",
+
+        "score":score,
+
+        "passed":passed,
+
+        "feedback":feedback
 
     }
-
-
-    if "理解" in user_feedback:
-
-        result["understanding"] = 70
-
-
-    if "不会代码" in user_feedback:
-
-        result["weaknesses"].append(
-            "Python实践不足"
-        )
-
-
-        result["next_step"].append(
-            "增加代码练习"
-        )
-
-
-    return result

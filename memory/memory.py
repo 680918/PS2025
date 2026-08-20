@@ -10,16 +10,16 @@ MEMORY_FILES = {
     "skill_map.md",
 
     "learning":
-    "Learning_Log.md",
+    "learning_log.md",
 
     "profile":
-    "User_Profile.md",
+    "user_profile.md",
 
     "project":
-    "Project_State.md",
+    "project_state.md",
 
     "experience":
-    "Experience_Memory.md"
+    "experience_memory.md"
 
 }
 
@@ -112,5 +112,102 @@ def update_memory(
 
         "file":
         file_name
+
+    }
+
+def get_user_profile_structured():
+
+    return {
+
+        "status":
+        "success",
+
+        "tool_name":
+        "get_user_profile",
+
+        "data":
+        {
+
+        "age":58,
+
+        "technical_level":
+        "技术入门阶段",
+
+        "goal":
+        "一年内掌握AI Agent应用搭建能力",
+
+        "daily_learning_time":
+        "1小时",
+
+        "preferred_learning_time":
+        "下午3点左右",
+
+        "learning_preferences":
+        [
+            "原理",
+            "实践",
+            "结构",
+            "案例",
+            "系统化"
+
+        ],
+
+        "strength":
+        [
+        "喜欢理解底层逻辑",
+        "重视系统结构",
+        "善于从现实案例抽象规律",
+        "愿意通过项目实践学习"
+        ],
+
+        "weakness":
+        [
+        "Python实践不足",
+        "缺少调试经验",        
+        ]
+
+        }
+
+    }
+
+def get_skill_map_structured():
+
+    return {
+
+        "status":
+        "success",
+
+        "tool_name":
+        "get_skill_map",
+
+        "data":
+        {
+
+            "AI Agent":
+            {
+                "level":90,
+
+                "evidence":
+                [
+                    "理解Controller、LLM、Tool、Memory关系",
+                    "理解Tool Calling流程"
+                ]
+
+            },
+
+
+            "Python":
+            {
+                "level":15,
+
+                "weakness":
+                [
+                    "不熟悉Python开发",
+                    "缺少调试经验"
+                ]
+
+            }
+
+        }
 
     }

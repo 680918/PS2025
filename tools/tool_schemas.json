@@ -1,0 +1,67 @@
+[
+  {
+    "name":"get_memory_context",
+
+    "description":
+    "获取用户过去学习记录、能力水平和成长状态，用于制定个性化学习计划或评估学习效果",
+
+    "parameters":
+    {
+      "memory_type":
+      {
+        "type":"string",
+        "description":
+        "需要查询的记忆类型"
+      },
+
+      "topic":
+      {
+        "type":"string",
+        "description":
+        "需要查询的学习主题"
+      }
+    }
+  },
+
+
+  {
+    "name":"get_user_profile",
+
+    "description":
+    "获取用户基本画像，包括兴趣、学习特点、优势和弱点，用于制定长期学习方向和阶段性成长策略",
+
+    "parameters":
+    {}
+  },
+
+
+
+  {
+    "name":"create_learning_plan",
+
+    "description":
+"根据用户当前能力、目标和不足生成个性化学习计划",
+
+    "parameters":
+    {
+      "skill_map":
+      {
+        "type":"string",
+        "description":"用户当前能力水平"
+      },
+
+    "user_goal":
+    {
+      "type":"string",
+      "description":"用户学习目标"
+    },
+
+    "weakness":
+    {
+      "type":"string",
+      "description":"当前薄弱环节"
+    }
+    }
+
+  }
+  ]

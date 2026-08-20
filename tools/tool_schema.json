@@ -1,8 +1,0 @@
-[
- {
-  "name":"get_skill_map",
-  "description":
-  "获取用户当前能力状态，包括优势和薄弱点",
-  "parameters":{}
- }
-]

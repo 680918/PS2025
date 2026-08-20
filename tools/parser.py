@@ -16,6 +16,9 @@ def parse_tool_call(response_text):
         "</tool_call>"
     )
 
+    if end == -1:
+        return None
+
 
     tool_name = response_text[
         start + len("<tool_call>"):

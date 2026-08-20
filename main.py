@@ -1,4 +1,4 @@
-from controller import run_agent
+from agent.controller import run_agent
 
 
 
