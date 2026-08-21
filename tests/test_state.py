@@ -35,3 +35,8 @@ def test_replan_limit():
     state.record_replan()
 
     assert state.can_replan() is False
+
+
+def test_ci_failure_gate_demo():
+
+    assert 1 == 2
