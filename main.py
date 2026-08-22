@@ -1,15 +1,10 @@
 from agent.controller import run_agent
 
 
-
-user_input = input(
-    "请输入问题："
-)
+user_input = input("请输入问题：")
 
 
-answer = run_agent(
-    user_input
-)
+answer = run_agent(user_input)
 
 
 print("\nAI Coach:")

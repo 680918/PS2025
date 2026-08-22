@@ -1,7 +1,6 @@
 from agent.state import AgentState
-from agent.executor import ( execute_step, execute_plan)
+from agent.executor import execute_step, execute_plan
 import pytest
-
 
 
 pytestmark = pytest.mark.integration
@@ -11,16 +10,9 @@ def test_execute_step_success():
 
     state = AgentState("测试Executor")
 
-    step = {
-        "step": 1,
-        "tool": "get_user_profile",
-        "save_as": "user_profile"
-    }
+    step = {"step": 1, "tool": "get_user_profile", "save_as": "user_profile"}
 
-    state = execute_step(
-        state,
-        step
-    )
+    state = execute_step(state, step)
 
     assert state.current_step == 1
 
@@ -33,16 +25,9 @@ def test_execute_step_failure():
 
     state = AgentState("测试Executor失败")
 
-    step = {
-        "step": 2,
-        "tool": "abc_not_exist",
-        "save_as": "skill_map"
-    }
+    step = {"step": 2, "tool": "abc_not_exist", "save_as": "skill_map"}
 
-    state = execute_step(
-        state,
-        step
-    )
+    state = execute_step(state, step)
 
     assert state.current_step == 2
 
@@ -54,35 +39,22 @@ def test_execute_step_failure():
 
     assert state.tool_results["skill_map"]["status"] == "error"
 
+
 def test_execute_plan_stops_on_error():
 
     state = AgentState("测试Plan遇错暂停")
 
     plan = [
-        {
-            "step": 1,
-            "tool": "get_user_profile",
-            "save_as": "user_profile"
-        },
-        {
-            "step": 2,
-            "tool": "abc_not_exist",
-            "save_as": "skill_map"
-        },
+        {"step": 1, "tool": "get_user_profile", "save_as": "user_profile"},
+        {"step": 2, "tool": "abc_not_exist", "save_as": "skill_map"},
         {
             "step": 3,
             "tool": "create_learning_plan",
-            "arguments_from_state": [
-                "user_profile",
-                "skill_map"
-            ]
-        }
+            "arguments_from_state": ["user_profile", "skill_map"],
+        },
     ]
 
-    state = execute_plan(
-        state,
-        plan
-    )
+    state = execute_plan(state, plan)
 
     assert state.current_step == 2
 
