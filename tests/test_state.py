@@ -25,13 +25,3 @@ def test_replan_limit():
 
     assert state.can_replan() is False
 
-
-def test_replan_limit():
-
-    state = AgentState("测试")
-
-    assert state.can_replan() is True
-
-    state.record_replan()
-
-    assert state.can_replan() is False
