@@ -115,9 +115,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruff
 
-      - name: Run Ruff
+      - name: Run Ruff lint
         run: |
           ruff check .
+
+      - name: Check Ruff formatting
+        run: |
+          ruff format --check .
 
   test:
     name: test
