@@ -120,7 +120,8 @@ jobs:
           ruff check .
 
       - name: Check Ruff formatting
-        run: ruff format -- check .
+        run: |
+          ruff format --check .
 
   test:
     name: test
