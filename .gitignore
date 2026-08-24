@@ -1,4 +1,18 @@
 .env
-__pycache__/
-*.pyc  
 logs/
+__pycache__/
+*.pyc
+
+# Python bytecode / cache
+__pycache__/
+*.py[cod]
+
+# Pytest cache
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Ruff cache
+.ruff_cache/
