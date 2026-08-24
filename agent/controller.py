@@ -1,10 +1,10 @@
 from llm_client import call_llm
 from tools.parser import parse_tool_call
-from tools.tools import ( execute_tool, load_tool_schemas)
+from tools.tools import execute_tool, load_tool_schemas
 import json
 from agent.state import AgentState
-from planning.planner import (create_plan, replan_after_failure)
-from agent.executor import (execute_plan, execute_step)
+from planning.planner import create_plan, replan_after_failure
+from agent.executor import execute_plan, execute_step
 from agent.task_router import route_task
 
 
@@ -12,56 +12,43 @@ def decide_failure_action(state, result):
     if result.get("status") != "error":
         return "continue"
 
-    if(
-        result.get("retryable") is True
-        and state.can_retry()
-    ):
+    if result.get("retryable") is True and state.can_retry():
         return "retry"
 
     if state.can_replan():
         return "replan"
 
     return "stop"
-   
+
 
 def get_current_step(plan, current_step):
     for step in plan:
-         if step["step"] == current_step:
-             return step
+        if step["step"] == current_step:
+            return step
 
     return None
 
-def get_remaining_steps( plan, current_step):
+
+def get_remaining_steps(plan, current_step):
     remaining_steps = []
 
     for step in plan:
-
         if step["step"] > current_step:
-
             remaining_steps.append(step)
 
     return remaining_steps
 
 
-
 def run_agent(user_message):
 
-    task_type =route_task(
-        user_message
-    )
+    task_type = route_task(user_message)
 
     if task_type == "planning":
-        return run_planning_agent(
-            user_message
-        )
+        return run_planning_agent(user_message)
 
     tool_schemas = load_tool_schemas()
 
-    tool_description = json.dumps(
-        tool_schemas,
-        ensure_ascii=False,
-        indent=2
-    )
+    tool_description = json.dumps(tool_schemas, ensure_ascii=False, indent=2)
 
     system_prompt = f"""
     你是Personal Growth AI Coach。
@@ -81,21 +68,12 @@ def run_agent(user_message):
     根据用户问题自主选择工具。
     """
 
-    response = call_llm(
-        system_prompt,
-        user_message
-    )
+    response = call_llm(system_prompt, user_message)
 
-    tool_call = parse_tool_call(
-        response["content"]
-    )
+    tool_call = parse_tool_call(response["content"])
 
     if tool_call:
-
-        tool_result = execute_tool(
-            tool_call["name"],
-            tool_call["arguments"]
-        )
+        tool_result = execute_tool(tool_call["name"], tool_call["arguments"])
 
         final_answer = call_llm(
             system_prompt,
@@ -109,289 +87,170 @@ def run_agent(user_message):
 {tool_result}
 
 请根据工具信息回答用户。
-"""
+""",
         )
 
         return final_answer["content"]
 
     else:
-
         return response["content"]
+
 
 def get_failed_key(state):
 
     for key, result in state.tool_results.items():
-
         if result.get("status") == "error":
             return key
 
     return None
 
+
 # pytest
 def run_planning_workflow(user_message):
 
-    state = AgentState(
-        user_message
-    )
+    state = AgentState(user_message)
 
-    plan = create_plan(
-        user_message
-    )
+    plan = create_plan(user_message)
 
-    state.add_plan(
-        plan["steps"]
-    )
+    state.add_plan(plan["steps"])
 
-    state = execute_plan(
-        state,
-        plan["steps"]
-    )
+    state = execute_plan(state, plan["steps"])
 
     return state
 
+
 def run_planning_runtime(user_message):
 
-    state = AgentState(
-        user_message
-    )
+    state = AgentState(user_message)
 
-    plan = create_plan(
-        user_message
-    )
+    plan = create_plan(user_message)
 
-    state.add_plan(
-        plan["steps"]
-    )
+    state.add_plan(plan["steps"])
 
-    state = execute_plan(
-        state,
-        plan["steps"]
-    )
+    state = execute_plan(state, plan["steps"])
 
     # 正常完成
-    if (
-        state.last_result is None
-        or state.last_result.get("status") != "error"
-    ):
+    if state.last_result is None or state.last_result.get("status") != "error":
         return state, "success"
 
-
-    action = decide_failure_action(
-        state,
-        state.last_result
-    )
-
+    action = decide_failure_action(state, state.last_result)
 
     # =========================
     # Retry
     # =========================
 
     if action == "retry":
-
-        failed_step = get_current_step(
-            plan["steps"],
-            state.current_step
-        )
+        failed_step = get_current_step(plan["steps"], state.current_step)
 
         if failed_step is None:
             return state, "stop"
 
         state.record_retry()
 
-        state = execute_step(
-            state,
-            failed_step
-        )
-
+        state = execute_step(state, failed_step)
 
         # Retry成功 → Resume
-        if (
-            state.last_result
-            and state.last_result.get("status") == "success"
-        ):
-
-            remaining_steps = get_remaining_steps(
-                plan["steps"],
-                state.current_step
-            )
+        if state.last_result and state.last_result.get("status") == "success":
+            remaining_steps = get_remaining_steps(plan["steps"], state.current_step)
 
             if remaining_steps:
+                state = execute_plan(state, remaining_steps)
 
-                state = execute_plan(
-                    state,
-                    remaining_steps
-                )
-
-            if (
-                state.last_result
-                and state.last_result.get("status") == "error"
-            ):
+            if state.last_result and state.last_result.get("status") == "error":
                 return state, "stop"
 
             return state, "success"
 
-
         # Retry仍失败 → 再判断
-        next_action = decide_failure_action(
-            state,
-            state.last_result
-        )
+        next_action = decide_failure_action(state, state.last_result)
 
         if next_action == "replan":
-
             state.record_replan()
 
-            failed_key = get_failed_key(
-                state
-            )
+            failed_key = get_failed_key(state)
 
-            new_plan = replan_after_failure(
-                user_message,
-                failed_key,
-                state
-            )
+            new_plan = replan_after_failure(user_message, failed_key, state)
 
-            state.add_plan(
-                new_plan["steps"]
-            )
+            state.add_plan(new_plan["steps"])
 
-            state = execute_plan(
-                state,
-                new_plan["steps"]
-            )
+            state = execute_plan(state, new_plan["steps"])
 
-            if (
-                state.last_result
-                and state.last_result.get("status") == "error"
-            ):
-
-                final_action = decide_failure_action(
-                    state,
-                    state.last_result
-                )
+            if state.last_result and state.last_result.get("status") == "error":
+                final_action = decide_failure_action(state, state.last_result)
 
                 if final_action == "stop":
                     return state, "stop"
 
             return state, "success"
 
-
         return state, "stop"
-
 
     # =========================
     # Direct Replan
     # =========================
 
     elif action == "replan":
-
         state.record_replan()
 
-        failed_key = get_failed_key(
-            state
-        )
+        failed_key = get_failed_key(state)
 
-        new_plan = replan_after_failure(
-            user_message,
-            failed_key,
-            state
-        )
+        new_plan = replan_after_failure(user_message, failed_key, state)
 
-        state.add_plan(
-            new_plan["steps"]
-        )
+        state.add_plan(new_plan["steps"])
 
-        state = execute_plan(
-            state,
-            new_plan["steps"]
-        )
+        state = execute_plan(state, new_plan["steps"])
 
-        if (
-            state.last_result
-            and state.last_result.get("status") == "error"
-        ):
+        if state.last_result and state.last_result.get("status") == "error":
+            final_action = decide_failure_action(state, state.last_result)
 
-            final_action = decide_failure_action(
-                state,
-                state.last_result
-            )
-
-    # Plan V2 发生可重试错误
+            # Plan V2 发生可重试错误
             if final_action == "retry":
-
-                failed_step = get_current_step(
-                new_plan["steps"],
-                state.current_step
-                )
+                failed_step = get_current_step(new_plan["steps"], state.current_step)
 
                 if failed_step is None:
                     return state, "stop"
 
                 state.record_retry()
 
-                state = execute_step(
-                    state,
-                    failed_step
-                )
+                state = execute_step(state, failed_step)
 
                 # Retry 成功
-                if (
-                    state.last_result
-                    and state.last_result.get("status") == "success"
-                ):
-
+                if state.last_result and state.last_result.get("status") == "success":
                     remaining_steps = get_remaining_steps(
-                        new_plan["steps"],
-                        state.current_step
+                        new_plan["steps"], state.current_step
                     )
 
                     if remaining_steps:
+                        state = execute_plan(state, remaining_steps)
 
-                        state = execute_plan(
-                            state,
-                            remaining_steps
-                        )
-
-                    if (
-                        state.last_result
-                        and state.last_result.get("status") == "error"
-                    ):
+                    if state.last_result and state.last_result.get("status") == "error":
                         return state, "stop"
 
                     return state, "success"
 
                 # Retry 后仍失败
-                final_action = decide_failure_action(
-                    state,
-                    state.last_result
-                )
+                final_action = decide_failure_action(state, state.last_result)
 
                 if final_action == "stop":
                     return state, "stop"
 
                 return state, "stop"
 
-
             if final_action == "stop":
                 return state, "stop"
 
-
         return state, "success"
-
 
     return state, "stop"
 
 
 def run_planning_agent(user_message):
 
-    state, runtime_status = run_planning_runtime(
-        user_message
-    )
+    state, runtime_status = run_planning_runtime(user_message)
 
     state_data = state.get_state()
 
     if runtime_status == "stop":
-
         stop_prompt = f"""
 你是 Personal Growth AI Coach。
 
@@ -405,11 +264,7 @@ Agent 已经进行了允许范围内的重试和重新规划，
 
 以下是当前内部状态：
 
-{json.dumps(
-    state_data,
-    ensure_ascii=False,
-    indent=2
-)}
+{json.dumps(state_data, ensure_ascii=False, indent=2)}
 
 请向用户生成一段简洁、诚实、可理解的失败说明。
 
@@ -421,10 +276,7 @@ Agent 已经进行了允许范围内的重试和重新规划，
 5. 如果合适，可以告诉用户下一步可以怎么做。
 """
 
-        response = call_llm(
-            stop_prompt,
-            user_message
-        )
+        response = call_llm(stop_prompt, user_message)
 
         return response["content"]
 
@@ -436,11 +288,7 @@ Agent 已经进行了允许范围内的重试和重新规划，
 
 下面是 Agent 已经完成规划和工具执行后得到的内部状态数据：
 
-{json.dumps(
-    state_data,
-    ensure_ascii=False,
-    indent=2
-)}
+{json.dumps(state_data, ensure_ascii=False, indent=2)}
 
 请严格根据以上 State 中已有的信息回答用户。
 
@@ -453,9 +301,6 @@ Agent 已经进行了允许范围内的重试和重新规划，
 6. 回答应具体、清晰、可执行，但所有建议必须能从 State 中找到依据。
 """
 
-    response = call_llm(
-        final_prompt,
-        user_message
-    )
+    response = call_llm(final_prompt, user_message)
 
     return response["content"]
