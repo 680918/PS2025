@@ -11,6 +11,10 @@ from config import (
 
 def call_llm(system_prompt, user_message):
 
+    if not DEEPSEEK_API_KEY:
+        raise ValueError(
+            "Missing DEEPSEEK_API_KEY"   )
+
     api_key = DEEPSEEK_API_KEY
 
     url = f"{DEEPSEEK_BASE_URL}/chat/completions"

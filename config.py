@@ -16,6 +16,3 @@ LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))
 
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
 
-
-if not DEEPSEEK_API_KEY:
-    raise ValueError("Missing DEEPSEEK_API_KEY")
