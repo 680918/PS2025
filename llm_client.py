@@ -1,29 +1,32 @@
-import os
 import requests
-from dotenv import load_dotenv
 
-
-load_dotenv()
+from config import (
+    DEEPSEEK_API_KEY,
+    DEEPSEEK_BASE_URL,
+    DEEPSEEK_MODEL,
+    LLM_TIMEOUT,
+    LLM_TEMPERATURE,
+)
 
 
 def call_llm(system_prompt, user_message):
 
-    api_key = os.getenv("DEEPSEEK_API_KEY")
+    api_key = DEEPSEEK_API_KEY
 
-    url = "https://api.deepseek.com/chat/completions"
+    url = f"{DEEPSEEK_BASE_URL}/chat/completions"
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     data = {
-        "model": "deepseek-v4-flash",
+        "model": DEEPSEEK_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        "temperature": 0.7,
+        "temperature": LLM_TEMPERATURE,
     }
 
-    response = requests.post(url, headers=headers, json=data, timeout=30)
+    response = requests.post(url, headers=headers, json=data, timeout=LLM_TIMEOUT)
 
     result = response.json()
 
