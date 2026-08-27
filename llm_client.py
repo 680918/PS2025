@@ -41,14 +41,50 @@ def call_llm(system_prompt, user_message):
         "temperature": LLM_TEMPERATURE,
     }
 
-    response = requests.post(
-        url,
-        headers=headers,
-        json=data,
-        timeout=LLM_TIMEOUT,
-    )
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=data,
+            timeout=LLM_TIMEOUT,
+        )
 
-    result = response.json()
+        response.raise_for_status()
+
+    except requests.exceptions.Timeout as e:
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": str(e),
+            "content": None,
+        }
+
+    except requests.exceptions.ConnectionError as e:
+        return {
+            "status": "error",
+            "error_type": "llm_connection_error",
+            "message": str(e),
+            "content": None,
+        }
+
+    except requests.exceptions.HTTPError as e:
+        return {
+            "status": "error",
+            "error_type": "llm_http_error",
+            "message": str(e),
+            "content": None,
+        }
+
+    try:
+        result = response.json()
+
+    except ValueError as e:
+        return {
+            "status": "error",
+            "error_type": "llm_invalid_response",
+            "message": str(e),
+            "content": None,
+        }
 
     if "choices" in result:
         return {

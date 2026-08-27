@@ -28,6 +28,9 @@ def test_call_llm_success(monkeypatch):
     )
 
     class FakeResponse:
+        def raise_for_status(self):
+            return None
+
         def json(self):
 
             return {
@@ -75,6 +78,9 @@ def test_call_llm_api_error(monkeypatch):
     )
 
     class FakeResponse:
+        def raise_for_status(self):
+            return None
+
         def json(self):
 
             return {"error": {"message": "test api error"}}
@@ -104,5 +110,157 @@ def test_call_llm_api_error(monkeypatch):
     assert result["error_type"] == "llm_api_error"
 
     assert "test api error" in result["message"]
+
+    assert result["content"] is None
+
+
+def test_call_llm_timeout(monkeypatch):
+
+    monkeypatch.setattr(
+        llm_client,
+        "DEEPSEEK_API_KEY",
+        "fake-test-key",
+    )
+
+    def fake_post(
+        url,
+        headers,
+        json,
+        timeout,
+    ):
+
+        raise llm_client.requests.exceptions.Timeout("request timed out")
+
+    monkeypatch.setattr(
+        llm_client.requests,
+        "post",
+        fake_post,
+    )
+
+    result = llm_client.call_llm(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "error"
+
+    assert result["error_type"] == "llm_timeout"
+
+    assert result["content"] is None
+
+
+def test_call_llm_connection_error(monkeypatch):
+
+    monkeypatch.setattr(
+        llm_client,
+        "DEEPSEEK_API_KEY",
+        "fake-test-key",
+    )
+
+    def fake_post(
+        url,
+        headers,
+        json,
+        timeout,
+    ):
+
+        raise llm_client.requests.exceptions.ConnectionError("connection failed")
+
+    monkeypatch.setattr(
+        llm_client.requests,
+        "post",
+        fake_post,
+    )
+
+    result = llm_client.call_llm(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "error"
+
+    assert result["error_type"] == "llm_connection_error"
+
+    assert result["content"] is None
+
+
+def test_call_llm_http_error(monkeypatch):
+
+    monkeypatch.setattr(
+        llm_client,
+        "DEEPSEEK_API_KEY",
+        "fake-test-key",
+    )
+
+    class FakeResponse:
+        def raise_for_status(self):
+
+            raise llm_client.requests.exceptions.HTTPError("500 Server Error")
+
+    def fake_post(
+        url,
+        headers,
+        json,
+        timeout,
+    ):
+
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        llm_client.requests,
+        "post",
+        fake_post,
+    )
+
+    result = llm_client.call_llm(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "error"
+
+    assert result["error_type"] == "llm_http_error"
+
+    assert result["content"] is None
+
+
+def test_call_llm_invalid_json(monkeypatch):
+
+    monkeypatch.setattr(
+        llm_client,
+        "DEEPSEEK_API_KEY",
+        "fake-test-key",
+    )
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            raise ValueError("invalid json")
+
+    def fake_post(
+        url,
+        headers,
+        json,
+        timeout,
+    ):
+
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        llm_client.requests,
+        "post",
+        fake_post,
+    )
+
+    result = llm_client.call_llm(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "error"
+
+    assert result["error_type"] == "llm_invalid_response"
 
     assert result["content"] is None
