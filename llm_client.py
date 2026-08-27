@@ -12,30 +12,53 @@ from config import (
 def call_llm(system_prompt, user_message):
 
     if not DEEPSEEK_API_KEY:
-        raise ValueError("Missing DEEPSEEK_API_KEY")
-
-    api_key = DEEPSEEK_API_KEY
+        return {
+            "status": "error",
+            "error_type": "missing_api_key",
+            "message": "Missing DEEPSEEK_API_KEY",
+            "content": None,
+        }
 
     url = f"{DEEPSEEK_BASE_URL}/chat/completions"
 
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json",
+    }
 
     data = {
         "model": DEEPSEEK_MODEL,
         "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": user_message,
+            },
         ],
         "temperature": LLM_TEMPERATURE,
     }
 
-    response = requests.post(url, headers=headers, json=data, timeout=LLM_TIMEOUT)
+    response = requests.post(
+        url,
+        headers=headers,
+        json=data,
+        timeout=LLM_TIMEOUT,
+    )
 
     result = response.json()
 
     if "choices" in result:
-        # return result["choices"][0]["message"]["content"]
-        return result["choices"][0]["message"]
+        return {
+            "status": "success",
+            "content": result["choices"][0]["message"]["content"],
+        }
 
-    else:
-        return f"LLM调用失败:{result}"
+    return {
+        "status": "error",
+        "error_type": "llm_api_error",
+        "message": str(result),
+        "content": None,
+    }
