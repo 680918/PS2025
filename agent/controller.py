@@ -70,6 +70,9 @@ def run_agent(user_message):
 
     response = call_llm(system_prompt, user_message)
 
+    if response.get("status") == "error":
+        return f"LLM调用失败：{response.get('message', '未知错误')}"
+
     tool_call = parse_tool_call(response["content"])
 
     if tool_call:
@@ -78,17 +81,13 @@ def run_agent(user_message):
         final_answer = call_llm(
             system_prompt,
             f"""
-用户问题：
-
-{user_message}
-
-工具返回：
-
-{tool_result}
-
-请根据工具信息回答用户。
-""",
+                            用户问题：{user_message}
+                            工具返回：{tool_result}
+                            请根据工具信息回答用户。""",
         )
+
+        if final_answer.get("status") == "error":
+            return f"LLM调用失败：{final_answer.get('message', '未知错误')}"
 
         return final_answer["content"]
 
@@ -278,6 +277,9 @@ Agent 已经进行了允许范围内的重试和重新规划，
 
         response = call_llm(stop_prompt, user_message)
 
+        if response.get("status") == "error":
+            return f"LLM调用失败：{response.get('message', '未知错误')}"
+
         return response["content"]
 
     final_prompt = f"""
@@ -302,5 +304,8 @@ Agent 已经进行了允许范围内的重试和重新规划，
 """
 
     response = call_llm(final_prompt, user_message)
+
+    if response.get("status") == "error":
+        return f"LLM调用失败：{response.get('message', '未知错误')}"
 
     return response["content"]

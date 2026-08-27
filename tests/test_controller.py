@@ -1,6 +1,7 @@
 from agent.state import AgentState
 from agent.controller import (
     decide_failure_action,
+    run_agent,
     run_planning_workflow,
     run_planning_runtime,
 )
@@ -426,3 +427,100 @@ def test_run_planning_agent_stop_output(monkeypatch):
     result = controller_module.run_planning_agent("帮我制定学习计划")
 
     assert result == "当前任务无法完成"
+
+
+def test_run_agent_handles_llm_error(monkeypatch):
+
+    def fake_call_llm(
+        system_prompt,
+        user_message,
+    ):
+
+        return {
+            "status": "error",
+            "error_type": "llm_api_error",
+            "message": "LLM service unavailable",
+            "content": None,
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    result = run_agent("今天学习什么？")
+
+    assert isinstance(result, str)
+
+    assert "LLM" in result
+
+
+@pytest.mark.workflow
+def test_run_planning_agent_handles_final_llm_error(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_runtime(user_message):
+
+        state = AgentState(user_message)
+
+        state.last_result = {"status": "success"}
+
+        return state, "success"
+
+    def fake_call_llm(system_prompt, user_message):
+
+        return {
+            "status": "error",
+            "error_type": "llm_api_error",
+            "message": "LLM final answer failed",
+            "content": None,
+        }
+
+    monkeypatch.setattr(controller_module, "run_planning_runtime", fake_runtime)
+
+    monkeypatch.setattr(controller_module, "call_llm", fake_call_llm)
+
+    result = controller_module.run_planning_agent("帮我制定学习计划")
+
+    assert isinstance(result, str)
+
+    assert "LLM" in result
+
+
+@pytest.mark.workflow
+def test_run_planning_agent_handles_stop_llm_error(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_runtime(user_message):
+
+        state = AgentState(user_message)
+
+        state.last_result = {
+            "status": "error",
+            "error_type": "test_error",
+            "message": "runtime failed",
+            "retryable": False,
+        }
+
+        return state, "stop"
+
+    def fake_call_llm(system_prompt, user_message):
+
+        return {
+            "status": "error",
+            "error_type": "llm_api_error",
+            "message": "LLM stop message failed",
+            "content": None,
+        }
+
+    monkeypatch.setattr(controller_module, "run_planning_runtime", fake_runtime)
+
+    monkeypatch.setattr(controller_module, "call_llm", fake_call_llm)
+
+    result = controller_module.run_planning_agent("帮我制定学习计划")
+
+    assert isinstance(result, str)
+
+    assert "LLM" in result
