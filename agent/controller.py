@@ -15,7 +15,9 @@ def decide_failure_action(state, result):
     if result.get("retryable") is True and state.can_retry():
         return "retry"
 
-    if state.can_replan():
+    replannable = result.get("replannable", True)
+
+    if replannable is True and state.can_replan():
         return "replan"
 
     return "stop"

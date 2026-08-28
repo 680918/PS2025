@@ -524,3 +524,49 @@ def test_run_planning_agent_handles_stop_llm_error(monkeypatch):
     assert isinstance(result, str)
 
     assert "LLM" in result
+
+
+def test_llm_timeout_should_retry():
+    state = AgentState("test message")
+    result = {
+        "status": "error",
+        "error_type": "llm_timeout",
+        "message": "timeout",
+        "retryable": True,
+    }
+
+    action = decide_failure_action(state, result)
+
+    assert action == "retry"
+
+
+def test_missing_api_key_should_stop():
+    state = AgentState("test message")
+
+    result = {
+        "status": "error",
+        "error_type": "missing_api_key",
+        "message": "Missing DEEPSEEK_API_KEY",
+        "retryable": False,
+        "replannable": False,
+    }
+
+    action = decide_failure_action(state, result)
+
+    assert action == "stop"
+
+
+def test_replannable_error_should_replan():
+    state = AgentState("test message")
+
+    result = {
+        "status": "error",
+        "error_type": "tool_execution_error",
+        "message": "tool failed",
+        "retryable": False,
+        "replannable": True,
+    }
+
+    action = decide_failure_action(state, result)
+
+    assert action == "replan"
