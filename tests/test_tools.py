@@ -71,6 +71,8 @@ def test_execute_tool_file_not_found(monkeypatch):
 
     assert result["retryable"] is False
 
+    assert result["replannable"] is True
+
 
 def test_execute_tool_general_exception(monkeypatch):
 
@@ -88,6 +90,23 @@ def test_execute_tool_general_exception(monkeypatch):
     assert result["error_type"] == "tool_execution_error"
 
     assert result["retryable"] is False
+
+    assert result["replannable"] is True
+
+
+def test_execute_tool_unknown_tool():
+
+    import tools.tools as tools_module
+
+    result = tools_module.execute_tool("tool_that_does_not_exist")
+
+    assert result["status"] == "error"
+
+    assert result["error_type"] == "unknown_tool"
+
+    assert result["retryable"] is False
+
+    assert result["replannable"] is True
 
 
 def test_load_tool_schemas():
