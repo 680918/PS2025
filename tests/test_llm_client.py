@@ -20,6 +20,8 @@ def test_call_llm_requires_api_key(monkeypatch):
 
     assert result["retryable"] is False
 
+    assert result["replannable"] is False
+
 
 def test_call_llm_success(monkeypatch):
 
@@ -119,6 +121,8 @@ def test_call_llm_api_error(monkeypatch):
 
     assert result["retryable"] is False
 
+    assert result["replannable"] is False
+
 
 def test_call_llm_timeout(monkeypatch):
 
@@ -156,6 +160,8 @@ def test_call_llm_timeout(monkeypatch):
 
     assert result["retryable"] is True
 
+    assert result["replannable"] is False
+
 
 def test_call_llm_connection_error(monkeypatch):
 
@@ -192,6 +198,8 @@ def test_call_llm_connection_error(monkeypatch):
     assert result["content"] is None
 
     assert result["retryable"] is True
+
+    assert result["replannable"] is False
 
 
 def test_call_llm_http_error(monkeypatch):
@@ -234,6 +242,8 @@ def test_call_llm_http_error(monkeypatch):
     assert result["content"] is None
 
     assert result["retryable"] is False
+
+    assert result["replannable"] is False
 
 
 def test_call_llm_invalid_json(monkeypatch):
@@ -278,3 +288,5 @@ def test_call_llm_invalid_json(monkeypatch):
     assert result["content"] is None
 
     assert result["retryable"] is False
+
+    assert result["replannable"] is False

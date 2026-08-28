@@ -2,6 +2,7 @@ from memory.memory import get_memory_context
 import os
 import json
 from memory.memory import get_user_profile_structured, get_skill_map_structured
+from core.errors import make_error
 
 
 def get_memory(memory_type="skill", topic=None):
@@ -163,13 +164,12 @@ def execute_tool(tool_name, arguments=None):
     tool = TOOLS.get(tool_name)
 
     if tool is None:
-        return {
-            "status": "error",
-            "error_type": "unknown_tool",
-            "message": f"Unknown tool: {tool_name}",
-            "retryable": False,
-            "replannable": True,
-        }
+        return make_error(
+            error_type="unknown_tool",
+            message=f"Unknown tool: {tool_name}",
+            retryable=False,
+            replannable=True,
+        )
 
     try:
         if arguments:
@@ -179,22 +179,20 @@ def execute_tool(tool_name, arguments=None):
             return tool()
 
     except FileNotFoundError as e:
-        return {
-            "status": "error",
-            "error_type": "file_not_found",
-            "message": str(e),
-            "retryable": False,
-            "replannable": True,
-        }
+        return make_error(
+            error_type="file_not_found",
+            message=str(e),
+            retryable=False,
+            replannable=True,
+        )
 
     except Exception as e:
-        return {
-            "status": "error",
-            "error_type": "tool_execution_error",
-            "message": str(e),
-            "retryable": False,
-            "replannable": True,
-        }
+        return make_error(
+            error_type="tool_execution_error",
+            message=str(e),
+            retryable=False,
+            replannable=True,
+        )
 
 
 def load_tool_schemas():
