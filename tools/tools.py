@@ -168,6 +168,7 @@ def execute_tool(tool_name, arguments=None):
             "error_type": "unknown_tool",
             "message": f"Unknown tool: {tool_name}",
             "retryable": False,
+            "replannable": True,
         }
 
     try:
@@ -183,6 +184,7 @@ def execute_tool(tool_name, arguments=None):
             "error_type": "file_not_found",
             "message": str(e),
             "retryable": False,
+            "replannable": True,
         }
 
     except Exception as e:
@@ -191,6 +193,7 @@ def execute_tool(tool_name, arguments=None):
             "error_type": "tool_execution_error",
             "message": str(e),
             "retryable": False,
+            "replannable": True,
         }
 
 
