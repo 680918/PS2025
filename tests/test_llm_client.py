@@ -18,6 +18,8 @@ def test_call_llm_requires_api_key(monkeypatch):
 
     assert result["content"] is None
 
+    assert result["retryable"] is False
+
 
 def test_call_llm_success(monkeypatch):
 
@@ -68,6 +70,8 @@ def test_call_llm_success(monkeypatch):
 
     assert result["content"] == "测试回答"
 
+    assert result["status"] == "success"
+
 
 def test_call_llm_api_error(monkeypatch):
 
@@ -113,6 +117,8 @@ def test_call_llm_api_error(monkeypatch):
 
     assert result["content"] is None
 
+    assert result["retryable"] is False
+
 
 def test_call_llm_timeout(monkeypatch):
 
@@ -148,6 +154,8 @@ def test_call_llm_timeout(monkeypatch):
 
     assert result["content"] is None
 
+    assert result["retryable"] is True
+
 
 def test_call_llm_connection_error(monkeypatch):
 
@@ -182,6 +190,8 @@ def test_call_llm_connection_error(monkeypatch):
     assert result["error_type"] == "llm_connection_error"
 
     assert result["content"] is None
+
+    assert result["retryable"] is True
 
 
 def test_call_llm_http_error(monkeypatch):
@@ -222,6 +232,8 @@ def test_call_llm_http_error(monkeypatch):
     assert result["error_type"] == "llm_http_error"
 
     assert result["content"] is None
+
+    assert result["retryable"] is False
 
 
 def test_call_llm_invalid_json(monkeypatch):
@@ -264,3 +276,5 @@ def test_call_llm_invalid_json(monkeypatch):
     assert result["error_type"] == "llm_invalid_response"
 
     assert result["content"] is None
+
+    assert result["retryable"] is False

@@ -17,6 +17,7 @@ def call_llm(system_prompt, user_message):
             "error_type": "missing_api_key",
             "message": "Missing DEEPSEEK_API_KEY",
             "content": None,
+            "retryable": False,
         }
 
     url = f"{DEEPSEEK_BASE_URL}/chat/completions"
@@ -57,6 +58,7 @@ def call_llm(system_prompt, user_message):
             "error_type": "llm_timeout",
             "message": str(e),
             "content": None,
+            "retryable": True,
         }
 
     except requests.exceptions.ConnectionError as e:
@@ -65,6 +67,7 @@ def call_llm(system_prompt, user_message):
             "error_type": "llm_connection_error",
             "message": str(e),
             "content": None,
+            "retryable": True,
         }
 
     except requests.exceptions.HTTPError as e:
@@ -73,6 +76,7 @@ def call_llm(system_prompt, user_message):
             "error_type": "llm_http_error",
             "message": str(e),
             "content": None,
+            "retryable": False,
         }
 
     try:
@@ -84,6 +88,7 @@ def call_llm(system_prompt, user_message):
             "error_type": "llm_invalid_response",
             "message": str(e),
             "content": None,
+            "retryable": False,
         }
 
     if "choices" in result:
@@ -97,4 +102,5 @@ def call_llm(system_prompt, user_message):
         "error_type": "llm_api_error",
         "message": str(result),
         "content": None,
+        "retryable": False,
     }
