@@ -595,6 +595,7 @@ def test_run_agent_retries_retryable_llm_error(monkeypatch):
         return responses.pop(0)
 
     monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
 
     result = controller.run_agent("你好")
 
@@ -646,6 +647,7 @@ def test_run_agent_retry_fails_returns_error(monkeypatch):
         }
 
     monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
 
     result = controller.run_agent("你好")
 
@@ -687,8 +689,213 @@ def test_run_agent_retries_final_llm_after_tool(monkeypatch):
 
     monkeypatch.setattr(controller, "call_llm", fake_call_llm)
     monkeypatch.setattr(controller, "execute_tool", fake_execute_tool)
+    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
 
     result = controller.run_agent("介绍一下我")
 
     assert result == "最终回答"
     assert llm_responses == []
+
+
+def test_call_llm_with_retry_retries_once(monkeypatch):
+
+    import agent.controller as controller
+
+    responses = [
+        {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        },
+        {
+            "status": "success",
+            "content": "ok",
+        },
+    ]
+
+    def fake_call_llm(system_prompt, user_message):
+        return responses.pop(0)
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
+
+    result = controller.call_llm_with_retry(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "success"
+    assert result["content"] == "ok"
+    assert responses == []
+
+
+def test_call_llm_with_retry_does_not_retry_non_retryable(monkeypatch):
+
+    import agent.controller as controller
+
+    calls = []
+
+    def fake_call_llm(system_prompt, user_message):
+        calls.append(1)
+
+        return {
+            "status": "error",
+            "error_type": "missing_api_key",
+            "message": "Missing DEEPSEEK_API_KEY",
+            "content": None,
+            "retryable": False,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+
+    result = controller.call_llm_with_retry(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "error"
+    assert len(calls) == 1
+
+
+def test_call_llm_with_retry_respects_max_retries(monkeypatch):
+
+    import agent.controller as controller
+
+    calls = []
+
+    def fake_call_llm(system_prompt, user_message):
+        calls.append(1)
+
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 2)
+    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
+
+    result = controller.call_llm_with_retry(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "error"
+    assert len(calls) == 3
+
+
+def test_call_llm_with_retry_zero_retries(monkeypatch):
+
+    import agent.controller as controller
+
+    calls = []
+
+    def fake_call_llm(system_prompt, user_message):
+        calls.append(1)
+
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 0)
+
+    result = controller.call_llm_with_retry(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "error"
+    assert len(calls) == 1
+
+
+def test_call_llm_with_retry_waits_before_retry(monkeypatch):
+
+    import agent.controller as controller
+
+    responses = [
+        {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        },
+        {
+            "status": "success",
+            "content": "ok",
+        },
+    ]
+
+    sleep_calls = []
+
+    def fake_call_llm(system_prompt, user_message):
+        return responses.pop(0)
+
+    def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller.time, "sleep", fake_sleep)
+    monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 1)
+    monkeypatch.setattr(controller, "LLM_RETRY_DELAY", 2)
+
+    result = controller.call_llm_with_retry(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "success"
+    assert sleep_calls == [2]
+
+
+def test_call_llm_with_retry_uses_exponential_backoff(monkeypatch):
+
+    import agent.controller as controller
+
+    calls = []
+    sleep_calls = []
+
+    def fake_call_llm(system_prompt, user_message):
+        calls.append(1)
+
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        }
+
+    def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller.time, "sleep", fake_sleep)
+
+    monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 3)
+    monkeypatch.setattr(controller, "LLM_RETRY_DELAY", 1)
+
+    result = controller.call_llm_with_retry(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "error"
+    assert len(calls) == 4
+    assert sleep_calls == [1, 2, 4]

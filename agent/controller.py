@@ -6,6 +6,8 @@ from agent.state import AgentState
 from planning.planner import create_plan, replan_after_failure
 from agent.executor import execute_plan, execute_step
 from agent.task_router import route_task
+import time
+from config import LLM_MAX_RETRIES, LLM_RETRY_DELAY
 
 
 def decide_failure_action(state, result):
@@ -44,7 +46,19 @@ def get_remaining_steps(plan, current_step):
 def call_llm_with_retry(system_prompt, user_message):
     response = call_llm(system_prompt, user_message)
 
-    if response.get("status") == "error" and response.get("retryable") is True:
+    retries = 0
+
+    while (
+        response.get("status") == "error"
+        and response.get("retryable") is True
+        and retries < LLM_MAX_RETRIES
+    ):
+        delay = LLM_RETRY_DELAY * (2**retries)
+
+        time.sleep(delay)
+
+        retries += 1
+
         response = call_llm(system_prompt, user_message)
 
     return response
