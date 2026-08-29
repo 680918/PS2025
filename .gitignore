@@ -16,3 +16,6 @@ htmlcov/
 
 # Ruff cache
 .ruff_cache/
+
+logs/
+*.log

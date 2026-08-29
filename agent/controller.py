@@ -2,6 +2,7 @@ from llm_client import call_llm
 from tools.parser import parse_tool_call
 from tools.tools import execute_tool, load_tool_schemas
 import json
+import logging
 from agent.state import AgentState
 from planning.planner import create_plan, replan_after_failure
 from agent.executor import execute_plan, execute_step
@@ -12,6 +13,9 @@ from config import (
     LLM_RETRY_DELAY,
     LLM_MAX_RETRY_DELAY,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def decide_failure_action(state, result):
@@ -62,11 +66,29 @@ def call_llm_with_retry(system_prompt, user_message):
             LLM_MAX_RETRY_DELAY,
         )
 
+        logger.warning(
+            "LLM retry: error_type=%s retry=%s delay=%s",
+            response.get("error_type"),
+            retries + 1,
+            delay,
+        )
+
         time.sleep(delay)
 
         retries += 1
 
         response = call_llm(system_prompt, user_message)
+
+    if (
+        response.get("status") == "error"
+        and response.get("retryable") is True
+        and retries >= LLM_MAX_RETRIES
+    ):
+        logger.error(
+            "LLM retry exhausted: error_type=%s retries=%s",
+            response.get("error_type"),
+            retries,
+        )
 
     return response
 
