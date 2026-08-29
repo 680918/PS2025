@@ -1,4 +1,7 @@
 from agent.controller import run_agent
+from core.logging_config import configure_logging
+
+configure_logging()
 
 
 user_input = input("请输入问题：")

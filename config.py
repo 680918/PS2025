@@ -21,3 +21,6 @@ LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "1"))
 LLM_RETRY_DELAY = float(os.getenv("LLM_RETRY_DELAY", "1"))
 
 LLM_MAX_RETRY_DELAY = float(os.getenv("LLM_MAX_RETRY_DELAY", "8"))
+
+LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", "1000000"))
+LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "3"))

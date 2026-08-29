@@ -1022,3 +1022,134 @@ def test_run_planning_agent_retries_stop_message_llm(monkeypatch):
 
     assert result == "任务执行失败，请稍后再试"
     assert llm_responses == []
+
+
+def test_call_llm_with_retry_logs_retry(monkeypatch, caplog):
+
+    import logging
+    import agent.controller as controller
+
+    responses = [
+        {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        },
+        {
+            "status": "success",
+            "content": "ok",
+        },
+    ]
+
+    def fake_call_llm(system_prompt, user_message):
+        return responses.pop(0)
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 1)
+    monkeypatch.setattr(controller, "LLM_RETRY_DELAY", 1)
+
+    with caplog.at_level(logging.WARNING):
+        result = controller.call_llm_with_retry(
+            "system",
+            "hello",
+        )
+
+    assert result["status"] == "success"
+    assert "llm_timeout" in caplog.text
+    assert "retry" in caplog.text.lower()
+
+
+def test_call_llm_with_retry_logs_retry_number_and_delay(monkeypatch, caplog):
+
+    import logging
+    import agent.controller as controller
+
+    responses = [
+        {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        },
+        {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        },
+        {
+            "status": "success",
+            "content": "ok",
+        },
+    ]
+
+    def fake_call_llm(system_prompt, user_message):
+        return responses.pop(0)
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
+
+    monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 2)
+    monkeypatch.setattr(controller, "LLM_RETRY_DELAY", 1)
+    monkeypatch.setattr(controller, "LLM_MAX_RETRY_DELAY", 8)
+
+    with caplog.at_level(logging.WARNING):
+        result = controller.call_llm_with_retry(
+            "system",
+            "hello",
+        )
+
+    assert result["status"] == "success"
+
+    assert "retry=1" in caplog.text
+    assert "delay=1" in caplog.text
+
+    assert "retry=2" in caplog.text
+    assert "delay=2" in caplog.text
+
+
+def test_call_llm_with_retry_logs_exhausted(monkeypatch, caplog):
+
+    import logging
+    import agent.controller as controller
+
+    calls = []
+
+    def fake_call_llm(system_prompt, user_message):
+        calls.append(1)
+
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
+
+    monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 2)
+    monkeypatch.setattr(controller, "LLM_RETRY_DELAY", 1)
+    monkeypatch.setattr(controller, "LLM_MAX_RETRY_DELAY", 8)
+
+    with caplog.at_level(logging.ERROR):
+        result = controller.call_llm_with_retry(
+            "system",
+            "hello",
+        )
+
+    assert result["status"] == "error"
+    assert len(calls) == 3
+
+    assert "retry exhausted" in caplog.text.lower()
+    assert "llm_timeout" in caplog.text
