@@ -41,6 +41,15 @@ def get_remaining_steps(plan, current_step):
     return remaining_steps
 
 
+def call_llm_with_retry(system_prompt, user_message):
+    response = call_llm(system_prompt, user_message)
+
+    if response.get("status") == "error" and response.get("retryable") is True:
+        response = call_llm(system_prompt, user_message)
+
+    return response
+
+
 def run_agent(user_message):
 
     task_type = route_task(user_message)
@@ -70,17 +79,18 @@ def run_agent(user_message):
     根据用户问题自主选择工具。
     """
 
-    response = call_llm(system_prompt, user_message)
+    response = call_llm_with_retry(system_prompt, user_message)
 
     if response.get("status") == "error":
-        return f"LLM调用失败：{response.get('message', '未知错误')}"
+        if response.get("status") == "error":
+            return f"LLM调用失败：{response.get('message')}"
 
     tool_call = parse_tool_call(response["content"])
 
     if tool_call:
         tool_result = execute_tool(tool_call["name"], tool_call["arguments"])
 
-        final_answer = call_llm(
+        final_answer = call_llm_with_retry(
             system_prompt,
             f"""
                             用户问题：{user_message}

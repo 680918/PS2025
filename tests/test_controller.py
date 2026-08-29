@@ -570,3 +570,125 @@ def test_replannable_error_should_replan():
     action = decide_failure_action(state, result)
 
     assert action == "replan"
+
+
+def test_run_agent_retries_retryable_llm_error(monkeypatch):
+
+    import agent.controller as controller
+
+    responses = [
+        {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        },
+        {
+            "status": "success",
+            "content": "最终回答",
+        },
+    ]
+
+    def fake_call_llm(system_prompt, user_message):
+        return responses.pop(0)
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+
+    result = controller.run_agent("你好")
+
+    assert result == "最终回答"
+    assert responses == []
+
+
+def test_run_agent_does_not_retry_non_retryable_llm_error(monkeypatch):
+
+    import agent.controller as controller
+
+    calls = []
+
+    def fake_call_llm(system_prompt, user_message):
+        calls.append(1)
+        return {
+            "status": "error",
+            "error_type": "missing_api_key",
+            "message": "Missing DEEPSEEK_API_KEY",
+            "content": None,
+            "retryable": False,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+
+    result = controller.run_agent("你好")
+
+    assert result == "LLM调用失败：Missing DEEPSEEK_API_KEY"
+    assert len(calls) == 1
+
+
+def test_run_agent_retry_fails_returns_error(monkeypatch):
+
+    import agent.controller as controller
+
+    calls = []
+
+    def fake_call_llm(system_prompt, user_message):
+        calls.append(1)
+
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+
+    result = controller.run_agent("你好")
+
+    assert result == "LLM调用失败：timeout"
+    assert len(calls) == 2
+
+
+def test_run_agent_retries_final_llm_after_tool(monkeypatch):
+
+    import agent.controller as controller
+
+    llm_responses = [
+        {
+            "status": "success",
+            "content": "<tool_call>get_user_profile</tool_call>",
+        },
+        {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        },
+        {
+            "status": "success",
+            "content": "最终回答",
+        },
+    ]
+
+    def fake_call_llm(system_prompt, user_message):
+        return llm_responses.pop(0)
+
+    def fake_execute_tool(tool_name, arguments=None):
+        return {
+            "status": "success",
+            "data": {"name": "test user"},
+        }
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller, "execute_tool", fake_execute_tool)
+
+    result = controller.run_agent("介绍一下我")
+
+    assert result == "最终回答"
+    assert llm_responses == []
