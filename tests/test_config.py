@@ -10,3 +10,5 @@ def test_config_defaults():
     assert config.LLM_TIMEOUT == 30
 
     assert config.LLM_TEMPERATURE == 0.7
+
+    assert config.LLM_MAX_RETRIES == 1
