@@ -19,3 +19,5 @@ LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
 LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "1"))
 
 LLM_RETRY_DELAY = float(os.getenv("LLM_RETRY_DELAY", "1"))
+
+LLM_MAX_RETRY_DELAY = float(os.getenv("LLM_MAX_RETRY_DELAY", "8"))

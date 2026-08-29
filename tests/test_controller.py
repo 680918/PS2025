@@ -899,3 +899,42 @@ def test_call_llm_with_retry_uses_exponential_backoff(monkeypatch):
     assert result["status"] == "error"
     assert len(calls) == 4
     assert sleep_calls == [1, 2, 4]
+
+
+def test_call_llm_with_retry_caps_backoff_delay(monkeypatch):
+
+    import agent.controller as controller
+
+    calls = []
+    sleep_calls = []
+
+    def fake_call_llm(system_prompt, user_message):
+        calls.append(1)
+
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        }
+
+    def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller.time, "sleep", fake_sleep)
+
+    monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 5)
+    monkeypatch.setattr(controller, "LLM_RETRY_DELAY", 1)
+    monkeypatch.setattr(controller, "LLM_MAX_RETRY_DELAY", 8)
+
+    result = controller.call_llm_with_retry(
+        "system",
+        "hello",
+    )
+
+    assert result["status"] == "error"
+    assert len(calls) == 6
+    assert sleep_calls == [1, 2, 4, 8, 8]
