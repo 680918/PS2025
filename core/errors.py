@@ -12,6 +12,12 @@ def make_error(
     if not message:
         raise ValueError("message must not be empty")
 
+    if not isinstance(retryable, bool):
+        raise TypeError("retryable must be a bool")
+
+    if not isinstance(replannable, bool):
+        raise TypeError("replannable must be a bool")
+
     return {
         "status": "error",
         "error_type": error_type,
