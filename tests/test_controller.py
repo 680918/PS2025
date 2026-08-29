@@ -938,3 +938,87 @@ def test_call_llm_with_retry_caps_backoff_delay(monkeypatch):
     assert result["status"] == "error"
     assert len(calls) == 6
     assert sleep_calls == [1, 2, 4, 8, 8]
+
+
+def test_run_planning_agent_retries_final_llm(monkeypatch):
+
+    import agent.controller as controller
+
+    llm_responses = [
+        {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        },
+        {
+            "status": "success",
+            "content": "最终学习建议",
+        },
+    ]
+
+    def fake_call_llm(system_prompt, user_message):
+        return llm_responses.pop(0)
+
+    class FakeState:
+        def get_state(self):
+            return {
+                "status": "success",
+                "message": "planning completed",
+            }
+
+    def fake_runtime(user_message):
+        return FakeState(), "success"
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller, "run_planning_runtime", fake_runtime)
+    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
+
+    result = controller.run_planning_agent("帮我制定学习计划")
+
+    assert result == "最终学习建议"
+    assert llm_responses == []
+
+
+def test_run_planning_agent_retries_stop_message_llm(monkeypatch):
+
+    import agent.controller as controller
+
+    llm_responses = [
+        {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        },
+        {
+            "status": "success",
+            "content": "任务执行失败，请稍后再试",
+        },
+    ]
+
+    def fake_call_llm(system_prompt, user_message):
+        return llm_responses.pop(0)
+
+    class FakeState:
+        def get_state(self):
+            return {
+                "status": "stop",
+                "message": "runtime failed",
+            }
+
+    def fake_runtime(user_message):
+        return FakeState(), "stop"
+
+    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller, "run_planning_runtime", fake_runtime)
+    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
+
+    result = controller.run_planning_agent("帮我制定学习计划")
+
+    assert result == "任务执行失败，请稍后再试"
+    assert llm_responses == []

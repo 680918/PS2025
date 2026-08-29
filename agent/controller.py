@@ -308,7 +308,7 @@ Agent 已经进行了允许范围内的重试和重新规划，
 5. 如果合适，可以告诉用户下一步可以怎么做。
 """
 
-        response = call_llm(stop_prompt, user_message)
+        response = call_llm_with_retry(stop_prompt, user_message)
 
         if response.get("status") == "error":
             return f"LLM调用失败：{response.get('message', '未知错误')}"
@@ -336,7 +336,7 @@ Agent 已经进行了允许范围内的重试和重新规划，
 6. 回答应具体、清晰、可执行，但所有建议必须能从 State 中找到依据。
 """
 
-    response = call_llm(final_prompt, user_message)
+    response = call_llm_with_retry(final_prompt, user_message)
 
     if response.get("status") == "error":
         return f"LLM调用失败：{response.get('message', '未知错误')}"
