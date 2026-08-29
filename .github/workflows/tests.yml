@@ -114,9 +114,18 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Run coverage gate
+      - name: Run coverage
         run: |
-          python -m pytest --cov=agent --cov=planning --cov=tools --cov=memory --cov-report=term-missing --cov-fail-under=90
+          python -m pytest \
+            --cov=agent \
+            --cov=planning \
+            --cov=tools \
+            --cov=memory \
+            --cov=config \
+            --cov=llm_client \
+            --cov=core \
+            --cov-report=term-missing \
+            --cov-fail-under=90
 
   lint:
     name: Ruff

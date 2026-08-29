@@ -45,3 +45,21 @@ def test_make_error_rejects_empty_message():
             error_type="test_error",
             message="",
         )
+
+
+def test_make_error_rejects_non_bool_retryable():
+    with pytest.raises(TypeError):
+        make_error(
+            error_type="test_error",
+            message="failed",
+            retryable="yes",
+        )
+
+
+def test_make_error_rejects_non_bool_replannable():
+    with pytest.raises(TypeError):
+        make_error(
+            error_type="test_error",
+            message="failed",
+            replannable=1,
+        )
