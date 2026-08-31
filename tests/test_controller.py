@@ -1187,3 +1187,129 @@ def test_call_llm_with_retry_logs_exhausted(monkeypatch):
     assert "retry exhausted" in message.lower()
     assert args[0] == "llm_timeout"
     assert args[1] == 2
+
+
+def test_decide_failure_action_logs_retry(monkeypatch):
+    import agent.controller as controller
+
+    class FakeState:
+        def can_retry(self):
+            return True
+
+        def can_replan(self):
+            return True
+
+    state = FakeState()
+
+    result = {
+        "status": "error",
+        "error_type": "temporary_error",
+        "retryable": True,
+        "replannable": True,
+    }
+
+    warning_calls = []
+
+    def fake_warning(message, *args):
+        warning_calls.append((message, args))
+
+    monkeypatch.setattr(
+        controller.logger,
+        "warning",
+        fake_warning,
+    )
+
+    action = controller.decide_failure_action(state, result)
+
+    assert action == "retry"
+    assert len(warning_calls) == 1
+
+    message, args = warning_calls[0]
+
+    assert "Recovery decision" in message
+    assert args[0] == "retry"
+    assert args[1] == "temporary_error"
+
+
+def test_decide_failure_action_logs_replan(monkeypatch):
+    import agent.controller as controller
+
+    class FakeState:
+        def can_retry(self):
+            return False
+
+        def can_replan(self):
+            return True
+
+    state = FakeState()
+
+    result = {
+        "status": "error",
+        "error_type": "tool_execution_error",
+        "retryable": False,
+        "replannable": True,
+    }
+
+    warning_calls = []
+
+    def fake_warning(message, *args):
+        warning_calls.append((message, args))
+
+    monkeypatch.setattr(
+        controller.logger,
+        "warning",
+        fake_warning,
+    )
+
+    action = controller.decide_failure_action(state, result)
+
+    assert action == "replan"
+    assert len(warning_calls) == 1
+
+    message, args = warning_calls[0]
+
+    assert "Recovery decision" in message
+    assert args[0] == "replan"
+    assert args[1] == "tool_execution_error"
+
+
+def test_decide_failure_action_logs_stop(monkeypatch):
+    import agent.controller as controller
+
+    class FakeState:
+        def can_retry(self):
+            return False
+
+        def can_replan(self):
+            return False
+
+    state = FakeState()
+
+    result = {
+        "status": "error",
+        "error_type": "fatal_error",
+        "retryable": False,
+        "replannable": False,
+    }
+
+    error_calls = []
+
+    def fake_error(message, *args):
+        error_calls.append((message, args))
+
+    monkeypatch.setattr(
+        controller.logger,
+        "error",
+        fake_error,
+    )
+
+    action = controller.decide_failure_action(state, result)
+
+    assert action == "stop"
+    assert len(error_calls) == 1
+
+    message, args = error_calls[0]
+
+    assert "Recovery decision" in message
+    assert args[0] == "stop"
+    assert args[1] == "fatal_error"
