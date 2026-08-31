@@ -162,3 +162,232 @@ def test_create_learning_plan_high_python_level(sample_user_profile):
     assert result["data"]["focus"] == "加强AI Agent项目实践"
 
     assert result["data"]["plan"]["month_1"]["focus"] == "Agent核心模块独立实现"
+
+
+def test_execute_tool_logs_start_and_success(monkeypatch):
+
+    import tools.tools as tools_module
+
+    log_calls = []
+
+    def fake_info(message, *args):
+        log_calls.append((message, args))
+
+    def fake_tool():
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setitem(
+        tools_module.TOOLS,
+        "fake_tool",
+        fake_tool,
+    )
+
+    monkeypatch.setattr(
+        tools_module.logger,
+        "info",
+        fake_info,
+    )
+
+    result = tools_module.execute_tool("fake_tool")
+
+    assert result["status"] == "success"
+
+    assert len(log_calls) == 2
+
+    start_message, start_args = log_calls[0]
+    success_message, success_args = log_calls[1]
+
+    assert "Tool start" in start_message
+    assert start_args[0] == "fake_tool"
+
+    assert "Tool success" in success_message
+    assert success_args[0] == "fake_tool"
+
+
+def test_execute_tool_logs_failure(monkeypatch):
+
+    import tools.tools as tools_module
+
+    error_calls = []
+
+    def fake_error(message, *args):
+        error_calls.append((message, args))
+
+    def fake_tool():
+        raise FileNotFoundError("missing file")
+
+    monkeypatch.setitem(
+        tools_module.TOOLS,
+        "fake_tool",
+        fake_tool,
+    )
+
+    monkeypatch.setattr(
+        tools_module.logger,
+        "error",
+        fake_error,
+    )
+
+    result = tools_module.execute_tool("fake_tool")
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "file_not_found"
+
+    assert len(error_calls) == 1
+
+    message, args = error_calls[0]
+
+    assert "Tool failed" in message
+    assert args[0] == "fake_tool"
+    assert args[1] == "file_not_found"
+
+
+def test_execute_tool_logs_unknown_tool(monkeypatch):
+
+    import tools.tools as tools_module
+
+    error_calls = []
+
+    def fake_error(message, *args):
+        error_calls.append((message, args))
+
+    times = iter([30.0, 30.005])
+
+    def fake_perf_counter():
+        return next(times)
+
+    monkeypatch.setattr(
+        tools_module.logger,
+        "error",
+        fake_error,
+    )
+
+    monkeypatch.setattr(
+        tools_module.time,
+        "perf_counter",
+        fake_perf_counter,
+    )
+
+    result = tools_module.execute_tool("not_exists")
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "unknown_tool"
+
+    assert len(error_calls) == 1
+
+    message, args = error_calls[0]
+
+    assert "Tool failed" in message
+    assert "duration_ms=%s" in message
+
+    assert args[0] == "not_exists"
+    assert args[1] == "unknown_tool"
+    assert args[2] == 5
+
+
+def test_execute_tool_logs_success_duration(monkeypatch):
+
+    import tools.tools as tools_module
+
+    info_calls = []
+
+    def fake_info(message, *args):
+        info_calls.append((message, args))
+
+    def fake_tool():
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    times = iter([10.0, 10.123])
+
+    def fake_perf_counter():
+        return next(times)
+
+    monkeypatch.setitem(
+        tools_module.TOOLS,
+        "fake_tool",
+        fake_tool,
+    )
+
+    monkeypatch.setattr(
+        tools_module.logger,
+        "info",
+        fake_info,
+    )
+
+    monkeypatch.setattr(
+        tools_module.time,
+        "perf_counter",
+        fake_perf_counter,
+    )
+
+    result = tools_module.execute_tool("fake_tool")
+
+    assert result["status"] == "success"
+
+    assert len(info_calls) == 2
+
+    success_message, success_args = info_calls[1]
+
+    assert "Tool success" in success_message
+    assert "duration_ms=%s" in success_message
+
+    assert success_args[0] == "fake_tool"
+    assert success_args[1] == 123
+
+
+def test_execute_tool_logs_failure_duration(monkeypatch):
+
+    import tools.tools as tools_module
+
+    error_calls = []
+
+    def fake_error(message, *args):
+        error_calls.append((message, args))
+
+    def fake_tool():
+        raise FileNotFoundError("missing file")
+
+    times = iter([20.0, 20.250])
+
+    def fake_perf_counter():
+        return next(times)
+
+    monkeypatch.setitem(
+        tools_module.TOOLS,
+        "fake_tool",
+        fake_tool,
+    )
+
+    monkeypatch.setattr(
+        tools_module.logger,
+        "error",
+        fake_error,
+    )
+
+    monkeypatch.setattr(
+        tools_module.time,
+        "perf_counter",
+        fake_perf_counter,
+    )
+
+    result = tools_module.execute_tool("fake_tool")
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "file_not_found"
+
+    assert len(error_calls) == 1
+
+    message, args = error_calls[0]
+
+    assert "Tool failed" in message
+    assert "duration_ms=%s" in message
+
+    assert args[0] == "fake_tool"
+    assert args[1] == "file_not_found"
+    assert args[2] == 250

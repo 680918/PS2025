@@ -1,8 +1,13 @@
 from memory.memory import get_memory_context
+import logging
+import time
 import os
 import json
 from memory.memory import get_user_profile_structured, get_skill_map_structured
 from core.errors import make_error
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_memory(memory_type="skill", topic=None):
@@ -159,11 +164,35 @@ TOOLS = {
 }
 
 
+def log_tool_failure(tool_name, error_type, start_time):
+    duration_ms = round((time.perf_counter() - start_time) * 1000)
+
+    logger.error(
+        "Tool failed: tool_name=%s error_type=%s duration_ms=%s",
+        tool_name,
+        error_type,
+        duration_ms,
+    )
+
+
 def execute_tool(tool_name, arguments=None):
+
+    logger.info(
+        "Tool start: tool_name=%s",
+        tool_name,
+    )
+
+    start_time = time.perf_counter()
 
     tool = TOOLS.get(tool_name)
 
     if tool is None:
+        log_tool_failure(
+            tool_name,
+            "unknown_tool",
+            start_time,
+        )
+
         return make_error(
             error_type="unknown_tool",
             message=f"Unknown tool: {tool_name}",
@@ -173,12 +202,27 @@ def execute_tool(tool_name, arguments=None):
 
     try:
         if arguments:
-            return tool(**arguments)
-
+            result = tool(**arguments)
         else:
-            return tool()
+            result = tool()
+
+        duration_ms = round((time.perf_counter() - start_time) * 1000)
+
+        logger.info(
+            "Tool success: tool_name=%s duration_ms=%s",
+            tool_name,
+            duration_ms,
+        )
+
+        return result
 
     except FileNotFoundError as e:
+        log_tool_failure(
+            tool_name,
+            "file_not_found",
+            start_time,
+        )
+
         return make_error(
             error_type="file_not_found",
             message=str(e),
@@ -187,6 +231,12 @@ def execute_tool(tool_name, arguments=None):
         )
 
     except Exception as e:
+        log_tool_failure(
+            tool_name,
+            "tool_execution_error",
+            start_time,
+        )
+
         return make_error(
             error_type="tool_execution_error",
             message=str(e),
