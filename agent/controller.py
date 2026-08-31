@@ -18,17 +18,45 @@ from config import (
 logger = logging.getLogger(__name__)
 
 
+def log_recovery_decision(action, error_type):
+    if action == "stop":
+        logger.error(
+            "Recovery decision: action=%s error_type=%s",
+            action,
+            error_type,
+        )
+    else:
+        logger.warning(
+            "Recovery decision: action=%s error_type=%s",
+            action,
+            error_type,
+        )
+
+
 def decide_failure_action(state, result):
     if result.get("status") != "error":
         return "continue"
 
     if result.get("retryable") is True and state.can_retry():
+        log_recovery_decision(
+            "retry",
+            result.get("error_type"),
+        )
         return "retry"
 
     replannable = result.get("replannable", True)
 
     if replannable is True and state.can_replan():
+        log_recovery_decision(
+            "replan",
+            result.get("error_type"),
+        )
         return "replan"
+
+    log_recovery_decision(
+        "stop",
+        result.get("error_type"),
+    )
 
     return "stop"
 
