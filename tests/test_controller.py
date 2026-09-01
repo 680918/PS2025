@@ -1193,6 +1193,9 @@ def test_decide_failure_action_logs_retry(monkeypatch):
     import agent.controller as controller
 
     class FakeState:
+        def __init__(self):
+            self.run_id = "run-123"
+
         def can_retry(self):
             return True
 
@@ -1227,14 +1230,19 @@ def test_decide_failure_action_logs_retry(monkeypatch):
     message, args = warning_calls[0]
 
     assert "Recovery decision" in message
-    assert args[0] == "retry"
-    assert args[1] == "temporary_error"
+    assert "run_id=%s" in message
+    assert args[0] == "run-123"
+    assert args[1] == "retry"
+    assert args[2] == "temporary_error"
 
 
 def test_decide_failure_action_logs_replan(monkeypatch):
     import agent.controller as controller
 
     class FakeState:
+        def __init__(self):
+            self.run_id = "run-123"
+
         def can_retry(self):
             return False
 
@@ -1269,14 +1277,19 @@ def test_decide_failure_action_logs_replan(monkeypatch):
     message, args = warning_calls[0]
 
     assert "Recovery decision" in message
-    assert args[0] == "replan"
-    assert args[1] == "tool_execution_error"
+    assert "run_id=%s" in message
+    assert args[0] == "run-123"
+    assert args[1] == "replan"
+    assert args[2] == "tool_execution_error"
 
 
 def test_decide_failure_action_logs_stop(monkeypatch):
     import agent.controller as controller
 
     class FakeState:
+        def __init__(self):
+            self.run_id = "run-123"
+
         def can_retry(self):
             return False
 
@@ -1311,5 +1324,7 @@ def test_decide_failure_action_logs_stop(monkeypatch):
     message, args = error_calls[0]
 
     assert "Recovery decision" in message
-    assert args[0] == "stop"
-    assert args[1] == "fatal_error"
+    assert "run_id=%s" in message
+    assert args[0] == "run-123"
+    assert args[1] == "stop"
+    assert args[2] == "fatal_error"

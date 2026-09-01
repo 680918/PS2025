@@ -8,7 +8,8 @@ logger = logging.getLogger(__name__)
 def execute_plan(state, plan):
 
     logger.info(
-        "Plan start: steps=%s",
+        "Plan start: run_id=%s steps=%s",
+        state.run_id,
         len(plan),
     )
 
@@ -17,14 +18,16 @@ def execute_plan(state, plan):
 
         if state.last_result and state.last_result.get("status") == "error":
             logger.error(
-                "Plan stopped: step=%s error_type=%s",
+                "Plan stopped: run_id=%s step=%s error_type=%s",
+                state.run_id,
                 step["step"],
                 state.last_result.get("error_type"),
             )
             return state
 
     logger.info(
-        "Plan completed: steps=%s",
+        "Plan completed: run_id=%s steps=%s",
+        state.run_id,
         len(plan),
     )
 
@@ -36,7 +39,8 @@ def execute_step(state, step):
     tool_name = step["tool"]
 
     logger.info(
-        "Step start: step=%s tool_name=%s",
+        "Step start: run_id=%s step=%s tool_name=%s",
+        state.run_id,
         step["step"],
         tool_name,
     )
@@ -47,14 +51,16 @@ def execute_step(state, step):
 
     if result.get("status") == "error":
         logger.error(
-            "Step failed: step=%s tool_name=%s error_type=%s",
+            "Step failed: run_id=%s step=%s tool_name=%s error_type=%s",
+            state.run_id,
             step["step"],
             tool_name,
             result.get("error_type"),
         )
     else:
         logger.info(
-            "Step success: step=%s tool_name=%s",
+            "Step success: run_id=%s step=%s tool_name=%s",
+            state.run_id,
             step["step"],
             tool_name,
         )

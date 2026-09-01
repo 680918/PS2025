@@ -24,3 +24,32 @@ def test_replan_limit():
     state.record_replan()
 
     assert state.can_replan() is False
+
+
+def test_agent_state_has_run_id():
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+
+    assert state.run_id
+    assert isinstance(state.run_id, str)
+
+
+def test_agent_state_run_id_is_unique():
+    from agent.state import AgentState
+
+    state1 = AgentState("hello")
+    state2 = AgentState("hello")
+
+    assert state1.run_id != state2.run_id
+
+
+def test_get_state_includes_run_id():
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+
+    data = state.get_state()
+
+    assert "run_id" in data
+    assert data["run_id"] == state.run_id
