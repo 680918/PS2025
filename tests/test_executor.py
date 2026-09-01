@@ -72,6 +72,7 @@ def test_execute_step_logs_start(monkeypatch):
 
     class FakeState:
         def __init__(self):
+            self.run_id = "run-123"
             self.last_result = None
             self.current_step = None
             self.tool_results = {}
@@ -122,8 +123,10 @@ def test_execute_step_logs_start(monkeypatch):
     message, args = info_calls[0]
 
     assert "Step start" in message
-    assert args[0] == 1
-    assert args[1] == "fake_tool"
+    assert "run_id=%s" in message
+    assert args[0] == "run-123"
+    assert args[1] == 1
+    assert args[2] == "fake_tool"
 
 
 def test_execute_step_logs_success(monkeypatch):
@@ -131,6 +134,7 @@ def test_execute_step_logs_success(monkeypatch):
 
     class FakeState:
         def __init__(self):
+            self.run_id = "run-123"
             self.last_result = None
             self.current_step = None
             self.tool_results = {}
@@ -180,11 +184,13 @@ def test_execute_step_logs_success(monkeypatch):
 
     assert len(info_calls) == 2
 
-    message, args = info_calls[1]
+    message, args = info_calls[-1]
 
     assert "Step success" in message
-    assert args[0] == 1
-    assert args[1] == "fake_tool"
+    assert "run_id=%s" in message
+    assert args[0] == "run-123"
+    assert args[1] == 1
+    assert args[2] == "fake_tool"
 
 
 def test_execute_step_logs_failure(monkeypatch):
@@ -192,6 +198,7 @@ def test_execute_step_logs_failure(monkeypatch):
 
     class FakeState:
         def __init__(self):
+            self.run_id = "run-123"
             self.last_result = None
             self.current_step = None
             self.tool_results = {}
@@ -247,9 +254,11 @@ def test_execute_step_logs_failure(monkeypatch):
     message, args = error_calls[0]
 
     assert "Step failed" in message
-    assert args[0] == 1
-    assert args[1] == "fake_tool"
-    assert args[2] == "tool_execution_error"
+    assert "run_id=%s" in message
+    assert args[0] == "run-123"
+    assert args[1] == 1
+    assert args[2] == "fake_tool"
+    assert args[3] == "tool_execution_error"
 
 
 def test_execute_plan_logs_start(monkeypatch):
@@ -257,6 +266,7 @@ def test_execute_plan_logs_start(monkeypatch):
 
     class FakeState:
         def __init__(self):
+            self.run_id = "run-123"
             self.last_result = None
 
     state = FakeState()
@@ -295,7 +305,9 @@ def test_execute_plan_logs_start(monkeypatch):
     message, args = info_calls[0]
 
     assert "Plan start" in message
-    assert args[0] == 1
+    assert "run_id=%s" in message
+    assert args[0] == "run-123"
+    assert args[1] == 1
 
 
 def test_execute_plan_logs_completed(monkeypatch):
@@ -303,6 +315,7 @@ def test_execute_plan_logs_completed(monkeypatch):
 
     class FakeState:
         def __init__(self):
+            self.run_id = "run-123"
             self.last_result = None
 
     state = FakeState()
@@ -341,7 +354,9 @@ def test_execute_plan_logs_completed(monkeypatch):
     message, args = info_calls[-1]
 
     assert "Plan completed" in message
-    assert args[0] == 1
+    assert "run_id=%s" in message
+    assert args[0] == "run-123"
+    assert args[1] == 1
 
 
 def test_execute_plan_logs_stopped(monkeypatch):
@@ -349,6 +364,7 @@ def test_execute_plan_logs_stopped(monkeypatch):
 
     class FakeState:
         def __init__(self):
+            self.run_id = "run-123"
             self.last_result = None
 
     state = FakeState()
@@ -400,5 +416,7 @@ def test_execute_plan_logs_stopped(monkeypatch):
     message, args = error_calls[0]
 
     assert "Plan stopped" in message
-    assert args[0] == 1
-    assert args[1] == "tool_execution_error"
+    assert "run_id=%s" in message
+    assert args[0] == "run-123"
+    assert args[1] == 1
+    assert args[2] == "tool_execution_error"

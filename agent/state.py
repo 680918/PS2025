@@ -1,7 +1,11 @@
+import uuid
+
+
 class AgentState:
     def __init__(self, user_message):
 
         self.user_message = user_message
+        self.run_id = str(uuid.uuid4())
 
         self.plan = []
 
@@ -43,6 +47,7 @@ class AgentState:
     def get_state(self):
 
         return {
+            "run_id": self.run_id,
             "user_message": self.user_message,
             "plan": self.plan,
             "current_step": self.current_step,
