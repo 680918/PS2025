@@ -91,7 +91,7 @@ def test_execute_step_logs_start(monkeypatch):
     def fake_resolve_arguments(state, step):
         return {}
 
-    def fake_execute_tool(tool_name, arguments):
+    def fake_execute_tool(tool_name, arguments, run_id=None):
         return {
             "status": "success",
             "content": "ok",
@@ -153,7 +153,7 @@ def test_execute_step_logs_success(monkeypatch):
     def fake_resolve_arguments(state, step):
         return {}
 
-    def fake_execute_tool(tool_name, arguments):
+    def fake_execute_tool(tool_name, arguments, run_id=None):
         return {
             "status": "success",
             "content": "ok",
@@ -217,7 +217,7 @@ def test_execute_step_logs_failure(monkeypatch):
     def fake_resolve_arguments(state, step):
         return {}
 
-    def fake_execute_tool(tool_name, arguments):
+    def fake_execute_tool(tool_name, arguments, run_id=None):
         return {
             "status": "error",
             "error_type": "tool_execution_error",
@@ -420,3 +420,48 @@ def test_execute_plan_logs_stopped(monkeypatch):
     assert args[0] == "run-123"
     assert args[1] == 1
     assert args[2] == "tool_execution_error"
+
+
+def test_execute_step_passes_run_id_to_tool(monkeypatch):
+    import agent.executor as executor_module
+
+    class FakeState:
+        def __init__(self):
+            self.run_id = "run-123"
+            self.tool_results = {}
+            self.last_result = None
+            self.current_step = 0
+
+        def add_tool_result(self, key, result):
+            self.tool_results[key] = result
+
+    received = {}
+
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
+        received["tool_name"] = tool_name
+        received["arguments"] = arguments
+        received["run_id"] = run_id
+
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        executor_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = FakeState()
+
+    step = {
+        "step": 1,
+        "tool": "fake_tool",
+        "arguments": {},
+    }
+
+    executor_module.execute_step(state, step)
+
+    assert received["tool_name"] == "fake_tool"
+    assert received["run_id"] == "run-123"

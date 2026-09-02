@@ -47,7 +47,11 @@ def execute_step(state, step):
 
     arguments = resolve_arguments(state, step)
 
-    result = execute_tool(tool_name, arguments)
+    result = execute_tool(
+        tool_name,
+        arguments,
+        run_id=state.run_id,
+    )
 
     if result.get("status") == "error":
         logger.error(
