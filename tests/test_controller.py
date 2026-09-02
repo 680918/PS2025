@@ -1328,3 +1328,92 @@ def test_decide_failure_action_logs_stop(monkeypatch):
     assert args[0] == "run-123"
     assert args[1] == "stop"
     assert args[2] == "fatal_error"
+
+
+def test_runtime_trace_uses_same_run_id_across_layers(monkeypatch):
+    import agent.controller as controller_module
+    import agent.executor as executor_module
+
+    observed = {
+        "executor_run_id": None,
+        "tool_run_id": None,
+    }
+
+    original_execute_step = executor_module.execute_step
+
+    def fake_execute_step(state, step):
+        observed["executor_run_id"] = state.run_id
+        return original_execute_step(state, step)
+
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
+        observed["tool_run_id"] = run_id
+
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        executor_module,
+        "execute_step",
+        fake_execute_step,
+    )
+
+    monkeypatch.setattr(
+        executor_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("test message")
+
+    step = {
+        "step": 1,
+        "tool": "fake_tool",
+        "arguments": {},
+    }
+
+    executor_module.execute_step(state, step)
+
+    assert observed["executor_run_id"] == state.run_id
+    assert observed["tool_run_id"] == state.run_id
+
+
+def test_runtime_trace_run_id_reaches_recovery_log(monkeypatch):
+    import agent.controller as controller_module
+
+    state = controller_module.AgentState("test message")
+
+    error_logs = []
+
+    def fake_error(message, *args):
+        error_logs.append((message, args))
+
+    monkeypatch.setattr(
+        controller_module.logger,
+        "error",
+        fake_error,
+    )
+
+    result = {
+        "status": "error",
+        "error_type": "tool_execution_error",
+        "retryable": False,
+        "replannable": False,
+    }
+
+    action = controller_module.decide_failure_action(
+        state,
+        result,
+    )
+
+    assert action == "stop"
+    assert len(error_logs) == 1
+
+    message, args = error_logs[0]
+
+    assert "Recovery decision" in message
+    assert "run_id=%s" in message
+    assert args[0] == state.run_id
+    assert args[1] == "stop"
+    assert args[2] == "tool_execution_error"
