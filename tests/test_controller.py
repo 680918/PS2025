@@ -78,7 +78,7 @@ def test_run_planning_workflow_failure(monkeypatch):
 
     original_execute_tool = executor_module.execute_tool
 
-    def fake_execute_tool(tool_name, arguments=None):
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
 
         if tool_name == "get_skill_map":
             return {
@@ -115,7 +115,7 @@ def test_runtime_retry_fail_replan_degraded_success(monkeypatch):
 
     call_count = {"get_skill_map": 0}
 
-    def fake_execute_tool(tool_name, arguments=None):
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
 
         if tool_name == "get_skill_map":
             call_count["get_skill_map"] += 1
@@ -158,7 +158,7 @@ def test_runtime_retry_fail_replan_fail_stop(monkeypatch):
 
     call_count = {"get_skill_map": 0, "create_learning_plan": 0}
 
-    def fake_execute_tool(tool_name, arguments=None):
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
 
         if tool_name == "get_skill_map":
             call_count["get_skill_map"] += 1
@@ -256,7 +256,7 @@ def test_runtime_retry_success_resume_with_mock(monkeypatch):
         },
     ]
 
-    def mock_execute_tool(tool_name, arguments=None):
+    def mock_execute_tool(tool_name, arguments=None, run_id=None):
 
         if tool_name == "get_skill_map":
             return skill_map_mock(tool_name, arguments)
@@ -287,7 +287,7 @@ def test_direct_replan_then_retryable_error_should_stop(monkeypatch):
 
     call_count = {"create_learning_plan": 0}
 
-    def fake_execute_tool(tool_name, arguments=None):
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
 
         # 原计划：
         # get_skill_map 发生不可重试错误

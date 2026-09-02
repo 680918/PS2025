@@ -164,21 +164,28 @@ TOOLS = {
 }
 
 
-def log_tool_failure(tool_name, error_type, start_time):
+def log_tool_failure(
+    tool_name,
+    error_type,
+    start_time,
+    run_id=None,
+):
     duration_ms = round((time.perf_counter() - start_time) * 1000)
 
     logger.error(
-        "Tool failed: tool_name=%s error_type=%s duration_ms=%s",
+        "Tool failed: run_id=%s tool_name=%s error_type=%s duration_ms=%s",
+        run_id,
         tool_name,
         error_type,
         duration_ms,
     )
 
 
-def execute_tool(tool_name, arguments=None):
+def execute_tool(tool_name, arguments=None, run_id=None):
 
     logger.info(
-        "Tool start: tool_name=%s",
+        "Tool start: run_id=%s tool_name=%s",
+        run_id,
         tool_name,
     )
 
@@ -191,6 +198,7 @@ def execute_tool(tool_name, arguments=None):
             tool_name,
             "unknown_tool",
             start_time,
+            run_id=run_id,
         )
 
         return make_error(
@@ -209,7 +217,8 @@ def execute_tool(tool_name, arguments=None):
         duration_ms = round((time.perf_counter() - start_time) * 1000)
 
         logger.info(
-            "Tool success: tool_name=%s duration_ms=%s",
+            "Tool success: run_id=%s tool_name=%s duration_ms=%s",
+            run_id,
             tool_name,
             duration_ms,
         )
@@ -221,6 +230,7 @@ def execute_tool(tool_name, arguments=None):
             tool_name,
             "file_not_found",
             start_time,
+            run_id=run_id,
         )
 
         return make_error(
@@ -235,6 +245,7 @@ def execute_tool(tool_name, arguments=None):
             tool_name,
             "tool_execution_error",
             start_time,
+            run_id=run_id,
         )
 
         return make_error(
