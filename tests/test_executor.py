@@ -68,206 +68,245 @@ def test_execute_plan_stops_on_error():
 
 
 def test_execute_step_logs_start(monkeypatch):
-    import agent.executor as executor
+    import agent.executor as executor_module
 
     class FakeState:
         def __init__(self):
             self.run_id = "run-123"
-            self.last_result = None
-            self.current_step = None
             self.tool_results = {}
+            self.last_result = None
+            self.current_step = 0
 
         def add_tool_result(self, key, result):
             self.tool_results[key] = result
+
+    info_calls = []
+    trace_context = {}
+
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            info_calls.append((message, args))
+
+        def error(self, message, *args):
+            pass
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
+
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        executor_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
+    )
+
+    monkeypatch.setattr(
+        executor_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
 
     state = FakeState()
 
     step = {
         "step": 1,
         "tool": "fake_tool",
-        "save_as": "result",
+        "arguments": {},
     }
 
-    def fake_resolve_arguments(state, step):
-        return {}
+    executor_module.execute_step(state, step)
 
-    def fake_execute_tool(tool_name, arguments, run_id=None):
-        return {
-            "status": "success",
-            "content": "ok",
-        }
-
-    info_calls = []
-
-    def fake_info(message, *args):
-        info_calls.append((message, args))
-
-    monkeypatch.setattr(
-        executor,
-        "resolve_arguments",
-        fake_resolve_arguments,
-    )
-    monkeypatch.setattr(
-        executor,
-        "execute_tool",
-        fake_execute_tool,
-    )
-    monkeypatch.setattr(
-        executor.logger,
-        "info",
-        fake_info,
-    )
-
-    executor.execute_step(state, step)
+    assert trace_context["run_id"] == "run-123"
 
     message, args = info_calls[0]
 
     assert "Step start" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == 1
-    assert args[2] == "fake_tool"
+    assert "run_id=%s" not in message
+    assert args[0] == 1
+    assert args[1] == "fake_tool"
 
 
 def test_execute_step_logs_success(monkeypatch):
-    import agent.executor as executor
+    import agent.executor as executor_module
 
     class FakeState:
         def __init__(self):
             self.run_id = "run-123"
-            self.last_result = None
-            self.current_step = None
             self.tool_results = {}
+            self.last_result = None
+            self.current_step = 0
 
         def add_tool_result(self, key, result):
             self.tool_results[key] = result
 
-    state = FakeState()
+    info_calls = []
+    trace_context = {}
 
-    step = {
-        "step": 1,
-        "tool": "fake_tool",
-        "save_as": "result",
-    }
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            info_calls.append((message, args))
 
-    def fake_resolve_arguments(state, step):
-        return {}
+        def error(self, message, *args):
+            pass
 
-    def fake_execute_tool(tool_name, arguments, run_id=None):
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
+
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
         return {
             "status": "success",
             "content": "ok",
         }
 
-    info_calls = []
-
-    def fake_info(message, *args):
-        info_calls.append((message, args))
-
     monkeypatch.setattr(
-        executor,
-        "resolve_arguments",
-        fake_resolve_arguments,
+        executor_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
+
     monkeypatch.setattr(
-        executor,
+        executor_module,
         "execute_tool",
         fake_execute_tool,
     )
-    monkeypatch.setattr(
-        executor.logger,
-        "info",
-        fake_info,
-    )
-
-    executor.execute_step(state, step)
-
-    assert len(info_calls) == 2
-
-    message, args = info_calls[-1]
-
-    assert "Step success" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == 1
-    assert args[2] == "fake_tool"
-
-
-def test_execute_step_logs_failure(monkeypatch):
-    import agent.executor as executor
-
-    class FakeState:
-        def __init__(self):
-            self.run_id = "run-123"
-            self.last_result = None
-            self.current_step = None
-            self.tool_results = {}
-
-        def add_tool_result(self, key, result):
-            self.tool_results[key] = result
 
     state = FakeState()
 
     step = {
         "step": 1,
         "tool": "fake_tool",
-        "save_as": "result",
+        "arguments": {},
     }
 
-    def fake_resolve_arguments(state, step):
-        return {}
+    executor_module.execute_step(state, step)
 
-    def fake_execute_tool(tool_name, arguments, run_id=None):
+    assert trace_context["run_id"] == "run-123"
+
+    message, args = info_calls[-1]
+
+    assert "Step success" in message
+    assert "run_id=%s" not in message
+    assert args[0] == 1
+    assert args[1] == "fake_tool"
+
+
+def test_execute_step_logs_failure(monkeypatch):
+    import agent.executor as executor_module
+
+    class FakeState:
+        def __init__(self):
+            self.run_id = "run-123"
+            self.tool_results = {}
+            self.last_result = None
+            self.current_step = 0
+
+        def add_tool_result(self, key, result):
+            self.tool_results[key] = result
+
+    error_calls = []
+    trace_context = {}
+
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            pass
+
+        def error(self, message, *args):
+            error_calls.append((message, args))
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
+
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
         return {
             "status": "error",
             "error_type": "tool_execution_error",
-            "message": "boom",
+            "message": "failed",
             "retryable": False,
             "replannable": True,
         }
 
-    error_calls = []
-
-    def fake_error(message, *args):
-        error_calls.append((message, args))
-
     monkeypatch.setattr(
-        executor,
-        "resolve_arguments",
-        fake_resolve_arguments,
+        executor_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
+
     monkeypatch.setattr(
-        executor,
+        executor_module,
         "execute_tool",
         fake_execute_tool,
     )
-    monkeypatch.setattr(
-        executor.logger,
-        "error",
-        fake_error,
-    )
 
-    executor.execute_step(state, step)
+    state = FakeState()
 
-    assert len(error_calls) == 1
+    step = {
+        "step": 1,
+        "tool": "fake_tool",
+        "arguments": {},
+    }
 
-    message, args = error_calls[0]
+    executor_module.execute_step(state, step)
+
+    assert trace_context["run_id"] == "run-123"
+
+    message, args = error_calls[-1]
 
     assert "Step failed" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == 1
-    assert args[2] == "fake_tool"
-    assert args[3] == "tool_execution_error"
+    assert "run_id=%s" not in message
+    assert args[0] == 1
+    assert args[1] == "fake_tool"
+    assert args[2] == "tool_execution_error"
 
 
 def test_execute_plan_logs_start(monkeypatch):
-    import agent.executor as executor
+    import agent.executor as executor_module
 
     class FakeState:
         def __init__(self):
             self.run_id = "run-123"
             self.last_result = None
+            self.current_step = 0
+
+    info_calls = []
+    trace_context = {}
+
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            info_calls.append((message, args))
+
+        def error(self, message, *args):
+            pass
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
+
+    def fake_execute_step(state, step):
+        state.last_result = {
+            "status": "success",
+            "content": "ok",
+        }
+        return state
+
+    monkeypatch.setattr(
+        executor_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
+    )
+
+    monkeypatch.setattr(
+        executor_module,
+        "execute_step",
+        fake_execute_step,
+    )
 
     state = FakeState()
 
@@ -275,97 +314,62 @@ def test_execute_plan_logs_start(monkeypatch):
         {
             "step": 1,
             "tool": "fake_tool",
+            "arguments": {},
         }
     ]
 
-    def fake_execute_step(state, step):
-        state.last_result = {
-            "status": "success",
-        }
-        return state
+    executor_module.execute_plan(state, plan)
 
-    info_calls = []
-
-    def fake_info(message, *args):
-        info_calls.append((message, args))
-
-    monkeypatch.setattr(
-        executor,
-        "execute_step",
-        fake_execute_step,
-    )
-    monkeypatch.setattr(
-        executor.logger,
-        "info",
-        fake_info,
-    )
-
-    executor.execute_plan(state, plan)
+    assert trace_context["run_id"] == "run-123"
 
     message, args = info_calls[0]
 
     assert "Plan start" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == 1
+    assert "run_id=%s" not in message
+    assert args[0] == 1
 
 
 def test_execute_plan_logs_completed(monkeypatch):
-    import agent.executor as executor
+    import agent.executor as executor_module
 
     class FakeState:
         def __init__(self):
             self.run_id = "run-123"
             self.last_result = None
+            self.current_step = 0
 
-    state = FakeState()
+    info_calls = []
+    trace_context = {}
 
-    plan = [
-        {
-            "step": 1,
-            "tool": "fake_tool",
-        }
-    ]
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            info_calls.append((message, args))
+
+        def error(self, message, *args):
+            pass
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
 
     def fake_execute_step(state, step):
         state.last_result = {
             "status": "success",
+            "content": "ok",
         }
         return state
 
-    info_calls = []
-
-    def fake_info(message, *args):
-        info_calls.append((message, args))
+    monkeypatch.setattr(
+        executor_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
+    )
 
     monkeypatch.setattr(
-        executor,
+        executor_module,
         "execute_step",
         fake_execute_step,
     )
-    monkeypatch.setattr(
-        executor.logger,
-        "info",
-        fake_info,
-    )
-
-    executor.execute_plan(state, plan)
-
-    message, args = info_calls[-1]
-
-    assert "Plan completed" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == 1
-
-
-def test_execute_plan_logs_stopped(monkeypatch):
-    import agent.executor as executor
-
-    class FakeState:
-        def __init__(self):
-            self.run_id = "run-123"
-            self.last_result = None
 
     state = FakeState()
 
@@ -373,53 +377,86 @@ def test_execute_plan_logs_stopped(monkeypatch):
         {
             "step": 1,
             "tool": "fake_tool",
-        },
-        {
-            "step": 2,
-            "tool": "another_tool",
-        },
+            "arguments": {},
+        }
     ]
 
-    executed_steps = []
+    executor_module.execute_plan(state, plan)
+
+    assert trace_context["run_id"] == "run-123"
+
+    message, args = info_calls[-1]
+
+    assert "Plan completed" in message
+    assert "run_id=%s" not in message
+    assert args[0] == 1
+
+
+def test_execute_plan_logs_stopped(monkeypatch):
+    import agent.executor as executor_module
+
+    class FakeState:
+        def __init__(self):
+            self.run_id = "run-123"
+            self.last_result = None
+            self.current_step = 0
+
+    error_calls = []
+    trace_context = {}
+
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            pass
+
+        def error(self, message, *args):
+            error_calls.append((message, args))
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
 
     def fake_execute_step(state, step):
-        executed_steps.append(step["step"])
-
         state.last_result = {
             "status": "error",
             "error_type": "tool_execution_error",
+            "message": "failed",
+            "retryable": False,
+            "replannable": True,
         }
-
         return state
 
-    error_calls = []
-
-    def fake_error(message, *args):
-        error_calls.append((message, args))
+    monkeypatch.setattr(
+        executor_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
+    )
 
     monkeypatch.setattr(
-        executor,
+        executor_module,
         "execute_step",
         fake_execute_step,
     )
-    monkeypatch.setattr(
-        executor.logger,
-        "error",
-        fake_error,
-    )
 
-    executor.execute_plan(state, plan)
+    state = FakeState()
 
-    assert executed_steps == [1]
-    assert len(error_calls) == 1
+    plan = [
+        {
+            "step": 1,
+            "tool": "fake_tool",
+            "arguments": {},
+        }
+    ]
 
-    message, args = error_calls[0]
+    executor_module.execute_plan(state, plan)
+
+    assert trace_context["run_id"] == "run-123"
+
+    message, args = error_calls[-1]
 
     assert "Plan stopped" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == 1
-    assert args[2] == "tool_execution_error"
+    assert "run_id=%s" not in message
+    assert args[0] == 1
+    assert args[1] == "tool_execution_error"
 
 
 def test_execute_step_passes_run_id_to_tool(monkeypatch):

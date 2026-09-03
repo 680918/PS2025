@@ -1,15 +1,19 @@
 import logging
-from tools.tools import execute_tool
 
+from core.logging_context import get_trace_logger
+from tools.tools import execute_tool
 
 logger = logging.getLogger(__name__)
 
 
 def execute_plan(state, plan):
+    trace_logger = get_trace_logger(
+        logger,
+        run_id=state.run_id,
+    )
 
-    logger.info(
-        "Plan start: run_id=%s steps=%s",
-        state.run_id,
+    trace_logger.info(
+        "Plan start: steps=%s",
         len(plan),
     )
 
@@ -17,17 +21,15 @@ def execute_plan(state, plan):
         state = execute_step(state, step)
 
         if state.last_result and state.last_result.get("status") == "error":
-            logger.error(
-                "Plan stopped: run_id=%s step=%s error_type=%s",
-                state.run_id,
+            trace_logger.error(
+                "Plan stopped: step=%s error_type=%s",
                 step["step"],
                 state.last_result.get("error_type"),
             )
             return state
 
-    logger.info(
-        "Plan completed: run_id=%s steps=%s",
-        state.run_id,
+    trace_logger.info(
+        "Plan completed: steps=%s",
         len(plan),
     )
 
@@ -38,14 +40,29 @@ def execute_step(state, step):
 
     tool_name = step["tool"]
 
-    logger.info(
-        "Step start: run_id=%s step=%s tool_name=%s",
-        state.run_id,
+    trace_logger = get_trace_logger(
+        logger,
+        run_id=state.run_id,
+    )
+
+    trace_logger.info(
+        "Step start: step=%s tool_name=%s",
         step["step"],
         tool_name,
     )
 
     arguments = resolve_arguments(state, step)
+
+    trace_logger = get_trace_logger(
+        logger,
+        run_id=state.run_id,
+    )
+
+    trace_logger.info(
+        "Step start: step=%s tool_name=%s",
+        step["step"],
+        tool_name,
+    )
 
     result = execute_tool(
         tool_name,
@@ -54,17 +71,19 @@ def execute_step(state, step):
     )
 
     if result.get("status") == "error":
-        logger.error(
-            "Step failed: run_id=%s step=%s tool_name=%s error_type=%s",
-            state.run_id,
+        trace_logger.error(
+            "Step failed: step=%s tool_name=%s error_type=%s",
             step["step"],
             tool_name,
             result.get("error_type"),
         )
     else:
-        logger.info(
-            "Step success: run_id=%s step=%s tool_name=%s",
-            state.run_id,
+        trace_logger = get_trace_logger(
+            logger,
+            run_id=state.run_id,
+        )
+        trace_logger.info(
+            "Step success: step=%s tool_name=%s",
             step["step"],
             tool_name,
         )
