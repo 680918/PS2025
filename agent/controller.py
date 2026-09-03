@@ -1,35 +1,39 @@
-from llm_client import call_llm
-from tools.parser import parse_tool_call
-from tools.tools import execute_tool, load_tool_schemas
 import json
 import logging
-from agent.state import AgentState
-from planning.planner import create_plan, replan_after_failure
+import time
+
 from agent.executor import execute_plan, execute_step
 from agent.task_router import route_task
-import time
+from agent.state import AgentState
 from config import (
     LLM_MAX_RETRIES,
     LLM_RETRY_DELAY,
     LLM_MAX_RETRY_DELAY,
 )
+from core.logging_context import get_trace_logger
+from llm_client import call_llm
+from tools.parser import parse_tool_call
+from tools.tools import execute_tool, load_tool_schemas
+from planning.planner import create_plan, replan_after_failure
 
 
 logger = logging.getLogger(__name__)
 
 
 def log_recovery_decision(state, action, error_type):
+    trace_logger = get_trace_logger(
+        logger,
+        run_id=state.run_id,
+    )
     if action == "stop":
-        logger.error(
-            "Recovery decision: run_id=%s action=%s error_type=%s",
-            state.run_id,
+        trace_logger.error(
+            "Recovery decision: action=%s error_type=%s",
             action,
             error_type,
         )
     else:
-        logger.warning(
-            "Recovery decision: run_id=%s action=%s error_type=%s",
-            state.run_id,
+        trace_logger.warning(
+            "Recovery decision: action=%s error_type=%s",
             action,
             error_type,
         )
