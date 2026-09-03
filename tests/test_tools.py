@@ -165,7 +165,6 @@ def test_create_learning_plan_high_python_level(sample_user_profile):
 
 
 def test_execute_tool_logs_start_and_success(monkeypatch):
-
     import tools.tools as tools_module
 
     def fake_tool():
@@ -175,9 +174,18 @@ def test_execute_tool_logs_start_and_success(monkeypatch):
         }
 
     info_calls = []
+    trace_context = {}
 
-    def fake_info(message, *args):
-        info_calls.append((message, args))
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            info_calls.append((message, args))
+
+        def error(self, message, *args):
+            pass
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
 
     monkeypatch.setitem(
         tools_module.TOOLS,
@@ -186,33 +194,33 @@ def test_execute_tool_logs_start_and_success(monkeypatch):
     )
 
     monkeypatch.setattr(
-        tools_module.logger,
-        "info",
-        fake_info,
+        tools_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
 
-    result = tools_module.execute_tool("fake_tool", run_id="run-123")
+    result = tools_module.execute_tool(
+        "fake_tool",
+        run_id="run-123",
+    )
 
     assert result["status"] == "success"
 
-    assert len(info_calls) >= 1
+    assert trace_context["run_id"] == "run-123"
+    assert len(info_calls) == 2
 
     start_message, start_args = info_calls[0]
+
+    assert "Tool start" in start_message
+    assert "run_id=%s" not in start_message
+    assert start_args[0] == "fake_tool"
+
     success_message, success_args = info_calls[1]
 
-    message, args = info_calls[0]
-    assert "Tool start" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == "fake_tool"
-
-    assert len(info_calls) == 2
-    message, args = info_calls[1]
-    assert "Tool success" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == "fake_tool"
-    assert isinstance(args[2], int)
+    assert "Tool success" in success_message
+    assert "run_id=%s" not in success_message
+    assert success_args[0] == "fake_tool"
+    assert isinstance(success_args[1], int)
 
 
 def test_execute_tool_logs_failure(monkeypatch):
@@ -222,9 +230,18 @@ def test_execute_tool_logs_failure(monkeypatch):
         raise RuntimeError("boom")
 
     error_calls = []
+    trace_context = {}
 
-    def fake_error(message, *args):
-        error_calls.append((message, args))
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            pass
+
+        def error(self, message, *args):
+            error_calls.append((message, args))
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
 
     monkeypatch.setitem(
         tools_module.TOOLS,
@@ -233,9 +250,9 @@ def test_execute_tool_logs_failure(monkeypatch):
     )
 
     monkeypatch.setattr(
-        tools_module.logger,
-        "error",
-        fake_error,
+        tools_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
 
     result = tools_module.execute_tool(
@@ -245,25 +262,33 @@ def test_execute_tool_logs_failure(monkeypatch):
 
     assert result["status"] == "error"
 
+    assert trace_context["run_id"] == "run-123"
     assert len(error_calls) == 1
 
     message, args = error_calls[0]
 
     assert "Tool failed" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == "fake_tool"
-    assert args[2] == "tool_execution_error"
+    assert "run_id=%s" not in message
+    assert args[0] == "fake_tool"
+    assert args[1] == "tool_execution_error"
 
 
 def test_execute_tool_logs_unknown_tool(monkeypatch):
-
     import tools.tools as tools_module
 
     error_calls = []
+    trace_context = {}
 
-    def fake_error(message, *args):
-        error_calls.append((message, args))
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            pass
+
+        def error(self, message, *args):
+            error_calls.append((message, args))
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
 
     times = iter([30.0, 30.005])
 
@@ -271,9 +296,9 @@ def test_execute_tool_logs_unknown_tool(monkeypatch):
         return next(times)
 
     monkeypatch.setattr(
-        tools_module.logger,
-        "error",
-        fake_error,
+        tools_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
 
     monkeypatch.setattr(
@@ -282,27 +307,29 @@ def test_execute_tool_logs_unknown_tool(monkeypatch):
         fake_perf_counter,
     )
 
-    result = tools_module.execute_tool("not_exists", run_id="run-123")
+    result = tools_module.execute_tool(
+        "not_exists",
+        run_id="run-123",
+    )
 
     assert result["status"] == "error"
     assert result["error_type"] == "unknown_tool"
 
+    assert trace_context["run_id"] == "run-123"
     assert len(error_calls) == 1
 
     message, args = error_calls[0]
 
     assert "Tool failed" in message
-    assert "run_id=%s" in message
+    assert "run_id=%s" not in message
     assert "duration_ms=%s" in message
 
-    assert args[0] == "run-123"
-    assert args[1] == "not_exists"
-    assert args[2] == "unknown_tool"
-    assert args[3] == 5
+    assert args[0] == "not_exists"
+    assert args[1] == "unknown_tool"
+    assert args[2] == 5
 
 
 def test_execute_tool_logs_success_duration(monkeypatch):
-
     import tools.tools as tools_module
 
     def fake_tool():
@@ -313,8 +340,15 @@ def test_execute_tool_logs_success_duration(monkeypatch):
 
     info_calls = []
 
-    def fake_info(message, *args):
-        info_calls.append((message, args))
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            info_calls.append((message, args))
+
+        def error(self, message, *args):
+            pass
+
+    def fake_get_trace_logger(logger, run_id=None):
+        return FakeTraceLogger()
 
     monkeypatch.setitem(
         tools_module.TOOLS,
@@ -323,34 +357,40 @@ def test_execute_tool_logs_success_duration(monkeypatch):
     )
 
     monkeypatch.setattr(
-        tools_module.logger,
-        "info",
-        fake_info,
+        tools_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
 
     result = tools_module.execute_tool("fake_tool")
 
     assert result["status"] == "success"
-
     assert len(info_calls) == 2
 
     message, args = info_calls[1]
 
     assert "Tool success" in message
     assert "duration_ms=%s" in message
-    assert args[0] is None
-    assert args[1] == "fake_tool"
-    assert isinstance(args[2], int)
+    assert "run_id=%s" not in message
+
+    assert args[0] == "fake_tool"
+    assert isinstance(args[1], int)
 
 
 def test_execute_tool_logs_failure_duration(monkeypatch):
-
     import tools.tools as tools_module
 
     error_calls = []
 
-    def fake_error(message, *args):
-        error_calls.append((message, args))
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            pass
+
+        def error(self, message, *args):
+            error_calls.append((message, args))
+
+    def fake_get_trace_logger(logger, run_id=None):
+        return FakeTraceLogger()
 
     def fake_tool():
         raise FileNotFoundError("missing file")
@@ -367,9 +407,9 @@ def test_execute_tool_logs_failure_duration(monkeypatch):
     )
 
     monkeypatch.setattr(
-        tools_module.logger,
-        "error",
-        fake_error,
+        tools_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
 
     monkeypatch.setattr(
@@ -378,7 +418,10 @@ def test_execute_tool_logs_failure_duration(monkeypatch):
         fake_perf_counter,
     )
 
-    result = tools_module.execute_tool("fake_tool", run_id="run-123")
+    result = tools_module.execute_tool(
+        "fake_tool",
+        run_id="run-123",
+    )
 
     assert result["status"] == "error"
     assert result["error_type"] == "file_not_found"
@@ -389,8 +432,8 @@ def test_execute_tool_logs_failure_duration(monkeypatch):
 
     assert "Tool failed" in message
     assert "duration_ms=%s" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == "fake_tool"
-    assert args[2] == "file_not_found"
-    assert args[3] == 250
+    assert "run_id=%s" not in message
+
+    assert args[0] == "fake_tool"
+    assert args[1] == "file_not_found"
+    assert args[2] == 250

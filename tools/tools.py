@@ -1,11 +1,12 @@
-from memory.memory import get_memory_context
 import logging
 import time
 import os
 import json
+
+from memory.memory import get_memory_context
 from memory.memory import get_user_profile_structured, get_skill_map_structured
 from core.errors import make_error
-
+from core.logging_context import get_trace_logger
 
 logger = logging.getLogger(__name__)
 
@@ -165,16 +166,15 @@ TOOLS = {
 
 
 def log_tool_failure(
+    trace_logger,
     tool_name,
     error_type,
     start_time,
-    run_id=None,
 ):
     duration_ms = round((time.perf_counter() - start_time) * 1000)
 
-    logger.error(
-        "Tool failed: run_id=%s tool_name=%s error_type=%s duration_ms=%s",
-        run_id,
+    trace_logger.error(
+        "Tool failed: tool_name=%s error_type=%s duration_ms=%s",
         tool_name,
         error_type,
         duration_ms,
@@ -182,10 +182,13 @@ def log_tool_failure(
 
 
 def execute_tool(tool_name, arguments=None, run_id=None):
+    trace_logger = get_trace_logger(
+        logger,
+        run_id=run_id,
+    )
 
-    logger.info(
-        "Tool start: run_id=%s tool_name=%s",
-        run_id,
+    trace_logger.info(
+        "Tool start: tool_name=%s",
         tool_name,
     )
 
@@ -195,10 +198,10 @@ def execute_tool(tool_name, arguments=None, run_id=None):
 
     if tool is None:
         log_tool_failure(
+            trace_logger,
             tool_name,
             "unknown_tool",
             start_time,
-            run_id=run_id,
         )
 
         return make_error(
@@ -216,9 +219,8 @@ def execute_tool(tool_name, arguments=None, run_id=None):
 
         duration_ms = round((time.perf_counter() - start_time) * 1000)
 
-        logger.info(
-            "Tool success: run_id=%s tool_name=%s duration_ms=%s",
-            run_id,
+        trace_logger.info(
+            "Tool success: tool_name=%s duration_ms=%s",
             tool_name,
             duration_ms,
         )
@@ -227,10 +229,10 @@ def execute_tool(tool_name, arguments=None, run_id=None):
 
     except FileNotFoundError as e:
         log_tool_failure(
+            trace_logger,
             tool_name,
             "file_not_found",
             start_time,
-            run_id=run_id,
         )
 
         return make_error(
@@ -242,10 +244,10 @@ def execute_tool(tool_name, arguments=None, run_id=None):
 
     except Exception as e:
         log_tool_failure(
+            trace_logger,
             tool_name,
             "tool_execution_error",
             start_time,
-            run_id=run_id,
         )
 
         return make_error(
