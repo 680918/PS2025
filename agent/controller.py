@@ -88,7 +88,11 @@ def get_remaining_steps(plan, current_step):
     return remaining_steps
 
 
-def call_llm_with_retry(system_prompt, user_message):
+def call_llm_with_retry(system_prompt, user_message, run_id=None):
+    trace_logger = get_trace_logger(
+        logger,
+        run_id=run_id,
+    )
     response = call_llm(system_prompt, user_message)
 
     retries = 0
@@ -103,7 +107,7 @@ def call_llm_with_retry(system_prompt, user_message):
             LLM_MAX_RETRY_DELAY,
         )
 
-        logger.warning(
+        trace_logger.warning(
             "LLM retry: error_type=%s retry=%s delay=%s",
             response.get("error_type"),
             retries + 1,
@@ -121,7 +125,7 @@ def call_llm_with_retry(system_prompt, user_message):
         and response.get("retryable") is True
         and retries >= LLM_MAX_RETRIES
     ):
-        logger.error(
+        trace_logger.error(
             "LLM retry exhausted: error_type=%s retries=%s",
             response.get("error_type"),
             retries,
