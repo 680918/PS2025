@@ -732,6 +732,78 @@ def test_call_llm_with_retry_retries_once(monkeypatch):
     assert responses == []
 
 
+def test_call_llm_with_retry_logs_run_id(monkeypatch):
+    import agent.controller as controller
+
+    responses = [
+        {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "timeout",
+            "content": None,
+            "retryable": True,
+            "replannable": False,
+        },
+        {
+            "status": "success",
+            "content": "ok",
+        },
+    ]
+
+    warning_calls = []
+    trace_context = {}
+
+    class FakeTraceLogger:
+        def warning(self, message, *args):
+            warning_calls.append((message, args))
+
+        def error(self, message, *args):
+            pass
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
+
+    def fake_call_llm(system_prompt, user_message):
+        return responses.pop(0)
+
+    monkeypatch.setattr(
+        controller,
+        "get_trace_logger",
+        fake_get_trace_logger,
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "call_llm",
+        fake_call_llm,
+    )
+
+    monkeypatch.setattr(
+        controller.time,
+        "sleep",
+        lambda seconds: None,
+    )
+
+    result = controller.call_llm_with_retry(
+        "system",
+        "hello",
+        run_id="run-123",
+    )
+
+    assert result["status"] == "success"
+
+    assert trace_context["run_id"] == "run-123"
+    assert len(warning_calls) == 1
+
+    message, args = warning_calls[0]
+
+    assert "LLM retry" in message
+    assert "run_id=%s" not in message
+    assert args[0] == "llm_timeout"
+    assert args[1] == 1
+
+
 def test_call_llm_with_retry_does_not_retry_non_retryable(monkeypatch):
 
     import agent.controller as controller
@@ -1048,14 +1120,26 @@ def test_call_llm_with_retry_logs_retry(monkeypatch):
 
     warning_calls = []
 
-    def fake_warning(message, *args):
-        warning_calls.append((message, args))
+    class FakeTraceLogger:
+        def warning(self, message, *args):
+            warning_calls.append((message, args))
+
+        def error(self, message, *args):
+            pass
+
+    def fake_get_trace_logger(logger, run_id=None):
+        return FakeTraceLogger()
+
+    monkeypatch.setattr(
+        controller,
+        "get_trace_logger",
+        fake_get_trace_logger,
+    )
 
     monkeypatch.setattr(controller, "call_llm", fake_call_llm)
     monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 1)
     monkeypatch.setattr(controller, "LLM_RETRY_DELAY", 1)
-    monkeypatch.setattr(controller.logger, "warning", fake_warning)
 
     result = controller.call_llm_with_retry(
         "system",
@@ -1106,8 +1190,21 @@ def test_call_llm_with_retry_logs_retry_number_and_delay(monkeypatch):
 
     warning_calls = []
 
-    def fake_warning(message, *args):
-        warning_calls.append((message, args))
+    class FakeTraceLogger:
+        def warning(self, message, *args):
+            warning_calls.append((message, args))
+
+        def error(self, message, *args):
+            pass
+
+    def fake_get_trace_logger(logger, run_id=None):
+        return FakeTraceLogger()
+
+    monkeypatch.setattr(
+        controller,
+        "get_trace_logger",
+        fake_get_trace_logger,
+    )
 
     monkeypatch.setattr(controller, "call_llm", fake_call_llm)
     monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
@@ -1115,8 +1212,6 @@ def test_call_llm_with_retry_logs_retry_number_and_delay(monkeypatch):
     monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 2)
     monkeypatch.setattr(controller, "LLM_RETRY_DELAY", 1)
     monkeypatch.setattr(controller, "LLM_MAX_RETRY_DELAY", 8)
-
-    monkeypatch.setattr(controller.logger, "warning", fake_warning)
 
     result = controller.call_llm_with_retry(
         "system",
@@ -1148,6 +1243,22 @@ def test_call_llm_with_retry_logs_exhausted(monkeypatch):
     calls = []
     error_calls = []
 
+    class FakeTraceLogger:
+        def warning(self, message, *args):
+            pass
+
+        def error(self, message, *args):
+            error_calls.append((message, args))
+
+    def fake_get_trace_logger(logger, run_id=None):
+        return FakeTraceLogger()
+
+    monkeypatch.setattr(
+        controller,
+        "get_trace_logger",
+        fake_get_trace_logger,
+    )
+
     def fake_call_llm(system_prompt, user_message):
         calls.append(1)
 
@@ -1160,17 +1271,12 @@ def test_call_llm_with_retry_logs_exhausted(monkeypatch):
             "replannable": False,
         }
 
-    def fake_error(message, *args):
-        error_calls.append((message, args))
-
     monkeypatch.setattr(controller, "call_llm", fake_call_llm)
     monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
 
     monkeypatch.setattr(controller, "LLM_MAX_RETRIES", 2)
     monkeypatch.setattr(controller, "LLM_RETRY_DELAY", 1)
     monkeypatch.setattr(controller, "LLM_MAX_RETRY_DELAY", 8)
-
-    monkeypatch.setattr(controller.logger, "error", fake_error)
 
     result = controller.call_llm_with_retry(
         "system",
