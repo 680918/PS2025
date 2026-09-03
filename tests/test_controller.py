@@ -1212,28 +1212,38 @@ def test_decide_failure_action_logs_retry(monkeypatch):
     }
 
     warning_calls = []
+    trace_context = {}
 
-    def fake_warning(message, *args):
-        warning_calls.append((message, args))
+    class FakeTraceLogger:
+        def warning(self, message, *args):
+            warning_calls.append((message, args))
+
+        def error(self, message, *args):
+            pass
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
 
     monkeypatch.setattr(
-        controller.logger,
-        "warning",
-        fake_warning,
+        controller,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
 
     action = controller.decide_failure_action(state, result)
 
     assert action == "retry"
+
+    assert trace_context["run_id"] == "run-123"
     assert len(warning_calls) == 1
 
     message, args = warning_calls[0]
 
     assert "Recovery decision" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == "retry"
-    assert args[2] == "temporary_error"
+    assert "run_id=%s" not in message
+    assert args[0] == "retry"
+    assert args[1] == "temporary_error"
 
 
 def test_decide_failure_action_logs_replan(monkeypatch):
@@ -1259,28 +1269,37 @@ def test_decide_failure_action_logs_replan(monkeypatch):
     }
 
     warning_calls = []
+    trace_context = {}
 
-    def fake_warning(message, *args):
-        warning_calls.append((message, args))
+    class FakeTraceLogger:
+        def warning(self, message, *args):
+            warning_calls.append((message, args))
+
+        def error(self, message, *args):
+            pass
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
 
     monkeypatch.setattr(
-        controller.logger,
-        "warning",
-        fake_warning,
+        controller,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
 
     action = controller.decide_failure_action(state, result)
 
     assert action == "replan"
+    assert trace_context["run_id"] == "run-123"
     assert len(warning_calls) == 1
 
     message, args = warning_calls[0]
 
     assert "Recovery decision" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == "replan"
-    assert args[2] == "tool_execution_error"
+    assert "run_id=%s" not in message
+    assert args[0] == "replan"
+    assert args[1] == "tool_execution_error"
 
 
 def test_decide_failure_action_logs_stop(monkeypatch):
@@ -1306,28 +1325,37 @@ def test_decide_failure_action_logs_stop(monkeypatch):
     }
 
     error_calls = []
+    trace_context = {}
 
-    def fake_error(message, *args):
-        error_calls.append((message, args))
+    class FakeTraceLogger:
+        def warning(self, message, *args):
+            pass
+
+        def error(self, message, *args):
+            error_calls.append((message, args))
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
 
     monkeypatch.setattr(
-        controller.logger,
-        "error",
-        fake_error,
+        controller,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
 
     action = controller.decide_failure_action(state, result)
 
     assert action == "stop"
+    assert trace_context["run_id"] == "run-123"
     assert len(error_calls) == 1
 
     message, args = error_calls[0]
 
     assert "Recovery decision" in message
-    assert "run_id=%s" in message
-    assert args[0] == "run-123"
-    assert args[1] == "stop"
-    assert args[2] == "fatal_error"
+    assert "run_id=%s" not in message
+    assert args[0] == "stop"
+    assert args[1] == "fatal_error"
 
 
 def test_runtime_trace_uses_same_run_id_across_layers(monkeypatch):
@@ -1385,14 +1413,23 @@ def test_runtime_trace_run_id_reaches_recovery_log(monkeypatch):
     state = controller_module.AgentState("test message")
 
     error_logs = []
+    trace_context = {}
 
-    def fake_error(message, *args):
-        error_logs.append((message, args))
+    class FakeTraceLogger:
+        def warning(self, message, *args):
+            pass
+
+        def error(self, message, *args):
+            error_logs.append((message, args))
+
+    def fake_get_trace_logger(logger, run_id=None):
+        trace_context["run_id"] = run_id
+        return FakeTraceLogger()
 
     monkeypatch.setattr(
-        controller_module.logger,
-        "error",
-        fake_error,
+        controller_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
     )
 
     result = {
@@ -1408,12 +1445,12 @@ def test_runtime_trace_run_id_reaches_recovery_log(monkeypatch):
     )
 
     assert action == "stop"
+    assert trace_context["run_id"] == state.run_id
     assert len(error_logs) == 1
 
     message, args = error_logs[0]
 
     assert "Recovery decision" in message
-    assert "run_id=%s" in message
-    assert args[0] == state.run_id
-    assert args[1] == "stop"
-    assert args[2] == "tool_execution_error"
+    assert "run_id=%s" not in message
+    assert args[0] == "stop"
+    assert args[1] == "tool_execution_error"
