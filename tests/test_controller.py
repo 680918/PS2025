@@ -1035,8 +1035,12 @@ def test_run_planning_agent_retries_final_llm(monkeypatch):
         return llm_responses.pop(0)
 
     class FakeState:
+        def __init__(self):
+            self.run_id = "run-123"
+
         def get_state(self):
             return {
+                "run_id": self.run_id,
                 "status": "success",
                 "message": "planning completed",
             }
@@ -1077,8 +1081,12 @@ def test_run_planning_agent_retries_stop_message_llm(monkeypatch):
         return llm_responses.pop(0)
 
     class FakeState:
+        def __init__(self):
+            self.run_id = "run-123"
+
         def get_state(self):
             return {
+                "run_id": self.run_id,
                 "status": "stop",
                 "message": "runtime failed",
             }
@@ -1560,3 +1568,101 @@ def test_runtime_trace_run_id_reaches_recovery_log(monkeypatch):
     assert "run_id=%s" not in message
     assert args[0] == "stop"
     assert args[1] == "tool_execution_error"
+
+
+def test_run_planning_agent_passes_run_id_to_final_llm(monkeypatch):
+    import agent.controller as controller
+
+    observed = {}
+
+    class FakeState:
+        def __init__(self):
+            self.run_id = "run-123"
+
+        def get_state(self):
+            return {
+                "run_id": self.run_id,
+            }
+
+    state = FakeState()
+
+    def fake_run_planning_runtime(user_message):
+        return state, "success"
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        observed["run_id"] = run_id
+
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        controller,
+        "run_planning_runtime",
+        fake_run_planning_runtime,
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    result = controller.run_planning_agent("hello")
+
+    assert result == "ok"
+    assert observed["run_id"] == "run-123"
+
+
+def test_run_planning_agent_passes_run_id_to_stop_llm(monkeypatch):
+    import agent.controller as controller
+
+    observed = {}
+
+    class FakeState:
+        def __init__(self):
+            self.run_id = "run-123"
+
+        def get_state(self):
+            return {
+                "run_id": self.run_id,
+            }
+
+    state = FakeState()
+
+    def fake_run_planning_runtime(user_message):
+        return state, "stop"
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        observed["run_id"] = run_id
+
+        return {
+            "status": "success",
+            "content": "failed safely",
+        }
+
+    monkeypatch.setattr(
+        controller,
+        "run_planning_runtime",
+        fake_run_planning_runtime,
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    result = controller.run_planning_agent("hello")
+
+    assert result == "failed safely"
+    assert observed["run_id"] == "run-123"
