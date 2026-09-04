@@ -136,12 +136,15 @@ def call_llm_with_retry(system_prompt, user_message, run_id=None):
 
 def run_agent(user_message):
 
+    state = AgentState(user_message)
+
     task_type = route_task(user_message)
 
     if task_type == "planning":
-        return run_planning_agent(user_message)
-
-    state = AgentState(user_message)
+        return run_planning_agent(
+            user_message,
+            state=state,
+        )
 
     tool_schemas = load_tool_schemas()
 
@@ -219,9 +222,10 @@ def run_planning_workflow(user_message):
     return state
 
 
-def run_planning_runtime(user_message):
+def run_planning_runtime(user_message, state=None):
 
-    state = AgentState(user_message)
+    if state is None:
+        state = AgentState(user_message)
 
     plan = create_plan(user_message)
 
@@ -344,9 +348,9 @@ def run_planning_runtime(user_message):
     return state, "stop"
 
 
-def run_planning_agent(user_message):
+def run_planning_agent(user_message, state=None):
 
-    state, runtime_status = run_planning_runtime(user_message)
+    state, runtime_status = run_planning_runtime(user_message, state=state)
 
     state_data = state.get_state()
 
