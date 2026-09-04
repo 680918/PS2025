@@ -681,7 +681,7 @@ def test_run_agent_retries_final_llm_after_tool(monkeypatch):
     def fake_call_llm(system_prompt, user_message):
         return llm_responses.pop(0)
 
-    def fake_execute_tool(tool_name, arguments=None):
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
         return {
             "status": "success",
             "data": {"name": "test user"},
@@ -1666,3 +1666,202 @@ def test_run_planning_agent_passes_run_id_to_stop_llm(monkeypatch):
 
     assert result == "failed safely"
     assert observed["run_id"] == "run-123"
+
+
+def test_run_agent_passes_run_id_to_llm(monkeypatch):
+    import agent.controller as controller
+
+    observed = {}
+
+    monkeypatch.setattr(
+        controller,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "load_tool_schemas",
+        lambda: [],
+    )
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        observed["run_id"] = run_id
+
+        return {
+            "status": "success",
+            "content": "hello",
+        }
+
+    monkeypatch.setattr(
+        controller,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    result = controller.run_agent("hello")
+
+    assert result == "hello"
+    assert observed["run_id"] is not None
+    assert isinstance(observed["run_id"], str)
+
+
+def test_run_agent_passes_same_run_id_to_tool(monkeypatch):
+    import agent.controller as controller
+
+    observed = {
+        "llm_run_id": None,
+        "tool_run_id": None,
+    }
+
+    monkeypatch.setattr(
+        controller,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "load_tool_schemas",
+        lambda: [],
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "parse_tool_call",
+        lambda content: {
+            "name": "fake_tool",
+            "arguments": {},
+        },
+    )
+
+    call_count = {"value": 0}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        call_count["value"] += 1
+
+        if call_count["value"] == 1:
+            observed["llm_run_id"] = run_id
+
+            return {
+                "status": "success",
+                "content": "tool please",
+            }
+
+        return {
+            "status": "success",
+            "content": "final answer",
+        }
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+    ):
+        observed["tool_run_id"] = run_id
+
+        return {
+            "status": "success",
+            "content": "tool result",
+        }
+
+    monkeypatch.setattr(
+        controller,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    result = controller.run_agent("hello")
+
+    assert result == "final answer"
+    assert observed["llm_run_id"] is not None
+    assert observed["tool_run_id"] == observed["llm_run_id"]
+
+
+def test_run_agent_passes_same_run_id_to_final_llm(monkeypatch):
+    import agent.controller as controller
+
+    observed = {
+        "first_llm_run_id": None,
+        "final_llm_run_id": None,
+    }
+
+    monkeypatch.setattr(
+        controller,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "load_tool_schemas",
+        lambda: [],
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "parse_tool_call",
+        lambda content: {
+            "name": "fake_tool",
+            "arguments": {},
+        },
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "execute_tool",
+        lambda tool_name, arguments=None, run_id=None: {
+            "status": "success",
+            "content": "tool result",
+        },
+    )
+
+    call_count = {"value": 0}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        call_count["value"] += 1
+
+        if call_count["value"] == 1:
+            observed["first_llm_run_id"] = run_id
+
+            return {
+                "status": "success",
+                "content": "tool please",
+            }
+
+        observed["final_llm_run_id"] = run_id
+
+        return {
+            "status": "success",
+            "content": "final answer",
+        }
+
+    monkeypatch.setattr(
+        controller,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    result = controller.run_agent("hello")
+
+    assert result == "final answer"
+    assert observed["first_llm_run_id"] is not None
+    assert observed["final_llm_run_id"] == observed["first_llm_run_id"]

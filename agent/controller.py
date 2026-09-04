@@ -141,6 +141,8 @@ def run_agent(user_message):
     if task_type == "planning":
         return run_planning_agent(user_message)
 
+    state = AgentState(user_message)
+
     tool_schemas = load_tool_schemas()
 
     tool_description = json.dumps(tool_schemas, ensure_ascii=False, indent=2)
@@ -163,7 +165,7 @@ def run_agent(user_message):
     根据用户问题自主选择工具。
     """
 
-    response = call_llm_with_retry(system_prompt, user_message)
+    response = call_llm_with_retry(system_prompt, user_message, run_id=state.run_id)
 
     if response.get("status") == "error":
         if response.get("status") == "error":
@@ -172,7 +174,9 @@ def run_agent(user_message):
     tool_call = parse_tool_call(response["content"])
 
     if tool_call:
-        tool_result = execute_tool(tool_call["name"], tool_call["arguments"])
+        tool_result = execute_tool(
+            tool_call["name"], tool_call["arguments"], run_id=state.run_id
+        )
 
         final_answer = call_llm_with_retry(
             system_prompt,
@@ -180,6 +184,7 @@ def run_agent(user_message):
                             用户问题：{user_message}
                             工具返回：{tool_result}
                             请根据工具信息回答用户。""",
+            run_id=state.run_id,
         )
 
         if final_answer.get("status") == "error":
