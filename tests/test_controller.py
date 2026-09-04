@@ -377,7 +377,7 @@ def test_run_planning_agent_success_output(monkeypatch):
 
     import agent.controller as controller_module
 
-    def fake_runtime(user_message):
+    def fake_runtime(user_message, state=None):
 
         state = AgentState(user_message)
 
@@ -403,7 +403,7 @@ def test_run_planning_agent_stop_output(monkeypatch):
 
     import agent.controller as controller_module
 
-    def fake_runtime(user_message):
+    def fake_runtime(user_message, state=None):
 
         state = AgentState(user_message)
 
@@ -460,7 +460,7 @@ def test_run_planning_agent_handles_final_llm_error(monkeypatch):
 
     import agent.controller as controller_module
 
-    def fake_runtime(user_message):
+    def fake_runtime(user_message, state=None):
 
         state = AgentState(user_message)
 
@@ -493,7 +493,7 @@ def test_run_planning_agent_handles_stop_llm_error(monkeypatch):
 
     import agent.controller as controller_module
 
-    def fake_runtime(user_message):
+    def fake_runtime(user_message, state=None):
 
         state = AgentState(user_message)
 
@@ -1045,7 +1045,7 @@ def test_run_planning_agent_retries_final_llm(monkeypatch):
                 "message": "planning completed",
             }
 
-    def fake_runtime(user_message):
+    def fake_runtime(user_message, state=None):
         return FakeState(), "success"
 
     monkeypatch.setattr(controller, "call_llm", fake_call_llm)
@@ -1091,7 +1091,7 @@ def test_run_planning_agent_retries_stop_message_llm(monkeypatch):
                 "message": "runtime failed",
             }
 
-    def fake_runtime(user_message):
+    def fake_runtime(user_message, state=None):
         return FakeState(), "stop"
 
     monkeypatch.setattr(controller, "call_llm", fake_call_llm)
@@ -1584,10 +1584,10 @@ def test_run_planning_agent_passes_run_id_to_final_llm(monkeypatch):
                 "run_id": self.run_id,
             }
 
-    state = FakeState()
+    fake_state = FakeState()
 
-    def fake_run_planning_runtime(user_message):
-        return state, "success"
+    def fake_run_planning_runtime(user_message, state=None):
+        return fake_state, "success"
 
     def fake_call_llm_with_retry(
         system_prompt,
@@ -1633,10 +1633,10 @@ def test_run_planning_agent_passes_run_id_to_stop_llm(monkeypatch):
                 "run_id": self.run_id,
             }
 
-    state = FakeState()
+    fake_state = FakeState()
 
-    def fake_run_planning_runtime(user_message):
-        return state, "stop"
+    def fake_run_planning_runtime(user_message, state=None):
+        return fake_state, "stop"
 
     def fake_call_llm_with_retry(
         system_prompt,
@@ -1865,3 +1865,108 @@ def test_run_agent_passes_same_run_id_to_final_llm(monkeypatch):
     assert result == "final answer"
     assert observed["first_llm_run_id"] is not None
     assert observed["final_llm_run_id"] == observed["first_llm_run_id"]
+
+
+def test_run_agent_passes_state_to_planning_agent(monkeypatch):
+    import agent.controller as controller
+
+    observed = {}
+
+    monkeypatch.setattr(
+        controller,
+        "route_task",
+        lambda user_message: "planning",
+    )
+
+    def fake_run_planning_agent(
+        user_message,
+        state=None,
+    ):
+        observed["state"] = state
+        return "planning result"
+
+    monkeypatch.setattr(
+        controller,
+        "run_planning_agent",
+        fake_run_planning_agent,
+    )
+
+    result = controller.run_agent("hello")
+
+    assert result == "planning result"
+    assert observed["state"] is not None
+    assert isinstance(observed["state"], controller.AgentState)
+    assert observed["state"].user_message == "hello"
+
+
+def test_run_planning_agent_passes_same_state_to_runtime(monkeypatch):
+    import agent.controller as controller
+
+    observed = {}
+
+    state = controller.AgentState("hello")
+
+    def fake_run_planning_runtime(
+        user_message,
+        state=None,
+    ):
+        observed["state"] = state
+        return state, "success"
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        controller,
+        "run_planning_runtime",
+        fake_run_planning_runtime,
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    result = controller.run_planning_agent(
+        "hello",
+        state=state,
+    )
+
+    assert result == "ok"
+    assert observed["state"] is state
+
+
+def test_run_planning_runtime_reuses_provided_state(monkeypatch):
+    import agent.controller as controller
+
+    state = controller.AgentState("hello")
+
+    monkeypatch.setattr(
+        controller,
+        "create_plan",
+        lambda user_message: {
+            "steps": [],
+        },
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "execute_plan",
+        lambda runtime_state, steps: runtime_state,
+    )
+
+    returned_state, runtime_status = controller.run_planning_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert returned_state is state
+    assert runtime_status == "success"
