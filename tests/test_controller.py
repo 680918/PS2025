@@ -2914,3 +2914,443 @@ def test_run_agent_simple_path_preserves_runtime_state(monkeypatch):
     assert observed["state"].user_message == "hello"
     assert observed["state"].status == "success"
     assert observed["state"].last_result["content"] == "simple answer"
+
+
+def test_run_planning_runtime_sets_success_status(monkeypatch):
+
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+
+    monkeypatch.setattr(
+        controller_module,
+        "create_plan",
+        lambda user_message: {
+            "steps": [],
+        },
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_plan",
+        lambda state, steps: state,
+    )
+
+    runtime_state, runtime_status = controller_module.run_planning_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_status == "success"
+    assert runtime_state.status == "success"
+
+
+def test_run_planning_runtime_sets_stop_status(monkeypatch):
+
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+
+    monkeypatch.setattr(
+        controller_module,
+        "create_plan",
+        lambda user_message: {
+            "steps": [{"step": 1}],
+        },
+    )
+
+    def fake_execute_plan(state, steps):
+        state.last_result = {
+            "status": "error",
+            "error_type": "test_error",
+            "message": "failed",
+            "retryable": False,
+            "replannable": False,
+        }
+        return state
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_plan",
+        fake_execute_plan,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "decide_failure_action",
+        lambda state, result: "stop",
+    )
+
+    runtime_state, runtime_status = controller_module.run_planning_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_status == "stop"
+    assert runtime_state.status == "stop"
+
+
+def test_run_planning_runtime_sets_success_status_after_retry(monkeypatch):
+
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+
+    plan = {
+        "steps": [
+            {
+                "step": 1,
+                "tool": "fake_tool",
+            }
+        ]
+    }
+
+    monkeypatch.setattr(
+        controller_module,
+        "create_plan",
+        lambda user_message: plan,
+    )
+
+    def fake_execute_plan(state, steps):
+        state.last_result = {
+            "status": "error",
+            "error_type": "temporary_error",
+            "message": "temporary failure",
+            "retryable": True,
+            "replannable": False,
+        }
+        state.current_step = 1
+        return state
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_plan",
+        fake_execute_plan,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "decide_failure_action",
+        lambda state, result: "retry",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "get_current_step",
+        lambda steps, current_step: steps[0],
+    )
+
+    def fake_execute_step(state, step):
+        state.last_result = {
+            "status": "success",
+            "content": "retry success",
+        }
+        state.current_step = 1
+        return state
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_step",
+        fake_execute_step,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "get_remaining_steps",
+        lambda steps, current_step: [],
+    )
+
+    runtime_state, runtime_status = controller_module.run_planning_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_status == "success"
+    assert runtime_state.status == "success"
+
+
+def test_run_planning_runtime_sets_stop_status_when_remaining_steps_fail_after_retry(
+    monkeypatch,
+):
+
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+
+    plan = {
+        "steps": [
+            {
+                "step": 1,
+                "tool": "fake_tool_1",
+            },
+            {
+                "step": 2,
+                "tool": "fake_tool_2",
+            },
+        ]
+    }
+
+    monkeypatch.setattr(
+        controller_module,
+        "create_plan",
+        lambda user_message: plan,
+    )
+
+    execute_plan_calls = {"count": 0}
+
+    def fake_execute_plan(state, steps):
+        execute_plan_calls["count"] += 1
+
+        if execute_plan_calls["count"] == 1:
+            state.last_result = {
+                "status": "error",
+                "error_type": "temporary_error",
+                "message": "temporary failure",
+                "retryable": True,
+                "replannable": False,
+            }
+            state.current_step = 1
+            return state
+
+        state.last_result = {
+            "status": "error",
+            "error_type": "remaining_step_error",
+            "message": "remaining step failed",
+            "retryable": False,
+            "replannable": False,
+        }
+        state.current_step = 2
+        return state
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_plan",
+        fake_execute_plan,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "decide_failure_action",
+        lambda state, result: "retry",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "get_current_step",
+        lambda steps, current_step: steps[0],
+    )
+
+    def fake_execute_step(state, step):
+        state.last_result = {
+            "status": "success",
+            "content": "retry success",
+        }
+        state.current_step = 1
+        return state
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_step",
+        fake_execute_step,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "get_remaining_steps",
+        lambda steps, current_step: [steps[1]],
+    )
+
+    runtime_state, runtime_status = controller_module.run_planning_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_status == "stop"
+    assert runtime_state.status == "stop"
+
+
+def test_run_planning_runtime_sets_stop_status_when_replan_fails(
+    monkeypatch,
+):
+
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+
+    original_plan = {
+        "steps": [
+            {
+                "step": 1,
+                "tool": "fake_tool_1",
+            }
+        ]
+    }
+
+    new_plan = {
+        "steps": [
+            {
+                "step": 1,
+                "tool": "fake_tool_2",
+            }
+        ]
+    }
+
+    monkeypatch.setattr(
+        controller_module,
+        "create_plan",
+        lambda user_message: original_plan,
+    )
+
+    execute_plan_calls = {"count": 0}
+
+    def fake_execute_plan(state, steps):
+        execute_plan_calls["count"] += 1
+
+        if execute_plan_calls["count"] == 1:
+            state.last_result = {
+                "status": "error",
+                "error_type": "planning_error",
+                "message": "initial plan failed",
+                "retryable": False,
+                "replannable": True,
+            }
+            state.current_step = 1
+            return state
+
+        state.last_result = {
+            "status": "error",
+            "error_type": "replan_error",
+            "message": "replan failed",
+            "retryable": False,
+            "replannable": False,
+        }
+        state.current_step = 1
+        return state
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_plan",
+        fake_execute_plan,
+    )
+
+    actions = iter(["replan", "stop"])
+
+    monkeypatch.setattr(
+        controller_module,
+        "decide_failure_action",
+        lambda state, result: next(actions),
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "get_failed_key",
+        lambda state: "fake_failure",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "replan_after_failure",
+        lambda user_message, failed_key, state: new_plan,
+    )
+
+    runtime_state, runtime_status = controller_module.run_planning_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_status == "stop"
+    assert runtime_state.status == "stop"
+
+
+def test_run_planning_runtime_sets_success_status_when_replan_succeeds(
+    monkeypatch,
+):
+
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+
+    original_plan = {
+        "steps": [
+            {
+                "step": 1,
+                "tool": "fake_tool_1",
+            }
+        ]
+    }
+
+    new_plan = {
+        "steps": [
+            {
+                "step": 1,
+                "tool": "fake_tool_2",
+            }
+        ]
+    }
+
+    monkeypatch.setattr(
+        controller_module,
+        "create_plan",
+        lambda user_message: original_plan,
+    )
+
+    execute_plan_calls = {"count": 0}
+
+    def fake_execute_plan(state, steps):
+        execute_plan_calls["count"] += 1
+
+        if execute_plan_calls["count"] == 1:
+            state.last_result = {
+                "status": "error",
+                "error_type": "planning_error",
+                "message": "initial plan failed",
+                "retryable": False,
+                "replannable": True,
+            }
+            state.current_step = 1
+            return state
+
+        state.last_result = {
+            "status": "success",
+            "content": "replan success",
+        }
+        state.current_step = 1
+        return state
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_plan",
+        fake_execute_plan,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "decide_failure_action",
+        lambda state, result: "replan",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "get_failed_key",
+        lambda state: "fake_failure",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "replan_after_failure",
+        lambda user_message, failed_key, state: new_plan,
+    )
+
+    runtime_state, runtime_status = controller_module.run_planning_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_status == "success"
+    assert runtime_state.status == "success"

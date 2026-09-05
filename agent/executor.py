@@ -53,17 +53,6 @@ def execute_step(state, step):
 
     arguments = resolve_arguments(state, step)
 
-    trace_logger = get_trace_logger(
-        logger,
-        run_id=state.run_id,
-    )
-
-    trace_logger.info(
-        "Step start: step=%s tool_name=%s",
-        step["step"],
-        tool_name,
-    )
-
     result = execute_tool(
         tool_name,
         arguments,
@@ -78,10 +67,6 @@ def execute_step(state, step):
             result.get("error_type"),
         )
     else:
-        trace_logger = get_trace_logger(
-            logger,
-            run_id=state.run_id,
-        )
         trace_logger.info(
             "Step success: step=%s tool_name=%s",
             step["step"],
