@@ -286,6 +286,11 @@ def run_planning_workflow(user_message):
     return state
 
 
+def finalize_runtime(state, status):
+    state.status = status
+    return state, state.status
+
+
 def run_planning_runtime(user_message, state=None):
 
     if state is None:
@@ -299,7 +304,7 @@ def run_planning_runtime(user_message, state=None):
 
     # 正常完成
     if state.last_result is None or state.last_result.get("status") != "error":
-        return state, "success"
+        return finalize_runtime(state, "success")
 
     action = decide_failure_action(state, state.last_result)
 
@@ -325,9 +330,10 @@ def run_planning_runtime(user_message, state=None):
                 state = execute_plan(state, remaining_steps)
 
             if state.last_result and state.last_result.get("status") == "error":
-                return state, "stop"
+                return finalize_runtime(state, "stop")
 
-            return state, "success"
+            state.status = "success"
+            return state, state.status
 
         # Retry仍失败 → 再判断
         next_action = decide_failure_action(state, state.last_result)
@@ -394,22 +400,24 @@ def run_planning_runtime(user_message, state=None):
                     if state.last_result and state.last_result.get("status") == "error":
                         return state, "stop"
 
-                    return state, "success"
+                    state.status = "success"
+                    return state, state.status
 
                 # Retry 后仍失败
                 final_action = decide_failure_action(state, state.last_result)
 
                 if final_action == "stop":
-                    return state, "stop"
-
-                return state, "stop"
+                    state.status = "stop"
+                    return state, state.status
 
             if final_action == "stop":
-                return state, "stop"
+                state.status = "stop"
+                return state, state.status
 
-        return state, "success"
-
-    return state, "stop"
+        state.status = "success"
+        return state, state.status
+    state.status = "stop"
+    return state, state.status
 
 
 def run_planning_agent(user_message, state=None):
