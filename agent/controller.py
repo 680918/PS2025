@@ -152,7 +152,7 @@ def run_agent(user_message):
     )
 
 
-def run_simple_agent(user_message, state=None):
+def run_simple_runtime(user_message, state=None):
 
     if state is None:
         state = AgentState(user_message)
@@ -190,8 +190,10 @@ def run_simple_agent(user_message, state=None):
     )
 
     if response.get("status") == "error":
-        if response.get("status") == "error":
-            return f"LLM调用失败：{response.get('message')}"
+        state.last_result = response
+        state.failure_stage = "initial_llm"
+        state.status = "stop"
+        return state, state.status
 
     tool_call = parse_tool_call(response["content"])
 
@@ -202,6 +204,14 @@ def run_simple_agent(user_message, state=None):
             run_id=state.run_id,
         )
 
+        state.add_tool_result(tool_call["name"], tool_result)
+        state.last_result = tool_result
+
+        if tool_result.get("status") == "error":
+            state.failure_stage = "tool"
+            state.status = "stop"
+            return state, state.status
+
         final_answer = call_llm_with_retry(
             system_prompt,
             f"""
@@ -211,12 +221,46 @@ def run_simple_agent(user_message, state=None):
             run_id=state.run_id,
         )
 
+        state.last_result = final_answer
+
         if final_answer.get("status") == "error":
-            return f"LLM调用失败：{final_answer.get('message', '未知错误')}"
+            state.failure_stage = "final_llm"
+            state.status = "stop"
+            return state, state.status
 
-        return final_answer["content"]
+        state.status = "success"
+        return state, state.status
 
-    return response["content"]
+    state.last_result = response
+    state.status = "success"
+    return state, state.status
+
+
+def run_simple_agent(user_message, state=None):
+
+    state, runtime_status = run_simple_runtime(
+        user_message,
+        state=state,
+    )
+
+    if runtime_status == "stop":
+        message = "未知错误"
+
+        if state.last_result:
+            message = state.last_result.get(
+                "message",
+                "未知错误",
+            )
+
+        if state.failure_stage == "tool":
+            return f"工具调用失败：{message}"
+
+        return f"LLM调用失败：{message}"
+
+    if state.last_result:
+        return state.last_result.get("content", "")
+
+    return ""
 
 
 def get_failed_key(state):
