@@ -53,3 +53,45 @@ def test_get_state_includes_run_id():
 
     assert "run_id" in data
     assert data["run_id"] == state.run_id
+
+
+def test_get_state_includes_status():
+
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+    state.status = "success"
+
+    result = state.get_state()
+
+    assert result["status"] == "success"
+
+
+def test_get_state_includes_last_result():
+
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+
+    state.last_result = {
+        "status": "error",
+        "error_type": "tool_error",
+        "message": "tool failed",
+    }
+
+    result = state.get_state()
+
+    assert result["last_result"]["status"] == "error"
+    assert result["last_result"]["error_type"] == "tool_error"
+
+
+def test_get_state_includes_failure_stage():
+
+    from agent.state import AgentState
+
+    state = AgentState("hello")
+    state.failure_stage = "tool"
+
+    result = state.get_state()
+
+    assert result["failure_stage"] == "tool"

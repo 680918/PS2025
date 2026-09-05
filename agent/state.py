@@ -19,6 +19,10 @@ class AgentState:
         self.max_replans = 1
 
         self.last_result = None
+        self.status = None  # New attribute to track the status of the last operation
+        self.failure_stage = (
+            None  # New attribute to track the stage where the failure occurred
+        )
 
     def update_step(self):
 
@@ -52,6 +56,9 @@ class AgentState:
             "plan": self.plan,
             "current_step": self.current_step,
             "tool_results": self.tool_results,
+            "status": self.status,
+            "failure_stage": self.failure_stage,
+            "last_result": self.last_result,
         }
 
     def get_tool_result(self, key):

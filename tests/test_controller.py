@@ -2034,3 +2034,883 @@ def test_run_agent_passes_same_state_to_simple_agent(monkeypatch):
     assert isinstance(observed["state"], controller.AgentState)
     assert observed["state"].user_message == "hello"
     assert observed["user_message"] == "hello"
+
+
+def test_run_simple_agent_stops_when_tool_fails(monkeypatch):
+
+    import agent.controller as controller_module
+
+    call_count = {"llm": 0}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        call_count["llm"] += 1
+
+        return {
+            "status": "success",
+            "content": "<tool_call>fake_tool</tool_call>",
+        }
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+    ):
+        return {
+            "status": "error",
+            "error_type": "tool_error",
+            "message": "tool failed",
+            "content": None,
+            "retryable": False,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert call_count["llm"] == 1
+    assert state.last_result["status"] == "error"
+    assert state.last_result["error_type"] == "tool_error"
+    assert "tool failed" in result
+
+
+def test_run_simple_agent_records_successful_tool_result(monkeypatch):
+
+    import agent.controller as controller_module
+
+    call_count = {"llm": 0}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        call_count["llm"] += 1
+
+        if call_count["llm"] == 1:
+            return {
+                "status": "success",
+                "content": "<tool_call>fake_tool</tool_call>",
+            }
+
+        return {
+            "status": "success",
+            "content": "final answer",
+        }
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": {"value": 123},
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert result == "final answer"
+
+    assert state.last_result["status"] == "success"
+
+    assert state.tool_results["fake_tool"]["content"]["value"] == 123
+
+
+def test_run_simple_agent_records_initial_llm_failure(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "LLM timeout",
+            "retryable": True,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert state.last_result is not None
+    assert state.last_result["status"] == "error"
+    assert state.last_result["error_type"] == "llm_timeout"
+    assert "LLM timeout" in result
+
+
+def test_run_simple_agent_records_final_llm_failure(monkeypatch):
+
+    import agent.controller as controller_module
+
+    call_count = {"llm": 0}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        call_count["llm"] += 1
+
+        if call_count["llm"] == 1:
+            return {
+                "status": "success",
+                "content": "<tool_call>fake_tool</tool_call>",
+            }
+
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "final LLM timeout",
+            "retryable": True,
+            "replannable": False,
+        }
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": {"value": 123},
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert call_count["llm"] == 2
+    assert state.last_result is not None
+    assert state.last_result["status"] == "error"
+    assert state.last_result["error_type"] == "llm_timeout"
+    assert "final LLM timeout" in result
+
+
+def test_run_simple_agent_records_final_llm_success(monkeypatch):
+
+    import agent.controller as controller_module
+
+    call_count = {"llm": 0}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        call_count["llm"] += 1
+
+        if call_count["llm"] == 1:
+            return {
+                "status": "success",
+                "content": "<tool_call>fake_tool</tool_call>",
+            }
+
+        return {
+            "status": "success",
+            "content": "final answer",
+        }
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": {"value": 123},
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert result == "final answer"
+    assert state.last_result is not None
+    assert state.last_result["status"] == "success"
+    assert state.last_result["content"] == "final answer"
+
+
+def test_run_simple_agent_records_direct_llm_success(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": "direct answer",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert result == "direct answer"
+    assert state.last_result is not None
+    assert state.last_result["status"] == "success"
+    assert state.last_result["content"] == "direct answer"
+
+
+def test_run_simple_agent_sets_success_status_on_direct_answer(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": "direct answer",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert result == "direct answer"
+    assert state.status == "success"
+
+
+def test_run_simple_agent_sets_stop_status_on_initial_llm_failure(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "LLM timeout",
+            "retryable": True,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert "LLM timeout" in result
+    assert state.status == "stop"
+
+
+def test_run_simple_agent_sets_stop_status_on_tool_failure(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_call_llm_with_retry(system_prompt, user_message, run_id=None):
+        return {
+            "status": "success",
+            "content": "<tool_call>fake_tool</tool_call>",
+        }
+
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
+        return {
+            "status": "error",
+            "error_type": "tool_error",
+            "message": "tool failed",
+            "retryable": False,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert "tool failed" in result
+    assert state.status == "stop"
+
+
+def test_run_simple_agent_sets_stop_status_on_final_llm_failure(monkeypatch):
+
+    import agent.controller as controller_module
+
+    call_count = {"llm": 0}
+
+    def fake_call_llm_with_retry(system_prompt, user_message, run_id=None):
+        call_count["llm"] += 1
+
+        if call_count["llm"] == 1:
+            return {
+                "status": "success",
+                "content": "<tool_call>fake_tool</tool_call>",
+            }
+
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "final timeout",
+            "retryable": True,
+            "replannable": False,
+        }
+
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
+        return {
+            "status": "success",
+            "content": {"value": 123},
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert "final timeout" in result
+    assert state.status == "stop"
+
+
+def test_run_simple_agent_sets_success_status_on_final_llm_success(monkeypatch):
+
+    import agent.controller as controller_module
+
+    call_count = {"llm": 0}
+
+    def fake_call_llm_with_retry(system_prompt, user_message, run_id=None):
+        call_count["llm"] += 1
+
+        if call_count["llm"] == 1:
+            return {
+                "status": "success",
+                "content": "<tool_call>fake_tool</tool_call>",
+            }
+
+        return {
+            "status": "success",
+            "content": "final answer",
+        }
+
+    def fake_execute_tool(tool_name, arguments=None, run_id=None):
+        return {
+            "status": "success",
+            "content": {"value": 123},
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
+
+    assert result == "final answer"
+    assert state.status == "success"
+
+
+def test_run_simple_runtime_returns_state_and_success_status(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": "direct answer",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    runtime_state, runtime_status = controller_module.run_simple_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_state is state
+    assert runtime_status == "success"
+    assert runtime_state.last_result["content"] == "direct answer"
+
+
+def test_run_simple_runtime_returns_state_and_stop_status_on_tool_failure(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": "<tool_call>fake_tool</tool_call>",
+        }
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+    ):
+        return {
+            "status": "error",
+            "error_type": "tool_error",
+            "message": "tool failed",
+            "retryable": False,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    runtime_state, runtime_status = controller_module.run_simple_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_state is state
+    assert runtime_status == "stop"
+    assert runtime_state.status == "stop"
+    assert runtime_state.last_result["status"] == "error"
+    assert runtime_state.last_result["error_type"] == "tool_error"
+
+
+def test_run_simple_runtime_returns_stop_on_initial_llm_failure(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "initial timeout",
+            "retryable": True,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    runtime_state, runtime_status = controller_module.run_simple_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_state is state
+    assert runtime_status == "stop"
+    assert runtime_state.status == "stop"
+    assert runtime_state.last_result["status"] == "error"
+    assert runtime_state.last_result["error_type"] == "llm_timeout"
+
+
+def test_run_simple_runtime_returns_stop_on_final_llm_failure(monkeypatch):
+
+    import agent.controller as controller_module
+
+    call_count = {"llm": 0}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        call_count["llm"] += 1
+
+        if call_count["llm"] == 1:
+            return {
+                "status": "success",
+                "content": "<tool_call>fake_tool</tool_call>",
+            }
+
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "final timeout",
+            "retryable": True,
+            "replannable": False,
+        }
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": {"value": 123},
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    runtime_state, runtime_status = controller_module.run_simple_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_state is state
+    assert runtime_status == "stop"
+    assert runtime_state.status == "stop"
+    assert runtime_state.last_result["status"] == "error"
+    assert runtime_state.last_result["error_type"] == "llm_timeout"
+
+
+def test_run_simple_runtime_records_tool_failure_stage(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": "<tool_call>fake_tool</tool_call>",
+        }
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+    ):
+        return {
+            "status": "error",
+            "error_type": "tool_timeout",
+            "message": "tool timeout",
+            "retryable": True,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    runtime_state, runtime_status = controller_module.run_simple_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_status == "stop"
+    assert runtime_state.failure_stage == "tool"
+
+
+def test_run_simple_runtime_records_initial_llm_failure_stage(monkeypatch):
+
+    import agent.controller as controller_module
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "initial timeout",
+            "retryable": True,
+            "replannable": False,
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    runtime_state, runtime_status = controller_module.run_simple_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_status == "stop"
+    assert runtime_state.failure_stage == "initial_llm"
+
+
+def test_run_simple_runtime_records_final_llm_failure_stage(monkeypatch):
+
+    import agent.controller as controller_module
+
+    call_count = {"llm": 0}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        call_count["llm"] += 1
+
+        if call_count["llm"] == 1:
+            return {
+                "status": "success",
+                "content": "<tool_call>fake_tool</tool_call>",
+            }
+
+        return {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "final timeout",
+            "retryable": True,
+            "replannable": False,
+        }
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+    ):
+        return {
+            "status": "success",
+            "content": {"value": 123},
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state = controller_module.AgentState("hello")
+
+    runtime_state, runtime_status = controller_module.run_simple_runtime(
+        "hello",
+        state=state,
+    )
+
+    assert runtime_status == "stop"
+    assert runtime_state.failure_stage == "final_llm"
+
+
+def test_run_agent_simple_path_preserves_runtime_state(monkeypatch):
+
+    import agent.controller as controller_module
+
+    observed = {}
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    def fake_run_simple_agent(user_message, state=None):
+        observed["state"] = state
+
+        state.status = "success"
+        state.last_result = {
+            "status": "success",
+            "content": "simple answer",
+        }
+
+        return "simple answer"
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    result = controller_module.run_agent("hello")
+
+    assert result == "simple answer"
+    assert observed["state"] is not None
+    assert observed["state"].user_message == "hello"
+    assert observed["state"].status == "success"
+    assert observed["state"].last_result["content"] == "simple answer"
