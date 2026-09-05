@@ -1,7 +1,6 @@
 from agent.state import AgentState
 from agent.controller import (
     decide_failure_action,
-    run_agent,
     run_planning_workflow,
     run_planning_runtime,
 )
@@ -332,7 +331,7 @@ def test_direct_replan_then_retryable_error_should_stop(monkeypatch):
 
 
 @pytest.mark.workflow
-def test_run_agent_simple_without_tool(monkeypatch):
+def test_run_simple_agent_without_tool(monkeypatch):
 
     import agent.controller as controller_module
 
@@ -340,15 +339,24 @@ def test_run_agent_simple_without_tool(monkeypatch):
 
         return {"content": "这是一个简单回答"}
 
-    monkeypatch.setattr(controller_module, "call_llm", fake_call_llm)
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm",
+        fake_call_llm,
+    )
 
-    result = controller_module.run_agent("你好")
+    state = controller_module.AgentState("你好")
+
+    result = controller_module.run_simple_agent(
+        "你好",
+        state=state,
+    )
 
     assert result == "这是一个简单回答"
 
 
 @pytest.mark.workflow
-def test_run_agent_simple_with_tool(monkeypatch):
+def test_run_simple_agent_with_tool(monkeypatch):
 
     import agent.controller as controller_module
 
@@ -363,9 +371,18 @@ def test_run_agent_simple_with_tool(monkeypatch):
 
         return {"content": "这是根据用户画像生成的回答"}
 
-    monkeypatch.setattr(controller_module, "call_llm", fake_call_llm)
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm",
+        fake_call_llm,
+    )
 
-    result = controller_module.run_agent("介绍一下我自己")
+    state = controller_module.AgentState("hello")
+
+    result = controller_module.run_simple_agent(
+        "hello",
+        state=state,
+    )
 
     assert call_count["llm"] == 2
 
@@ -429,7 +446,9 @@ def test_run_planning_agent_stop_output(monkeypatch):
     assert result == "当前任务无法完成"
 
 
-def test_run_agent_handles_llm_error(monkeypatch):
+def test_run_simple_agent_handles_llm_error(monkeypatch):
+
+    import agent.controller as controller_module
 
     def fake_call_llm(
         system_prompt,
@@ -444,14 +463,19 @@ def test_run_agent_handles_llm_error(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "agent.controller.call_llm",
+        controller_module,
+        "call_llm",
         fake_call_llm,
     )
 
-    result = run_agent("今天学习什么？")
+    state = controller_module.AgentState("今天学习什么？")
+
+    result = controller_module.run_simple_agent(
+        "今天学习什么？",
+        state=state,
+    )
 
     assert isinstance(result, str)
-
     assert "LLM" in result
 
 
@@ -572,9 +596,9 @@ def test_replannable_error_should_replan():
     assert action == "replan"
 
 
-def test_run_agent_retries_retryable_llm_error(monkeypatch):
+def test_run_simple_agent_retries_retryable_llm_error(monkeypatch):
 
-    import agent.controller as controller
+    import agent.controller as controller_module
 
     responses = [
         {
@@ -594,18 +618,19 @@ def test_run_agent_retries_retryable_llm_error(monkeypatch):
     def fake_call_llm(system_prompt, user_message):
         return responses.pop(0)
 
-    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
-    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(controller_module, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller_module.time, "sleep", lambda seconds: None)
 
-    result = controller.run_agent("你好")
+    state = controller_module.AgentState("你好")
+    result = controller_module.run_simple_agent("你好", state=state)
 
     assert result == "最终回答"
     assert responses == []
 
 
-def test_run_agent_does_not_retry_non_retryable_llm_error(monkeypatch):
+def test_run_simple_agent_does_not_retry_non_retryable_llm_error(monkeypatch):
 
-    import agent.controller as controller
+    import agent.controller as controller_module
 
     calls = []
 
@@ -620,17 +645,18 @@ def test_run_agent_does_not_retry_non_retryable_llm_error(monkeypatch):
             "replannable": False,
         }
 
-    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller_module, "call_llm", fake_call_llm)
 
-    result = controller.run_agent("你好")
+    state = controller_module.AgentState("你好")
+    result = controller_module.run_simple_agent("你好", state=state)
 
     assert result == "LLM调用失败：Missing DEEPSEEK_API_KEY"
     assert len(calls) == 1
 
 
-def test_run_agent_retry_fails_returns_error(monkeypatch):
+def test_run_simple_agent_retry_fails_returns_error(monkeypatch):
 
-    import agent.controller as controller
+    import agent.controller as controller_module
 
     calls = []
 
@@ -646,18 +672,19 @@ def test_run_agent_retry_fails_returns_error(monkeypatch):
             "replannable": False,
         }
 
-    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
-    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(controller_module, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller_module.time, "sleep", lambda seconds: None)
 
-    result = controller.run_agent("你好")
+    state = controller_module.AgentState("你好")
+    result = controller_module.run_simple_agent("你好", state=state)
 
     assert result == "LLM调用失败：timeout"
     assert len(calls) == 2
 
 
-def test_run_agent_retries_final_llm_after_tool(monkeypatch):
+def test_run_simple_agent_retries_final_llm_after_tool(monkeypatch):
 
-    import agent.controller as controller
+    import agent.controller as controller_module
 
     llm_responses = [
         {
@@ -687,11 +714,12 @@ def test_run_agent_retries_final_llm_after_tool(monkeypatch):
             "data": {"name": "test user"},
         }
 
-    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
-    monkeypatch.setattr(controller, "execute_tool", fake_execute_tool)
-    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(controller_module, "call_llm", fake_call_llm)
+    monkeypatch.setattr(controller_module, "execute_tool", fake_execute_tool)
+    monkeypatch.setattr(controller_module.time, "sleep", lambda seconds: None)
 
-    result = controller.run_agent("介绍一下我")
+    state = controller_module.AgentState("介绍一下我")
+    result = controller_module.run_simple_agent("介绍一下我", state=state)
 
     assert result == "最终回答"
     assert llm_responses == []
@@ -1668,19 +1696,19 @@ def test_run_planning_agent_passes_run_id_to_stop_llm(monkeypatch):
     assert observed["run_id"] == "run-123"
 
 
-def test_run_agent_passes_run_id_to_llm(monkeypatch):
-    import agent.controller as controller
+def test_run_simple_agent_passes_run_id_to_llm(monkeypatch):
+    import agent.controller as controller_module
 
     observed = {}
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "route_task",
         lambda user_message: "simple",
     )
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "load_tool_schemas",
         lambda: [],
     )
@@ -1698,20 +1726,21 @@ def test_run_agent_passes_run_id_to_llm(monkeypatch):
         }
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "call_llm_with_retry",
         fake_call_llm_with_retry,
     )
 
-    result = controller.run_agent("hello")
+    state = controller_module.AgentState("hello")
+    result = controller_module.run_simple_agent("hello", state=state)
 
     assert result == "hello"
     assert observed["run_id"] is not None
     assert isinstance(observed["run_id"], str)
 
 
-def test_run_agent_passes_same_run_id_to_tool(monkeypatch):
-    import agent.controller as controller
+def test_run_simple_agent_passes_same_run_id_to_tool(monkeypatch):
+    import agent.controller as controller_module
 
     observed = {
         "llm_run_id": None,
@@ -1719,19 +1748,19 @@ def test_run_agent_passes_same_run_id_to_tool(monkeypatch):
     }
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "route_task",
         lambda user_message: "simple",
     )
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "load_tool_schemas",
         lambda: [],
     )
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "parse_tool_call",
         lambda content: {
             "name": "fake_tool",
@@ -1774,26 +1803,26 @@ def test_run_agent_passes_same_run_id_to_tool(monkeypatch):
         }
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "call_llm_with_retry",
         fake_call_llm_with_retry,
     )
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "execute_tool",
         fake_execute_tool,
     )
-
-    result = controller.run_agent("hello")
+    state = controller_module.AgentState("hello")
+    result = controller_module.run_simple_agent("hello", state=state)
 
     assert result == "final answer"
     assert observed["llm_run_id"] is not None
     assert observed["tool_run_id"] == observed["llm_run_id"]
 
 
-def test_run_agent_passes_same_run_id_to_final_llm(monkeypatch):
-    import agent.controller as controller
+def test_run_simple_agent_passes_same_run_id_to_final_llm(monkeypatch):
+    import agent.controller as controller_module
 
     observed = {
         "first_llm_run_id": None,
@@ -1801,19 +1830,19 @@ def test_run_agent_passes_same_run_id_to_final_llm(monkeypatch):
     }
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "route_task",
         lambda user_message: "simple",
     )
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "load_tool_schemas",
         lambda: [],
     )
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "parse_tool_call",
         lambda content: {
             "name": "fake_tool",
@@ -1822,7 +1851,7 @@ def test_run_agent_passes_same_run_id_to_final_llm(monkeypatch):
     )
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "execute_tool",
         lambda tool_name, arguments=None, run_id=None: {
             "status": "success",
@@ -1855,12 +1884,12 @@ def test_run_agent_passes_same_run_id_to_final_llm(monkeypatch):
         }
 
     monkeypatch.setattr(
-        controller,
+        controller_module,
         "call_llm_with_retry",
         fake_call_llm_with_retry,
     )
-
-    result = controller.run_agent("hello")
+    state = controller_module.AgentState("hello")
+    result = controller_module.run_simple_agent("hello", state=state)
 
     assert result == "final answer"
     assert observed["first_llm_run_id"] is not None
@@ -1970,3 +1999,38 @@ def test_run_planning_runtime_reuses_provided_state(monkeypatch):
 
     assert returned_state is state
     assert runtime_status == "success"
+
+
+def test_run_agent_passes_same_state_to_simple_agent(monkeypatch):
+    import agent.controller as controller
+
+    observed = {}
+
+    monkeypatch.setattr(
+        controller,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    def fake_run_simple_agent(
+        user_message,
+        state=None,
+    ):
+        observed["state"] = state
+        observed["user_message"] = user_message
+        return "simple result"
+
+    monkeypatch.setattr(
+        controller,
+        "run_simple_agent",
+        fake_run_simple_agent,
+        raising=False,
+    )
+
+    result = controller.run_agent("hello")
+
+    assert result == "simple result"
+    assert observed["state"] is not None
+    assert isinstance(observed["state"], controller.AgentState)
+    assert observed["state"].user_message == "hello"
+    assert observed["user_message"] == "hello"

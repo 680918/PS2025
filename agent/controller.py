@@ -146,9 +146,24 @@ def run_agent(user_message):
             state=state,
         )
 
+    return run_simple_agent(
+        user_message,
+        state=state,
+    )
+
+
+def run_simple_agent(user_message, state=None):
+
+    if state is None:
+        state = AgentState(user_message)
+
     tool_schemas = load_tool_schemas()
 
-    tool_description = json.dumps(tool_schemas, ensure_ascii=False, indent=2)
+    tool_description = json.dumps(
+        tool_schemas,
+        ensure_ascii=False,
+        indent=2,
+    )
 
     system_prompt = f"""
     你是Personal Growth AI Coach。
@@ -168,7 +183,11 @@ def run_agent(user_message):
     根据用户问题自主选择工具。
     """
 
-    response = call_llm_with_retry(system_prompt, user_message, run_id=state.run_id)
+    response = call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=state.run_id,
+    )
 
     if response.get("status") == "error":
         if response.get("status") == "error":
@@ -178,7 +197,9 @@ def run_agent(user_message):
 
     if tool_call:
         tool_result = execute_tool(
-            tool_call["name"], tool_call["arguments"], run_id=state.run_id
+            tool_call["name"],
+            tool_call["arguments"],
+            run_id=state.run_id,
         )
 
         final_answer = call_llm_with_retry(
@@ -195,8 +216,7 @@ def run_agent(user_message):
 
         return final_answer["content"]
 
-    else:
-        return response["content"]
+    return response["content"]
 
 
 def get_failed_key(state):
