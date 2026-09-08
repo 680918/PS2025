@@ -2,10 +2,17 @@ import uuid
 
 
 class AgentState:
-    def __init__(self, user_message):
+    def __init__(
+        self,
+        user_message,
+        memory_service=None,
+    ):
 
         self.user_message = user_message
         self.run_id = str(uuid.uuid4())
+
+        self.memory_service = memory_service
+        self.memory_context = {}
 
         self.plan = []
 
@@ -48,11 +55,15 @@ class AgentState:
 
         self.tool_results[tool_name] = result
 
+    def set_memory_context(self, memory_context):
+        self.memory_context = memory_context
+
     def get_state(self):
 
         return {
             "run_id": self.run_id,
             "user_message": self.user_message,
+            "memory_context": self.memory_context,
             "plan": self.plan,
             "current_step": self.current_step,
             "tool_results": self.tool_results,

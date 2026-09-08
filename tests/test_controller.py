@@ -1,12 +1,18 @@
+import agent.executor as executor_module
+import pytest
+
+from unittest.mock import Mock
+from memory.service import MemoryService
+from memory.store import MemoryStore
 from agent.state import AgentState
 from agent.controller import (
     decide_failure_action,
     run_planning_workflow,
     run_planning_runtime,
+    run_planning_agent,
+    run_agent,
+    run_simple_runtime,
 )
-import agent.executor as executor_module
-from unittest.mock import Mock
-import pytest
 
 
 @pytest.mark.unit
@@ -3354,3 +3360,215 @@ def test_run_planning_runtime_sets_success_status_when_replan_succeeds(
 
     assert runtime_status == "success"
     assert runtime_state.status == "success"
+
+
+def test_run_agent_injects_memory_context(monkeypatch):
+
+    store = MemoryStore()
+    service = MemoryService(store)
+
+    service.remember(
+        memory_type="skill",
+        memory_key="python_skill",
+        content="用户正在学习 Python",
+        importance=0.8,
+        confidence=0.9,
+        source="user_confirmed",
+    )
+
+    captured_state = {}
+
+    def fake_run_simple_agent(user_message, state=None):
+        captured_state["state"] = state
+        return "ok"
+
+    monkeypatch.setattr(
+        "agent.controller.route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        "agent.controller.run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    result = run_agent(
+        "我今天应该学习什么？",
+        memory_service=service,
+    )
+
+    assert result == "ok"
+
+    state = captured_state["state"]
+
+    assert "skill" in state.memory_context
+    assert len(state.memory_context["skill"]) == 1
+    assert state.memory_context["skill"][0]["memory_key"] == "python_skill"
+
+
+def test_simple_runtime_includes_memory_context_in_prompt(monkeypatch):
+
+    state = AgentState("我今天应该学习什么？")
+
+    state.set_memory_context(
+        {
+            "skill": [
+                {
+                    "memory_key": "python_skill",
+                    "content": "用户正在学习 Python",
+                    "importance": 0.8,
+                    "confidence": 0.9,
+                    "source": "user_confirmed",
+                }
+            ],
+            "profile": [],
+            "learning": [],
+            "project": [],
+            "experience": [],
+        }
+    )
+
+    captured = {}
+
+    def fake_call_llm_with_retry(system_prompt, user_message, run_id=None):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "继续学习 Python。",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    state, status = run_simple_runtime(
+        "我今天应该学习什么？",
+        state=state,
+    )
+
+    assert status == "success"
+    assert "用户正在学习 Python" in captured["system_prompt"]
+
+
+def test_planning_agent_includes_memory_context_in_final_prompt(monkeypatch):
+
+    state = AgentState("我今天应该学习什么？")
+
+    state.set_memory_context(
+        {
+            "profile": [],
+            "skill": [
+                {
+                    "memory_key": "python_skill",
+                    "content": "用户正在学习 Python",
+                    "importance": 0.8,
+                    "confidence": 0.9,
+                    "source": "user_confirmed",
+                }
+            ],
+            "learning": [],
+            "project": [],
+            "experience": [],
+        }
+    )
+
+    state.status = "success"
+    state.last_result = {
+        "status": "success",
+        "content": "学习计划已生成",
+    }
+
+    captured = {}
+
+    def fake_run_planning_runtime(user_message, state=None):
+        return state, "success"
+
+    def fake_call_llm_with_retry(system_prompt, user_message, run_id=None):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "今天继续学习 Python。",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.run_planning_runtime",
+        fake_run_planning_runtime,
+    )
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    result = run_planning_agent(
+        "我今天应该学习什么？",
+        state=state,
+    )
+
+    assert result == "今天继续学习 Python。"
+
+    assert "用户正在学习 Python" in captured["system_prompt"]
+
+
+def test_simple_runtime_passes_memory_service_to_execute_tool(monkeypatch):
+
+    from memory.service import MemoryService
+    from memory.store import MemoryStore
+
+    store = MemoryStore()
+    memory_service = MemoryService(store)
+
+    captured = {}
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+        memory_service=None,
+    ):
+        captured["memory_service"] = memory_service
+
+        return {
+            "status": "success",
+            "tool_name": tool_name,
+            "data": {},
+        }
+
+    responses = [
+        {
+            "status": "success",
+            "content": "<tool_call>get_user_profile</tool_call>",
+        },
+        {
+            "status": "success",
+            "content": "完成",
+        },
+    ]
+
+    def fake_call_llm_with_retry(*args, **kwargs):
+        return responses.pop(0)
+
+    monkeypatch.setattr(
+        "agent.controller.execute_tool",
+        fake_execute_tool,
+    )
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    state = AgentState(
+        "测试",
+        memory_service=memory_service,
+    )
+
+    run_simple_runtime(
+        "测试",
+        state=state,
+    )
+
+    assert captured["memory_service"] is memory_service

@@ -134,9 +134,19 @@ def call_llm_with_retry(system_prompt, user_message, run_id=None):
     return response
 
 
-def run_agent(user_message):
+def run_agent(
+    user_message,
+    memory_service=None,
+):
 
-    state = AgentState(user_message)
+    state = AgentState(
+        user_message,
+        memory_service=memory_service,
+    )
+
+    if memory_service is not None:
+        memory_context = memory_service.get_context()
+        state.set_memory_context(memory_context)
 
     task_type = route_task(user_message)
 
@@ -165,8 +175,25 @@ def run_simple_runtime(user_message, state=None):
         indent=2,
     )
 
+    memory_description = json.dumps(
+        state.memory_context,
+        ensure_ascii=False,
+        indent=2,
+    )
+
     system_prompt = f"""
     你是Personal Growth AI Coach。
+
+    以下是与当前用户有关的长期记忆：
+    {memory_description}
+
+    使用这些记忆时必须遵守：
+    1. 只能使用记忆中明确存在的信息。
+    2. 不得根据记忆推测新的用户事实。
+    3. 如果记忆为空或信息不足，不要自行补充。
+    4. 用户本轮明确提供的新信息优先于旧记忆。
+    5. 不要向用户展示内部 Memory JSON 或系统实现细节。
+
 
     你可以使用以下工具：
 
@@ -198,10 +225,17 @@ def run_simple_runtime(user_message, state=None):
     tool_call = parse_tool_call(response["content"])
 
     if tool_call:
+        tool_kwargs = {
+            "run_id": state.run_id,
+        }
+
+        if state.memory_service is not None:
+            tool_kwargs["memory_service"] = state.memory_service
+
         tool_result = execute_tool(
             tool_call["name"],
             tool_call["arguments"],
-            run_id=state.run_id,
+            **tool_kwargs,
         )
 
         state.add_tool_result(tool_call["name"], tool_result)
