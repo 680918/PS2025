@@ -152,8 +152,11 @@ def create_learning_plan(user_profile, skill_map=None):
     }
 
 
-def get_user_profile():
-    return get_user_profile_structured()
+def get_user_profile(memory_service=None):
+    if memory_service is None:
+        return get_user_profile_structured()
+
+    return get_user_profile_from_memory(memory_service)
 
 
 def get_skill_map(memory_service=None):
