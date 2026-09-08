@@ -1,5 +1,8 @@
-from agent.state import AgentState
 import pytest
+
+from agent.state import AgentState
+from memory.service import MemoryService
+from memory.store import MemoryStore
 
 pytestmark = pytest.mark.unit
 
@@ -87,11 +90,56 @@ def test_get_state_includes_last_result():
 
 def test_get_state_includes_failure_stage():
 
-    from agent.state import AgentState
-
     state = AgentState("hello")
     state.failure_stage = "tool"
 
     result = state.get_state()
 
     assert result["failure_stage"] == "tool"
+
+
+def test_agent_state_stores_memory_context():
+
+    state = AgentState("我今天应该学习什么？")
+
+    memory_context = {
+        "skill": [
+            {
+                "memory_key": "python_skill",
+                "content": "用户正在学习 Python",
+            }
+        ]
+    }
+
+    state.set_memory_context(memory_context)
+
+    assert state.memory_context == memory_context
+    assert state.get_state()["memory_context"] == memory_context
+
+
+def test_agent_state_stores_memory_service_dependency():
+
+    store = MemoryStore()
+    memory_service = MemoryService(store)
+
+    state = AgentState(
+        "测试问题",
+        memory_service=memory_service,
+    )
+
+    assert state.memory_service is memory_service
+
+
+def test_memory_service_dependency_is_not_exposed_in_state_data():
+
+    store = MemoryStore()
+    memory_service = MemoryService(store)
+
+    state = AgentState(
+        "测试问题",
+        memory_service=memory_service,
+    )
+
+    state_data = state.get_state()
+
+    assert "memory_service" not in state_data

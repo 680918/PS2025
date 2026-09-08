@@ -437,3 +437,73 @@ def test_execute_tool_logs_failure_duration(monkeypatch):
     assert args[0] == "fake_tool"
     assert args[1] == "file_not_found"
     assert args[2] == 250
+
+
+def test_get_skill_map_uses_memory_service():
+    import json
+
+    from memory.service import MemoryService
+    from memory.store import MemoryStore
+    from tools.tools import get_skill_map
+
+    service = MemoryService(MemoryStore())
+
+    service.remember(
+        memory_type="skill",
+        memory_key="摄影",
+        content=json.dumps(
+            {
+                "level": 42,
+                "evidence": ["能够使用手动曝光"],
+                "weakness": ["构图能力需要加强"],
+            },
+            ensure_ascii=False,
+        ),
+        importance=0.9,
+        confidence=1.0,
+        source="user_confirmed",
+    )
+
+    result = get_skill_map(
+        memory_service=service,
+    )
+
+    assert result["status"] == "success"
+    assert result["tool_name"] == "get_skill_map"
+
+    assert result["data"]["摄影"]["level"] == 42
+    assert "能够使用手动曝光" in result["data"]["摄影"]["evidence"]
+
+
+def test_execute_tool_injects_memory_service_into_skill_map():
+    import json
+
+    from memory.service import MemoryService
+    from memory.store import MemoryStore
+    from tools.tools import execute_tool
+
+    service = MemoryService(MemoryStore())
+
+    service.remember(
+        memory_type="skill",
+        memory_key="电路基础",
+        content=json.dumps(
+            {
+                "level": 35,
+                "evidence": ["理解欧姆定律"],
+                "weakness": ["故障诊断经验不足"],
+            },
+            ensure_ascii=False,
+        ),
+        importance=0.9,
+        confidence=1.0,
+        source="user_confirmed",
+    )
+
+    result = execute_tool(
+        "get_skill_map",
+        memory_service=service,
+    )
+
+    assert result["status"] == "success"
+    assert result["data"]["电路基础"]["level"] == 35

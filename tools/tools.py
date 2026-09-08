@@ -7,6 +7,10 @@ from memory.memory import get_memory_context
 from memory.memory import get_user_profile_structured, get_skill_map_structured
 from core.errors import make_error
 from core.logging_context import get_trace_logger
+from memory.adapters import (
+    get_skill_map_from_memory,
+    get_user_profile_from_memory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -152,9 +156,11 @@ def get_user_profile():
     return get_user_profile_structured()
 
 
-def get_skill_map():
+def get_skill_map(memory_service=None):
+    if memory_service is None:
+        return get_skill_map_structured()
 
-    return get_skill_map_structured()
+    return get_skill_map_from_memory(memory_service)
 
 
 TOOLS = {
@@ -181,7 +187,13 @@ def log_tool_failure(
     )
 
 
-def execute_tool(tool_name, arguments=None, run_id=None):
+def execute_tool(
+    tool_name,
+    arguments=None,
+    run_id=None,
+    memory_service=None,
+):
+
     trace_logger = get_trace_logger(
         logger,
         run_id=run_id,
@@ -212,8 +224,16 @@ def execute_tool(tool_name, arguments=None, run_id=None):
         )
 
     try:
-        if arguments:
-            result = tool(**arguments)
+        tool_arguments = dict(arguments or {})
+
+        if (
+            tool_name in {"get_user_profile", "get_skill_map"}
+            and memory_service is not None
+        ):
+            tool_arguments["memory_service"] = memory_service
+
+        if tool_arguments:
+            result = tool(**tool_arguments)
         else:
             result = tool()
 
