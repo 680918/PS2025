@@ -1715,8 +1715,14 @@ def test_run_simple_agent_passes_run_id_to_llm(monkeypatch):
 
     monkeypatch.setattr(
         controller_module,
-        "load_tool_schemas",
-        lambda: [],
+        "route_tools",
+        lambda user_message: [],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda tool_names: [],
     )
 
     def fake_call_llm_with_retry(
@@ -1761,8 +1767,14 @@ def test_run_simple_agent_passes_same_run_id_to_tool(monkeypatch):
 
     monkeypatch.setattr(
         controller_module,
-        "load_tool_schemas",
-        lambda: [],
+        "route_tools",
+        lambda user_message: [],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda tool_names: [],
     )
 
     monkeypatch.setattr(
@@ -1843,8 +1855,14 @@ def test_run_simple_agent_passes_same_run_id_to_final_llm(monkeypatch):
 
     monkeypatch.setattr(
         controller_module,
-        "load_tool_schemas",
-        lambda: [],
+        "route_tools",
+        lambda user_message: [],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda tool_names: [],
     )
 
     monkeypatch.setattr(
@@ -3572,3 +3590,211 @@ def test_simple_runtime_passes_memory_service_to_execute_tool(monkeypatch):
     )
 
     assert captured["memory_service"] is memory_service
+
+
+def test_simple_runtime_includes_learning_feedback_schema(monkeypatch):
+    captured = {}
+
+    def fake_call_llm(system_prompt, user_message):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "好的。",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    state, status = run_simple_runtime("今天学习Python函数，理解80%，完成了一次测验。")
+
+    assert status == "success"
+
+    system_prompt = captured["system_prompt"]
+
+    assert "save_learning_feedback" in system_prompt
+    assert '"understanding"' in system_prompt
+    assert '"evidence_type"' in system_prompt
+
+    assert "get_user_profile" not in system_prompt
+
+
+def test_simple_runtime_executes_learning_feedback_tool(monkeypatch):
+    import agent.controller as controller_module
+
+    observed = {}
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: ["save_learning_feedback"],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda tool_names: [
+            {
+                "name": "save_learning_feedback",
+                "description": "保存学习反馈",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {"type": "string"},
+                        "understanding": {"type": "integer"},
+                        "evidence": {"type": "string"},
+                        "evidence_type": {"type": "string"},
+                    },
+                    "required": ["topic", "understanding"],
+                },
+            }
+        ],
+    )
+
+    def fake_call_llm(system_prompt, user_message):
+        return {
+            "status": "success",
+            "content": """
+            <tool_call>
+            {
+                "name": "save_learning_feedback",
+                "arguments": {
+                    "topic": "Python",
+                    "understanding": 80,
+                    "evidence": "测验8/10",
+                    "evidence_type": "quiz"
+                }
+            }
+            </tool_call>
+            """,
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm",
+        fake_call_llm,
+    )
+
+    def fake_execute_tool(
+        tool_name,
+        arguments=None,
+        run_id=None,
+        memory_service=None,
+    ):
+        observed["tool_name"] = tool_name
+        observed["arguments"] = arguments
+        observed["run_id"] = run_id
+        observed["memory_service"] = memory_service
+
+        return {
+            "status": "success",
+            "tool_name": tool_name,
+            "data": {
+                "skill_updated": True,
+            },
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        fake_execute_tool,
+    )
+
+    state, status = controller_module.run_simple_runtime(
+        "今天学习Python函数，理解80%，完成了一次测验，得分8/10。"
+    )
+
+    assert observed["tool_name"] == "save_learning_feedback"
+
+    assert observed["arguments"] == {
+        "topic": "Python",
+        "understanding": 80,
+        "evidence": "测验8/10",
+        "evidence_type": "quiz",
+    }
+
+
+def test_simple_runtime_final_prompt_forbids_second_tool_call(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    prompts = []
+
+    responses = iter(
+        [
+            {
+                "status": "success",
+                "content": """
+                <tool_call>
+                {
+                    "name": "save_learning_feedback",
+                    "arguments": {
+                        "topic": "Python函数",
+                        "understanding": 90
+                    }
+                }
+                </tool_call>
+                """,
+            },
+            {
+                "status": "success",
+                "content": "学习反馈已保存。",
+            },
+        ]
+    )
+
+    def fake_call_llm(system_prompt, user_message):
+        prompts.append(system_prompt)
+        return next(responses)
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm",
+        fake_call_llm,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: ["save_learning_feedback"],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda tool_names: [
+            {
+                "name": "save_learning_feedback",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {"type": "string"},
+                        "understanding": {"type": "integer"},
+                    },
+                    "required": ["topic", "understanding"],
+                },
+            }
+        ],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        lambda *args, **kwargs: {
+            "status": "success",
+            "tool_name": "save_learning_feedback",
+            "data": {},
+        },
+    )
+
+    controller_module.run_simple_runtime("今天学习Python函数，理解90%。")
+
+    assert len(prompts) == 2
+
+    final_prompt = prompts[1]
+
+    assert "不得再次调用任何工具" in final_prompt
+    assert "不得输出 <tool_call>" in final_prompt

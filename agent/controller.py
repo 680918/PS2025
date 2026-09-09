@@ -13,8 +13,9 @@ from config import (
 from core.logging_context import get_trace_logger
 from llm_client import call_llm
 from tools.parser import parse_tool_call
-from tools.tools import execute_tool, load_tool_schemas
+from tools.tools import execute_tool, filter_tool_schemas
 from planning.planner import create_plan, replan_after_failure
+from tools.router import route_tools
 
 
 logger = logging.getLogger(__name__)
@@ -167,7 +168,9 @@ def run_simple_runtime(user_message, state=None):
     if state is None:
         state = AgentState(user_message)
 
-    tool_schemas = load_tool_schemas()
+    candidate_tools = route_tools(user_message)
+
+    tool_schemas = filter_tool_schemas(candidate_tools)
 
     tool_description = json.dumps(
         tool_schemas,
@@ -200,14 +203,45 @@ def run_simple_runtime(user_message, state=None):
     {tool_description}
 
 
-    当你需要外部信息时，
-    请返回：
+    当需要调用工具时，只返回以下格式：
 
     <tool_call>
-    工具名称
+    {{
+        "name": "工具名称",
+        "arguments": {{
+            "参数名": "参数值"
+        }}
+    }}
     </tool_call>
 
-    根据用户问题自主选择工具。
+    规则：
+
+    1. name 必须是上方提供的工具名称之一。
+    2. arguments 必须符合该工具的 parameters 定义。
+    3. 不得虚构用户没有提供的事实。
+    4. 对于 required 参数，如果用户没有明确提供，不要猜测该参数。
+    5. 如果不需要调用工具，请直接回答用户，不要输出 <tool_call>。
+    6. 对于没有参数的工具，arguments 使用空对象 {{}}。
+    """
+
+    final_system_prompt = f"""
+    你是 Personal Growth AI Coach。
+
+    以下是与当前用户有关的长期记忆：
+    {memory_description}
+
+    工具已经执行完成。
+    现在你的任务是根据用户问题和工具执行结果，
+    生成最终给用户看的自然语言回答。
+
+    必须遵守：
+
+    1. 直接回答用户，不得再次调用任何工具。
+    2. 不得输出 <tool_call> 或 </tool_call>。
+    3. 不得展示内部 Tool JSON、Memory JSON 或系统实现细节。
+    4. 只能根据用户输入、长期记忆和工具执行结果回答。
+    5. 不得虚构工具没有返回的事实或操作结果。
+    6. 如果工具已经成功执行，应自然说明结果，不要再次请求确认执行。
     """
 
     response = call_llm_with_retry(
@@ -238,7 +272,11 @@ def run_simple_runtime(user_message, state=None):
             **tool_kwargs,
         )
 
-        state.add_tool_result(tool_call["name"], tool_result)
+        state.add_tool_result(
+            tool_call["name"],
+            tool_result,
+        )
+
         state.last_result = tool_result
 
         if tool_result.get("status") == "error":
@@ -247,11 +285,22 @@ def run_simple_runtime(user_message, state=None):
             return state, state.status
 
         final_answer = call_llm_with_retry(
-            system_prompt,
+            final_system_prompt,
             f"""
-                            用户问题：{user_message}
-                            工具返回：{tool_result}
-                            请根据工具信息回答用户。""",
+            用户问题：
+            {user_message}
+
+            工具执行结果：
+            {
+                json.dumps(
+                    tool_result,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            }
+
+            请直接生成最终回答。
+            """,
             run_id=state.run_id,
         )
 

@@ -33,3 +33,15 @@ def test_route_tools_no_match():
     result = route_tools("今天天气不错")
 
     assert result == []
+
+
+def test_route_learning_feedback_tool():
+    result = route_tools("今天学习Python函数，理解80%，完成了一次测验。")
+
+    assert "save_learning_feedback" in result
+
+
+def test_general_learning_request_does_not_route_feedback_tool():
+    result = route_tools("我想学习Python函数。")
+
+    assert "save_learning_feedback" not in result

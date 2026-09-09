@@ -19,3 +19,6 @@ htmlcov/
 
 logs/
 *.log
+
+# Local runtime data
+data/memory.db
