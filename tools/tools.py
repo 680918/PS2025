@@ -11,6 +11,9 @@ from memory.adapters import (
     get_skill_map_from_memory,
     get_user_profile_from_memory,
 )
+from evaluation.learning_pipeline import process_learning_evaluation
+from memory.learning_models import LearningRecord
+from memory.learning_service import LearningMemoryService
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +155,53 @@ def create_learning_plan(user_profile, skill_map=None):
     }
 
 
+def save_learning_feedback(
+    topic,
+    understanding,
+    difficulty="",
+    evidence="",
+    evidence_type="self_report",
+    next_step="",
+    memory_service=None,
+):
+    if memory_service is None:
+        return {
+            "status": "error",
+            "tool_name": "save_learning_feedback",
+            "error": "memory_service is required",
+        }
+
+    learning_service = LearningMemoryService(memory_service)
+
+    record = LearningRecord(
+        topic=topic,
+        understanding=understanding,
+        difficulty=difficulty,
+        evidence=evidence,
+        evidence_type=evidence_type,
+        next_step=next_step,
+    )
+
+    result = process_learning_evaluation(
+        learning_service,
+        memory_service,
+        record,
+    )
+
+    return {
+        "status": "success",
+        "tool_name": "save_learning_feedback",
+        "data": {
+            "topic": topic,
+            "understanding": understanding,
+            "evaluation_status": result.evaluation.status,
+            "evaluation_confidence": result.evaluation.confidence,
+            "skill_update_allowed": result.skill_update_decision.allowed,
+            "skill_updated": result.updated_skill is not None,
+        },
+    }
+
+
 def get_user_profile(memory_service=None):
     if memory_service is None:
         return get_user_profile_structured()
@@ -171,6 +221,7 @@ TOOLS = {
     "get_user_profile": get_user_profile,
     "get_skill_map": get_skill_map,
     "create_learning_plan": create_learning_plan,
+    "save_learning_feedback": save_learning_feedback,
 }
 
 
@@ -230,7 +281,12 @@ def execute_tool(
         tool_arguments = dict(arguments or {})
 
         if (
-            tool_name in {"get_user_profile", "get_skill_map"}
+            tool_name
+            in {
+                "get_user_profile",
+                "get_skill_map",
+                "save_learning_feedback",
+            }
             and memory_service is not None
         ):
             tool_arguments["memory_service"] = memory_service

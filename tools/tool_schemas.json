@@ -63,5 +63,51 @@
     }
     }
 
+  },
+
+  {
+  "name": "save_learning_feedback",
+  "description": "保存用户明确提供的学习反馈。仅当用户已经完成或正在总结一次学习活动，并且明确提供0到100之间的理解程度时使用。不得猜测或虚构理解程度、学习主题或学习证据。",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "topic": {
+        "type": "string",
+        "description": "用户明确提到的学习主题或技能名称，例如 Python、摄影、英语、电工基础。"
+      },
+      "understanding": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 100,
+        "description": "用户明确提供的理解程度，范围0到100。不得自行推断。"
+      },
+      "difficulty": {
+        "type": "string",
+        "description": "用户明确提到的学习难点；如果没有则留空。"
+      },
+      "evidence": {
+        "type": "string",
+        "description": "用户明确提供的学习证据，例如完成练习、测验成绩或项目成果；如果没有则留空。"
+      },
+      "evidence_type": {
+        "type": "string",
+        "enum": [
+          "self_report",
+          "practice",
+          "quiz",
+          "project"
+        ],
+        "description": "证据类型。主观自述用 self_report，练习用 practice，测验或考试用 quiz，真实项目成果用 project。"
+      },
+      "next_step": {
+        "type": "string",
+        "description": "用户明确提出的下一步学习计划；如果没有则留空。"
+      }
+    },
+    "required": [
+      "topic",
+      "understanding"
+    ]
   }
+}
   ]

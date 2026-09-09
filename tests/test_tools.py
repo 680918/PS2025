@@ -1,5 +1,9 @@
-from tools.tools import execute_tool
 import pytest
+import tools.tools as tools_module
+from tools.tools import (
+    execute_tool,
+    filter_tool_schemas,
+)
 
 
 pytestmark = pytest.mark.unit
@@ -55,8 +59,6 @@ def test_get_memory_default():
 
 
 def test_execute_tool_file_not_found(monkeypatch):
-
-    import tools.tools as tools_module
 
     def fake_tool():
         raise FileNotFoundError("test file missing")
@@ -507,3 +509,32 @@ def test_execute_tool_injects_memory_service_into_skill_map():
 
     assert result["status"] == "success"
     assert result["data"]["电路基础"]["level"] == 35
+
+
+def test_filter_tool_schemas_includes_learning_feedback():
+    result = filter_tool_schemas(["save_learning_feedback"])
+
+    assert len(result) == 1
+    assert result[0]["name"] == "save_learning_feedback"
+
+
+def test_learning_feedback_schema_requires_topic_and_understanding():
+    result = filter_tool_schemas(["save_learning_feedback"])
+
+    parameters = result[0]["parameters"]
+
+    assert "topic" in parameters["required"]
+    assert "understanding" in parameters["required"]
+
+
+def test_learning_feedback_schema_defines_evidence_types():
+    result = filter_tool_schemas(["save_learning_feedback"])
+
+    evidence_type = result[0]["parameters"]["properties"]["evidence_type"]
+
+    assert evidence_type["enum"] == [
+        "self_report",
+        "practice",
+        "quiz",
+        "project",
+    ]
