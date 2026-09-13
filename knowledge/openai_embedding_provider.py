@@ -15,11 +15,9 @@ class OpenAIEmbeddingProvider(
         self.model = model
 
     def embed(self, text):
-        response = (
-            self.client.embeddings.create(
-                model=self.model,
-                input=text,
-            )
+        response = self.client.embeddings.create(
+            model=self.model,
+            input=text,
         )
 
         return response.data[0].embedding

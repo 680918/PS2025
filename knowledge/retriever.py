@@ -9,18 +9,9 @@ def normalize_query(query):
         " ",
         query,
     )
+
     return query
 
-def extract_query_terms(query):
-    normalized = normalize_query(query)
-
-    terms = [
-        term
-        for term in normalized.split()
-        if term
-    ]
-
-    return terms
 
 def retrieve_chunks(
     query,
@@ -43,9 +34,7 @@ def retrieve_chunks(
         )
 
         if score >= min_score:
-            scored_chunks.append(
-                (score, chunk)
-            )
+            scored_chunks.append((score, chunk))
 
     scored_chunks.sort(
         key=lambda item: item[0],
@@ -59,6 +48,7 @@ def retrieve_chunks(
         )
         for score, chunk in scored_chunks[:top_k]
     ]
+
 
 def extract_query_terms(query):
     normalized = normalize_query(query)
@@ -94,6 +84,7 @@ def extract_query_terms(query):
 
     return expanded_terms
 
+
 def score_chunk(query, query_terms, content):
     normalized_content = content.lower()
 
@@ -109,10 +100,7 @@ def score_chunk(query, query_terms, content):
         "",
     )
 
-    if (
-        normalized_query
-        and normalized_query in compact_content
-    ):
+    if normalized_query and normalized_query in compact_content:
         score += 3.0
 
     matched_terms = 0

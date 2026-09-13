@@ -36,9 +36,7 @@ def chunk_document(
 
     chunks = []
 
-    for index, chunk_content in enumerate(
-        chunk_contents
-    ):
+    for index, chunk_content in enumerate(chunk_contents):
         chunks.append(
             KnowledgeChunk(
                 document_id=document.id,
@@ -50,6 +48,7 @@ def chunk_document(
 
     return chunks
 
+
 def split_sentences(text):
     if not text.strip():
         return []
@@ -59,11 +58,8 @@ def split_sentences(text):
         text.strip(),
     )
 
-    return [
-        part.strip()
-        for part in parts
-        if part.strip()
-    ]
+    return [part.strip() for part in parts if part.strip()]
+
 
 def build_sentence_chunks(
     text,
@@ -88,11 +84,7 @@ def build_sentence_chunks(
                 len(sentence),
                 chunk_size,
             ):
-                chunks.append(
-                    sentence[
-                        start : start + chunk_size
-                    ]
-                )
+                chunks.append(sentence[start : start + chunk_size])
 
             continue
 
@@ -110,6 +102,7 @@ def build_sentence_chunks(
         chunks.append(current)
 
     return chunks
+
 
 def add_overlap(
     chunks,
@@ -129,8 +122,6 @@ def add_overlap(
 
         prefix = previous[-overlap:]
 
-        result.append(
-            prefix + current
-        )
+        result.append(prefix + current)
 
     return result

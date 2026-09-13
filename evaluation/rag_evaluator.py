@@ -20,14 +20,10 @@ def evaluate_answer(answer, case):
     matched_keywords = []
     missing_keywords = []
 
-    all_expected_keywords = list(
-        case.expected_keywords
-    )
+    all_expected_keywords = list(case.expected_keywords)
 
     if case.expected_boundary_keywords:
-        all_expected_keywords.extend(
-            case.expected_boundary_keywords
-        )
+        all_expected_keywords.extend(case.expected_boundary_keywords)
 
     for keyword in all_expected_keywords:
         if keyword in answer:

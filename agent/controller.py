@@ -161,7 +161,8 @@ def run_agent(
         )
 
         knowledge_context = [
-            {   "chunk_id": result.chunk.id,
+            {
+                "chunk_id": result.chunk.id,
                 "content": result.chunk.content,
                 "source": result.chunk.source,
                 "chunk_index": result.chunk.chunk_index,
@@ -174,9 +175,7 @@ def run_agent(
             )
         ]
 
-        state.set_knowledge_context(
-            knowledge_context
-        )
+        state.set_knowledge_context(knowledge_context)
 
     task_type = route_task(user_message)
 
@@ -214,9 +213,9 @@ def run_simple_runtime(user_message, state=None):
     )
 
     knowledge_description = json.dumps(
-    state.knowledge_context,
-    ensure_ascii=False,
-    indent=2,
+        state.knowledge_context,
+        ensure_ascii=False,
+        indent=2,
     )
 
     system_prompt = f"""

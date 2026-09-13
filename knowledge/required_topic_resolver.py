@@ -8,7 +8,6 @@ from knowledge.semantic_required_topic_resolver import (
 )
 
 
-
 def resolve_required_topics(
     query,
     mentioned_topics,

@@ -75,6 +75,7 @@ def test_empty_knowledge_base_should_return_no_results():
 
     assert results == []
 
+
 def test_add_document_should_support_overlap(tmp_path):
     file_path = tmp_path / "test.txt"
 

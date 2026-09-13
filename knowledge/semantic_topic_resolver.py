@@ -28,25 +28,16 @@ TOPIC_PROTOTYPES = {
 
 
 def cosine_similarity(vector_a, vector_b):
-    dot_product = sum(
-        a * b
-        for a, b in zip(vector_a, vector_b)
-    )
+    dot_product = sum(a * b for a, b in zip(vector_a, vector_b))
 
-    norm_a = math.sqrt(
-        sum(a * a for a in vector_a)
-    )
+    norm_a = math.sqrt(sum(a * a for a in vector_a))
 
-    norm_b = math.sqrt(
-        sum(b * b for b in vector_b)
-    )
+    norm_b = math.sqrt(sum(b * b for b in vector_b))
 
     if norm_a == 0 or norm_b == 0:
         return 0.0
 
-    return dot_product / (
-        norm_a * norm_b
-    )
+    return dot_product / (norm_a * norm_b)
 
 
 def resolve_semantic_topics(
@@ -55,23 +46,15 @@ def resolve_semantic_topics(
     min_score=0.62,
     min_margin=0.03,
 ):
-    query_vector = embedding_provider.embed(
-        query
-    )
+    query_vector = embedding_provider.embed(query)
 
     matches = []
 
-    for topic, prototypes in (
-        TOPIC_PROTOTYPES.items()
-    ):
+    for topic, prototypes in TOPIC_PROTOTYPES.items():
         prototype_scores = []
 
         for prototype in prototypes:
-            prototype_vector = (
-                embedding_provider.embed(
-                    prototype
-                )
-            )
+            prototype_vector = embedding_provider.embed(prototype)
 
             score = cosine_similarity(
                 query_vector,
@@ -80,9 +63,7 @@ def resolve_semantic_topics(
 
             prototype_scores.append(score)
 
-        topic_score = max(
-            prototype_scores
-        )
+        topic_score = max(prototype_scores)
 
         matches.append(
             TopicMatch(
@@ -107,10 +88,7 @@ def resolve_semantic_topics(
     if len(matches) > 1:
         second_match = matches[1]
 
-        margin = (
-            best_match.score
-            - second_match.score
-        )
+        margin = best_match.score - second_match.score
 
         if margin < min_margin:
             return []

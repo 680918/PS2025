@@ -6,9 +6,7 @@ def index_chunk(
     embedding_provider,
     vector_store,
 ):
-    vector = embedding_provider.embed(
-        chunk.content
-    )
+    vector = embedding_provider.embed(chunk.content)
 
     item = EmbeddedChunk(
         chunk=chunk,

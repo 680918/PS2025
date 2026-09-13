@@ -70,10 +70,7 @@ def test_vector_retriever_should_return_best_match():
     )
 
     assert len(results) == 1
-    assert (
-        results[0].chunk.id
-        == "function-chunk"
-    )
+    assert results[0].chunk.id == "function-chunk"
 
 
 def test_vector_retriever_should_return_top_k():

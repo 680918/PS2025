@@ -1,6 +1,5 @@
 import pytest
 
-from knowledge.retriever import extract_query_terms
 from knowledge.models import (
     KnowledgeChunk,
     RetrievalResult,
@@ -107,6 +106,7 @@ def test_hit_at_k_rejects_invalid_k():
             k=0,
         )
 
+
 def test_evaluate_real_retriever():
     from knowledge.models import KnowledgeChunk
     from knowledge.retriever import retrieve_chunks
@@ -178,6 +178,7 @@ def test_evaluate_real_retriever():
     assert evaluation["hits"] == 3
     assert evaluation["hit_rate"] == 1.0
 
+
 def test_evaluate_retrieval_should_report_case_results():
     results = [
         make_result(
@@ -211,6 +212,7 @@ def test_evaluate_retrieval_should_report_case_results():
     assert case_result.expected_chunk_id == "correct"
     assert case_result.retrieved_chunk_ids == ["correct"]
     assert case_result.hit is True
+
 
 def test_evaluate_retrieval_should_report_failed_case():
     results = [

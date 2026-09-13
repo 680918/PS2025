@@ -12,7 +12,6 @@ from knowledge.semantic_required_topic_resolver import (
 )
 
 
-
 class FakeEmbeddingProvider:
     def embed(self, text):
         if text == "有一段逻辑以后还要多次使用，应该怎么组织？":
@@ -59,8 +58,7 @@ def make_result(content, score=0.8):
 def test_evidence_should_be_supported_when_chunk_answers_query():
     results = [
         make_result(
-            "Python函数用于封装可以重复使用的逻辑。"
-            "函数可以接收参数，也可以返回结果。"
+            "Python函数用于封装可以重复使用的逻辑。函数可以接收参数，也可以返回结果。"
         )
     ]
 
@@ -81,8 +79,7 @@ def test_evidence_should_be_supported_when_chunk_answers_query():
 def test_evidence_should_not_be_supported_when_chunk_is_only_related():
     results = [
         make_result(
-            "Python函数用于封装可以重复使用的逻辑。"
-            "函数可以接收参数，也可以返回结果。",
+            "Python函数用于封装可以重复使用的逻辑。函数可以接收参数，也可以返回结果。",
             score=0.9,
         )
     ]
@@ -95,12 +92,9 @@ def test_evidence_should_not_be_supported_when_chunk_is_only_related():
     assert decision.supported is False
     assert decision.accepted_chunks == []
 
+
 def test_variable_evidence_should_be_supported():
-    results = [
-        make_result(
-            "Python变量用于保存程序运行过程中的数据。"
-        )
-    ]
+    results = [make_result("Python变量用于保存程序运行过程中的数据。")]
 
     decision = decide_evidence(
         query="Python变量有什么作用？",
@@ -112,11 +106,7 @@ def test_variable_evidence_should_be_supported():
 
 
 def test_loop_evidence_should_be_supported():
-    results = [
-        make_result(
-            "Python循环用于重复执行一段代码。"
-        )
-    ]
+    results = [make_result("Python循环用于重复执行一段代码。")]
 
     decision = decide_evidence(
         query="Python循环有什么作用？",
@@ -126,12 +116,9 @@ def test_loop_evidence_should_be_supported():
     assert decision.supported is True
     assert len(decision.accepted_chunks) == 1
 
+
 def test_multi_topic_query_should_require_all_topics():
-    results = [
-        make_result(
-            "Python函数用于封装可以重复使用的逻辑。"
-        )
-    ]
+    results = [make_result("Python函数用于封装可以重复使用的逻辑。")]
 
     decision = decide_evidence(
         query="函数和循环有什么区别？",
@@ -141,14 +128,11 @@ def test_multi_topic_query_should_require_all_topics():
     assert decision.supported is False
     assert decision.accepted_chunks == []
 
+
 def test_multi_topic_query_should_be_supported_when_all_topics_exist():
     results = [
-        make_result(
-            "Python函数用于封装可以重复使用的逻辑。"
-        ),
-        make_result(
-            "Python循环用于重复执行一段代码。"
-        ),
+        make_result("Python函数用于封装可以重复使用的逻辑。"),
+        make_result("Python循环用于重复执行一段代码。"),
     ]
 
     decision = decide_evidence(
@@ -159,11 +143,11 @@ def test_multi_topic_query_should_be_supported_when_all_topics_exist():
     assert decision.supported is True
     assert len(decision.accepted_chunks) == 2
 
+
 def test_semantic_function_query_should_be_supported():
     results = [
         make_result(
-            "Python函数用于封装可以重复使用的逻辑。"
-            "函数可以接收参数，也可以返回结果。"
+            "Python函数用于封装可以重复使用的逻辑。函数可以接收参数，也可以返回结果。"
         )
     ]
 
@@ -175,11 +159,11 @@ def test_semantic_function_query_should_be_supported():
     assert decision.supported is True
     assert len(decision.accepted_chunks) == 1
 
+
 def test_semantic_topic_should_be_supported_with_embedding_provider():
     results = [
         make_result(
-            "Python函数用于封装可以重复使用的逻辑。"
-            "函数可以接收参数，也可以返回结果。"
+            "Python函数用于封装可以重复使用的逻辑。函数可以接收参数，也可以返回结果。"
         )
     ]
 
@@ -215,11 +199,12 @@ def test_semantic_topic_should_be_supported_with_embedding_provider():
     )
 
     assert decision.supported is True
+
+
 def test_context_topics_should_not_all_be_required():
     results = [
         make_result(
-            "Python函数用于封装可以重复使用的逻辑。"
-            "函数可以接收参数，也可以返回结果。"
+            "Python函数用于封装可以重复使用的逻辑。函数可以接收参数，也可以返回结果。"
         )
     ]
 

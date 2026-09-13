@@ -15,6 +15,7 @@ class EvidenceDecision:
     accepted_chunks: list[KnowledgeChunk]
     reason: str
 
+
 def decide_evidence(
     query,
     retrieval_results,
@@ -44,25 +45,14 @@ def decide_evidence(
     for result in retrieval_results:
         content = result.chunk.content
 
-        matched_topics = [
-            topic
-            for topic in required_topics
-            if topic in content
-        ]
+        matched_topics = [topic for topic in required_topics if topic in content]
 
         if matched_topics:
-            accepted_chunks.append(
-                result.chunk
-            )
+            accepted_chunks.append(result.chunk)
 
-            covered_topics.update(
-                matched_topics
-            )
+            covered_topics.update(matched_topics)
 
-    all_topics_covered = all(
-        topic in covered_topics
-        for topic in required_topics
-    )
+    all_topics_covered = all(topic in covered_topics for topic in required_topics)
 
     if all_topics_covered:
         return EvidenceDecision(

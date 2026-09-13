@@ -10,6 +10,7 @@ class RequiredTopicMatch:
     topic: str
     score: float
 
+
 REQUIRED_TOPIC_PROTOTYPES = {
     "函数": [
         "怎样减少重复代码",
@@ -54,9 +55,7 @@ def resolve_semantic_required_topics(
         prototype_scores = []
 
         for prototype in prototypes:
-            prototype_vector = embedding_provider.embed(
-                prototype
-            )
+            prototype_vector = embedding_provider.embed(prototype)
 
             score = cosine_similarity(
                 query_vector,
@@ -82,9 +81,7 @@ def resolve_semantic_required_topics(
     best_score = matches[0].score
 
     selected_topics = [
-        match.topic
-        for match in matches
-        if best_score - match.score <= selection_margin
+        match.topic for match in matches if best_score - match.score <= selection_margin
     ]
 
     return selected_topics

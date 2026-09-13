@@ -1,7 +1,14 @@
 import pytest
 
+from knowledge.models import KnowledgeChunk
+from knowledge.store import KnowledgeStore
+from knowledge.embedding_provider import (
+    EmbeddingProvider,
+)
+
 from knowledge.embedding_retriever import (
     cosine_similarity,
+    retrieve_chunks_by_embedding,
 )
 
 
@@ -29,13 +36,6 @@ def test_cosine_similarity_should_reject_dimension_mismatch():
             [1.0, 0.0],
             [1.0],
         )
-
-from knowledge.embedding_retriever import (
-    cosine_similarity,
-    retrieve_chunks_by_embedding,
-)
-from knowledge.models import KnowledgeChunk
-from knowledge.store import KnowledgeStore
 
 
 def test_embedding_retriever_should_rank_semantic_match_first():
@@ -87,15 +87,10 @@ def test_embedding_retriever_should_rank_semantic_match_first():
     )
 
     assert len(results) == 1
-    assert (
-        results[0].chunk.id
-        == "function-chunk"
-    )
+    assert results[0].chunk.id == "function-chunk"
+
 
 def test_embedding_provider_contract():
-    from knowledge.embedding_provider import (
-        EmbeddingProvider,
-    )
 
     class FakeProvider(EmbeddingProvider):
         def embed(self, text):

@@ -4257,6 +4257,7 @@ def test_run_planning_agent_stop_should_not_call_llm(
     assert "SECRET_INTERNAL_ERROR" not in result
     assert "SECRET_STATE" not in result
 
+
 def test_run_agent_should_load_knowledge_context(
     monkeypatch,
 ):
@@ -4311,14 +4312,8 @@ def test_run_agent_should_load_knowledge_context(
     state = captured["state"]
 
     assert len(state.knowledge_context) == 1
-    assert (
-        state.knowledge_context[0]["content"]
-        == "Python函数可以封装重复逻辑。"
-    )
-    assert (
-        state.knowledge_context[0]["source"]
-        == "python.txt"
-    )
+    assert state.knowledge_context[0]["content"] == "Python函数可以封装重复逻辑。"
+    assert state.knowledge_context[0]["source"] == "python.txt"
     assert state.knowledge_context[0]["score"] == 4.0
     assert state.knowledge_context[0] == {
         "chunk_id": "fake-chunk-1",
@@ -4328,6 +4323,7 @@ def test_run_agent_should_load_knowledge_context(
         "score": 4.0,
         "rank": 1,
     }
+
 
 def test_simple_runtime_initial_llm_should_receive_knowledge_context(
     monkeypatch,
@@ -4387,12 +4383,10 @@ def test_simple_runtime_initial_llm_should_receive_knowledge_context(
 
     assert runtime_status == "success"
 
-    assert (
-        "Python函数可以封装重复逻辑"
-        in captured["system_prompt"]
-    )
+    assert "Python函数可以封装重复逻辑" in captured["system_prompt"]
 
     assert "python.txt" in captured["system_prompt"]
+
 
 def test_simple_runtime_final_llm_should_receive_knowledge_context(
     monkeypatch,
@@ -4492,12 +4486,10 @@ def test_simple_runtime_final_llm_should_receive_knowledge_context(
 
     final_system_prompt = calls[1]["system_prompt"]
 
-    assert (
-        "学习反馈应记录理解程度和学习证据"
-        in final_system_prompt
-    )
+    assert "学习反馈应记录理解程度和学习证据" in final_system_prompt
 
     assert "learning_notes.txt" in final_system_prompt
+
 
 def test_run_agent_should_use_real_knowledge_service(
     tmp_path,
@@ -4561,16 +4553,13 @@ def test_run_agent_should_use_real_knowledge_service(
 
     assert result == "Python函数可以封装重复逻辑。"
 
-    assert (
-        "Python函数可以封装重复逻辑"
-        in captured["system_prompt"]
-    )
+    assert "Python函数可以封装重复逻辑" in captured["system_prompt"]
+
 
 def test_run_agent_should_include_retrieval_score_in_knowledge_context(
     monkeypatch,
 ):
     import agent.controller as controller_module
-
 
     class FakeChunk:
         id = "fake-chunk-1"

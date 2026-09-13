@@ -9,17 +9,12 @@ def test_should_diagnose_retrieval_failure():
         retrieved_chunk_ids=[
             "variable-chunk",
         ],
-        expected_chunk_id=(
-            "function-chunk"
-        ),
+        expected_chunk_id=("function-chunk"),
         answer_passed=False,
     )
 
     assert result.retrieval_ok is False
-    assert (
-        result.failure_stage
-        == "retrieval"
-    )
+    assert result.failure_stage == "retrieval"
 
 
 def test_should_diagnose_generation_or_evaluation_failure():
@@ -27,18 +22,13 @@ def test_should_diagnose_generation_or_evaluation_failure():
         retrieved_chunk_ids=[
             "function-chunk",
         ],
-        expected_chunk_id=(
-            "function-chunk"
-        ),
+        expected_chunk_id=("function-chunk"),
         answer_passed=False,
     )
 
     assert result.retrieval_ok is True
     assert result.answer_ok is False
-    assert (
-        result.failure_stage
-        == "generation_or_evaluation"
-    )
+    assert result.failure_stage == "generation_or_evaluation"
 
 
 def test_should_pass_when_retrieval_and_answer_are_correct():
@@ -46,15 +36,14 @@ def test_should_pass_when_retrieval_and_answer_are_correct():
         retrieved_chunk_ids=[
             "function-chunk",
         ],
-        expected_chunk_id=(
-            "function-chunk"
-        ),
+        expected_chunk_id=("function-chunk"),
         answer_passed=True,
     )
 
     assert result.retrieval_ok is True
     assert result.answer_ok is True
     assert result.failure_stage is None
+
 
 def test_should_report_expected_rank():
     class FakeChunk:
@@ -79,6 +68,7 @@ def test_should_report_expected_rank():
     assert evaluation["topk_hit"] is True
     assert evaluation["expected_rank"] == 2
 
+
 def test_should_report_top1_hit():
     class FakeChunk:
         def __init__(self, content):
@@ -102,6 +92,7 @@ def test_should_report_top1_hit():
     assert evaluation["topk_hit"] is True
     assert evaluation["expected_rank"] == 1
 
+
 def test_should_not_match_empty_expected_keyword():
     class FakeChunk:
         def __init__(self, content):
@@ -112,9 +103,7 @@ def test_should_not_match_empty_expected_keyword():
             self.chunk = FakeChunk(content)
 
     results = [
-        FakeResult(
-            "Python函数用于封装重复逻辑。"
-        ),
+        FakeResult("Python函数用于封装重复逻辑。"),
     ]
 
     evaluation = evaluate_retrieval_rank(

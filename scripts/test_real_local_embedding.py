@@ -5,9 +5,7 @@ from knowledge.local_embedding_provider import (
 
 provider = LocalEmbeddingProvider()
 
-vector = provider.embed(
-    "Python函数可以封装重复逻辑。"
-)
+vector = provider.embed("Python函数可以封装重复逻辑。")
 
 print(
     "vector length:",

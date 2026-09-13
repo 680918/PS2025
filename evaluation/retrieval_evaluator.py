@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
 
-
 @dataclass
 class RetrievalEvaluationCase:
     query: str
     expected_chunk_id: str
+
 
 @dataclass
 class RetrievalCaseResult:
@@ -13,6 +13,7 @@ class RetrievalCaseResult:
     expected_chunk_id: str
     retrieved_chunk_ids: list[str]
     hit: bool
+
 
 def hit_at_k(
     results,
@@ -24,10 +25,8 @@ def hit_at_k(
 
     top_results = results[:k]
 
-    return any(
-        result.chunk.id == expected_chunk_id
-        for result in top_results
-    )
+    return any(result.chunk.id == expected_chunk_id for result in top_results)
+
 
 def evaluate_retrieval(
     retriever,
@@ -59,10 +58,7 @@ def evaluate_retrieval(
             RetrievalCaseResult(
                 query=case.query,
                 expected_chunk_id=case.expected_chunk_id,
-                retrieved_chunk_ids=[
-                    result.chunk.id
-                    for result in results[:k]
-                ],
+                retrieved_chunk_ids=[result.chunk.id for result in results[:k]],
                 hit=hit,
             )
         )
@@ -72,10 +68,6 @@ def evaluate_retrieval(
     return {
         "total": total,
         "hits": hits,
-        "hit_rate": (
-            hits / total
-            if total
-            else 0.0
-        ),
+        "hit_rate": (hits / total if total else 0.0),
         "cases": case_results,
     }

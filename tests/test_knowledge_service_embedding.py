@@ -17,22 +17,15 @@ class FakeEmbeddingProvider:
 def test_knowledge_service_should_use_embedding_search(
     tmp_path,
 ):
-    file_path = Path(
-        tmp_path
-    ) / "python.txt"
+    file_path = Path(tmp_path) / "python.txt"
 
     file_path.write_text(
-        (
-            "Python函数可以封装重复逻辑。\n"
-            "Python变量用于保存程序运行中的数据。"
-        ),
+        ("Python函数可以封装重复逻辑。\nPython变量用于保存程序运行中的数据。"),
         encoding="utf-8",
     )
 
     service = KnowledgeService(
-        embedding_provider=(
-            FakeEmbeddingProvider()
-        ),
+        embedding_provider=(FakeEmbeddingProvider()),
     )
 
     service.add_document(
@@ -47,17 +40,13 @@ def test_knowledge_service_should_use_embedding_search(
 
     assert len(results) == 1
 
-    assert "函数" in (
-        results[0].chunk.content
-    )
+    assert "函数" in (results[0].chunk.content)
 
 
 def test_knowledge_service_should_fallback_to_lexical_search(
     tmp_path,
 ):
-    file_path = Path(
-        tmp_path
-    ) / "python.txt"
+    file_path = Path(tmp_path) / "python.txt"
 
     file_path.write_text(
         "Python函数可以封装重复逻辑。",

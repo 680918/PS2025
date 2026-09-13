@@ -15,19 +15,16 @@ class FakeEmbeddingProvider:
                 0.0,
                 0.0,
             ],
-
             # 函数 prototypes
             "怎样减少重复代码": [1.0, 0.0, 0.0],
             "怎样复用一段逻辑": [1.0, 0.0, 0.0],
             "怎样把重复逻辑封装起来重复调用": [1.0, 0.0, 0.0],
             "一段逻辑以后还要使用应该怎么组织": [1.0, 0.0, 0.0],
-
             # 变量 prototypes
             "怎样保存程序中的数据": [0.0, 1.0, 0.0],
             "计算结果应该存放在哪里": [0.0, 1.0, 0.0],
             "怎样保存一个值供后续使用": [0.0, 1.0, 0.0],
             "程序运行中的数据应该怎么保存": [0.0, 1.0, 0.0],
-
             # 循环 prototypes
             "怎样重复执行一段代码": [0.0, 0.0, 1.0],
             "同一个操作需要执行很多次怎么办": [0.0, 0.0, 1.0],
@@ -47,6 +44,7 @@ def test_semantic_required_topic_should_select_function():
 
     assert result == ["函数"]
 
+
 def test_comparison_should_keep_multiple_required_topics():
     class ComparisonEmbeddingProvider:
         def embed(self, text):
@@ -56,7 +54,6 @@ def test_comparison_should_keep_multiple_required_topics():
                     1.0,
                     0.0,
                 ],
-
                 # 变量 prototypes
                 "怎样保存程序中的数据": [
                     1.0,
@@ -78,7 +75,6 @@ def test_comparison_should_keep_multiple_required_topics():
                     0.0,
                     0.0,
                 ],
-
                 # 循环 prototypes
                 "怎样重复执行一段代码": [
                     0.0,

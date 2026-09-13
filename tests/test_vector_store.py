@@ -33,21 +33,15 @@ def test_vector_store_should_add_item():
 
     store.add(item)
 
-    assert store.list_all() == [
-        item
-    ]
+    assert store.list_all() == [item]
 
 
 def test_vector_store_should_add_many():
     store = VectorStore()
 
-    item1 = make_embedded_chunk(
-        "chunk-1"
-    )
+    item1 = make_embedded_chunk("chunk-1")
 
-    item2 = make_embedded_chunk(
-        "chunk-2"
-    )
+    item2 = make_embedded_chunk("chunk-2")
 
     store.add_many(
         [
@@ -62,15 +56,11 @@ def test_vector_store_should_add_many():
 def test_vector_store_should_get_by_chunk_id():
     store = VectorStore()
 
-    item = make_embedded_chunk(
-        "chunk-1"
-    )
+    item = make_embedded_chunk("chunk-1")
 
     store.add(item)
 
-    result = store.get_by_chunk_id(
-        "chunk-1"
-    )
+    result = store.get_by_chunk_id("chunk-1")
 
     assert result == item
 
@@ -78,9 +68,4 @@ def test_vector_store_should_get_by_chunk_id():
 def test_vector_store_should_return_none_for_missing_chunk():
     store = VectorStore()
 
-    assert (
-        store.get_by_chunk_id(
-            "missing"
-        )
-        is None
-    )
+    assert store.get_by_chunk_id("missing") is None

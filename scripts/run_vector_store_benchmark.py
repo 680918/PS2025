@@ -54,9 +54,7 @@ index_chunks(
 )
 
 
-benchmark_items = (
-    build_python_baseline_benchmark()
-)
+benchmark_items = build_python_baseline_benchmark()
 
 cases = [
     RetrievalEvaluationCase(

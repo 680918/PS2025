@@ -13,9 +13,7 @@ def load_document(file_path):
         raise FileNotFoundError(f"文件不存在: {file_path}")
 
     if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
-        raise ValueError(
-            f"暂不支持的文件类型: {path.suffix}"
-        )
+        raise ValueError(f"暂不支持的文件类型: {path.suffix}")
 
     content = path.read_text(encoding="utf-8")
 

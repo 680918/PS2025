@@ -62,9 +62,7 @@ def test_retrieve_should_rank_more_matches_first():
         1,
     )
 
-    store.add_many(
-        [chunk1, chunk2]
-    )
+    store.add_many([chunk1, chunk2])
 
     results = retrieve_chunks(
         "Python 函数",
@@ -124,6 +122,7 @@ def test_retrieve_empty_query_returns_empty_list():
 
     assert results == []
 
+
 def test_retrieve_chinese_natural_question():
     store = KnowledgeStore()
 
@@ -142,6 +141,7 @@ def test_retrieve_chinese_natural_question():
 
     assert len(results) == 1
     assert "Python函数" in results[0].chunk.content
+
 
 def test_score_chunk_should_prefer_phrase_match():
     query = "Python 函数"
@@ -162,6 +162,7 @@ def test_score_chunk_should_prefer_phrase_match():
 
     assert score1 > score2
 
+
 def test_score_chunk_should_reward_more_term_matches():
     query = "Python 函数 参数"
 
@@ -180,6 +181,7 @@ def test_score_chunk_should_reward_more_term_matches():
     )
 
     assert score1 > score2
+
 
 def test_retrieve_should_filter_low_score_results():
     store = KnowledgeStore()
@@ -208,6 +210,7 @@ def test_retrieve_should_filter_low_score_results():
     assert len(results) == 1
     assert "函数" in results[0].chunk.content
 
+
 def test_retrieve_should_allow_custom_min_score():
     store = KnowledgeStore()
 
@@ -227,6 +230,7 @@ def test_retrieve_should_allow_custom_min_score():
 
     assert len(results) == 1
 
+
 def test_retrieve_should_return_score():
     store = KnowledgeStore()
 
@@ -245,19 +249,12 @@ def test_retrieve_should_return_score():
 
     assert len(results) == 1
     assert results[0].score > 0
-    assert results[0].chunk.content == (
-        "Python函数可以接受参数。"
-    )
+    assert results[0].chunk.content == ("Python函数可以接受参数。")
+
 
 def test_extract_query_terms_should_remove_question_patterns():
-    assert "python函数" in extract_query_terms(
-        "Python函数有什么作用？"
-    )
+    assert "python函数" in extract_query_terms("Python函数有什么作用？")
 
-    assert "python变量" in extract_query_terms(
-        "Python变量是干什么的？"
-    )
+    assert "python变量" in extract_query_terms("Python变量是干什么的？")
 
-    assert "python循环" in extract_query_terms(
-        "Python循环有什么作用？"
-    )
+    assert "python循环" in extract_query_terms("Python循环有什么作用？")

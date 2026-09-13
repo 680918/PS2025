@@ -5,6 +5,7 @@ from knowledge.semantic_required_topic_resolver import (
     REQUIRED_TOPIC_PROTOTYPES,
 )
 
+
 class FakeEmbeddingProvider:
     def embed(self, text):
         function_queries = {
@@ -26,6 +27,7 @@ class FakeEmbeddingProvider:
             return [0.0, 0.0, 1.0]
 
         raise KeyError(text)
+
 
 def test_single_topic_should_remain_required():
     result = resolve_required_topics(
@@ -54,6 +56,7 @@ def test_context_topics_should_not_all_be_required():
 
     assert result == ["函数"]
 
+
 def test_context_topics_generalization_1():
     result = resolve_required_topics(
         query="变量和循环我已经了解了，现在怎样减少重复代码？",
@@ -73,6 +76,7 @@ def test_context_topics_generalization_2():
 
     assert result == ["函数"]
 
+
 def test_focused_question_should_use_semantic_resolution():
     result = resolve_required_topics(
         query="变量和循环我已经了解了，现在怎样减少重复代码？",
@@ -81,6 +85,7 @@ def test_focused_question_should_use_semantic_resolution():
     )
 
     assert result == ["函数"]
+
 
 def test_comparison_should_keep_all_mentioned_topics_with_embedding_provider():
     result = resolve_required_topics(
@@ -91,6 +96,7 @@ def test_comparison_should_keep_all_mentioned_topics_with_embedding_provider():
 
     assert set(result) == {"变量", "循环"}
 
+
 def test_focused_question_should_infer_required_topic_not_explicitly_mentioned():
     result = resolve_required_topics(
         query="我知道变量和循环，但怎样避免重复写相同逻辑？",
@@ -99,6 +105,7 @@ def test_focused_question_should_infer_required_topic_not_explicitly_mentioned()
     )
 
     assert result == ["函数"]
+
 
 def test_no_mentioned_topics_should_not_infer_required_topic():
     result = resolve_required_topics(

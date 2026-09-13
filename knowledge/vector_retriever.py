@@ -14,9 +14,7 @@ def retrieve_from_vector_store(
     if not query.strip():
         return []
 
-    query_vector = embedding_provider.embed(
-        query
-    )
+    query_vector = embedding_provider.embed(query)
 
     scored_items = []
 

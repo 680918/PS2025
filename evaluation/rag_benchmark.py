@@ -47,7 +47,6 @@ def build_python_rag_benchmark():
             ],
             expected_retrieval_keyword="函数",
         ),
-
         RAGBenchmarkItem(
             query="程序运行过程中产生的数据应该放在哪里？",
             expected_keywords=[
@@ -56,7 +55,6 @@ def build_python_rag_benchmark():
             ],
             expected_retrieval_keyword="变量",
         ),
-
         RAGBenchmarkItem(
             query="如果一段代码要连续执行很多次，应该怎么办？",
             expected_keywords=[
@@ -73,7 +71,6 @@ def build_python_rag_benchmark():
             ],
             expected_retrieval_keyword="函数",
         ),
-
         RAGBenchmarkItem(
             query="变量和循环有什么区别？",
             expected_keywords=[
@@ -102,7 +99,6 @@ def build_python_rag_benchmark():
             expected_retrieval_keyword="函数",
             knowledge_expected=True,
         ),
-
         RAGBenchmarkItem(
             query="变量可以保存程序计算出来的结果吗？",
             expected_keywords=[
@@ -112,7 +108,6 @@ def build_python_rag_benchmark():
             expected_retrieval_keyword="变量",
             knowledge_expected=True,
         ),
-
         RAGBenchmarkItem(
             query="什么时候应该把重复逻辑写成函数？",
             expected_keywords=[
@@ -133,7 +128,6 @@ def build_python_rag_benchmark():
                 "通用知识",
             ],
         ),
-
         RAGBenchmarkItem(
             query="Python生成器是什么？",
             expected_keywords=[],
@@ -145,7 +139,6 @@ def build_python_rag_benchmark():
                 "通用知识",
             ],
         ),
-
         RAGBenchmarkItem(
             query="数据库事务有什么作用？",
             expected_keywords=[],
@@ -158,5 +151,3 @@ def build_python_rag_benchmark():
             ],
         ),
     ]
-
- 

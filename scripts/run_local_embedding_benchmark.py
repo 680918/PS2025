@@ -45,16 +45,12 @@ store.add_many(
 
 provider = LocalEmbeddingProvider()
 
-benchmark_items = (
-    build_python_baseline_benchmark()
-)
+benchmark_items = build_python_baseline_benchmark()
 
 cases = [
     RetrievalEvaluationCase(
         query=item.query,
-        expected_chunk_id=(
-            item.expected_chunk_id
-        ),
+        expected_chunk_id=(item.expected_chunk_id),
     )
     for item in benchmark_items
 ]

@@ -17,11 +17,7 @@ class KnowledgeStore:
         return list(self._chunks)
 
     def get_by_document_id(self, document_id):
-        return [
-            chunk
-            for chunk in self._chunks
-            if chunk.document_id == document_id
-        ]
+        return [chunk for chunk in self._chunks if chunk.document_id == document_id]
 
     def get_by_id(self, chunk_id):
         for chunk in self._chunks:

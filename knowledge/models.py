@@ -9,9 +9,7 @@ class KnowledgeDocument:
     content: str
     source: str
     id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: str = field(
-        default_factory=lambda: datetime.now().isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 @dataclass
@@ -21,6 +19,7 @@ class KnowledgeChunk:
     chunk_index: int
     source: str
     id: str = field(default_factory=lambda: str(uuid4()))
+
 
 @dataclass
 class RetrievalResult:

@@ -69,15 +69,11 @@ for query, expected_topic in queries:
 
     scores = []
 
-    for topic, prototypes in (
-        TOPIC_PROTOTYPES.items()
-    ):
+    for topic, prototypes in TOPIC_PROTOTYPES.items():
         prototype_scores = []
 
         for prototype in prototypes:
-            prototype_vector = provider.embed(
-                prototype
-            )
+            prototype_vector = provider.embed(prototype)
 
             score = cosine_similarity(
                 query_vector,
@@ -86,9 +82,7 @@ for query, expected_topic in queries:
 
             prototype_scores.append(score)
 
-        topic_score = max(
-            prototype_scores
-        )
+        topic_score = max(prototype_scores)
 
         scores.append(
             (
@@ -109,6 +103,4 @@ for query, expected_topic in queries:
     )
 
     for topic, score in scores:
-        print(
-            f"{topic}: {score:.4f}"
-        )
+        print(f"{topic}: {score:.4f}")

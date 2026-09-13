@@ -29,9 +29,7 @@ def test_local_embedding_provider_should_return_list():
         model=FakeModel(),
     )
 
-    vector = provider.embed(
-        "Python函数"
-    )
+    vector = provider.embed("Python函数")
 
     assert vector == [
         0.1,

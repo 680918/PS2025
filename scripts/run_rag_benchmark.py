@@ -57,7 +57,6 @@ evidence_false_positive = 0
 evidence_false_negative = 0
 
 for item in benchmark:
-
     # 1. 先单独执行 Retrieval
     retrieval_results = knowledge_service.search(
         item.query,
@@ -77,19 +76,13 @@ for item in benchmark:
     if evidence_decision.supported == expected_supported:
         evidence_correct += 1
 
-    elif (
-        evidence_decision.supported
-        and not expected_supported
-    ):
+    elif evidence_decision.supported and not expected_supported:
         evidence_false_positive += 1
 
-    elif (
-        not evidence_decision.supported
-        and expected_supported
-    ):
+    elif not evidence_decision.supported and expected_supported:
         evidence_false_negative += 1
 
-     # ===== 第4步放这里 =====
+    # ===== 第4步放这里 =====
 
     print("\nEvidence Policy:")
     print(
@@ -102,20 +95,14 @@ for item in benchmark:
     )
     print(
         "accepted_chunks:",
-        len(
-            evidence_decision.accepted_chunks
-        ),
+        len(evidence_decision.accepted_chunks),
     )
     print(
         "reason:",
         evidence_decision.reason,
     )
 
-    top1_score = (
-        retrieval_results[0].score
-        if retrieval_results
-        else None
-    )
+    top1_score = retrieval_results[0].score if retrieval_results else None
 
     retrieval_rank = evaluate_retrieval_rank(
         retrieval_results,
@@ -135,9 +122,7 @@ for item in benchmark:
             in_scope_topk_hits += 1
 
         if retrieval_rank["expected_rank"] is not None:
-            in_scope_expected_ranks.append(
-                retrieval_rank["expected_rank"]
-            )
+            in_scope_expected_ranks.append(retrieval_rank["expected_rank"])
 
     else:
         out_of_scope_total += 1
@@ -150,13 +135,9 @@ for item in benchmark:
 
     # 2. 判断 Retrieval 是否找到了正确主题
     if item.knowledge_expected:
-        retrieval_ok = retrieval_rank[
-            "topk_hit"
-        ]
+        retrieval_ok = retrieval_rank["topk_hit"]
     else:
-        retrieval_ok = not retrieval_rank[
-            "topk_hit"
-        ]
+        retrieval_ok = not retrieval_rank["topk_hit"]
 
     # 3. 运行真实 Agent
     answer = run_agent(
@@ -168,9 +149,7 @@ for item in benchmark:
     case = RAGEvaluationCase(
         query=item.query,
         expected_keywords=item.expected_keywords,
-        expected_boundary_keywords=(
-            item.expected_boundary_keywords
-        ),
+        expected_boundary_keywords=(item.expected_boundary_keywords),
     )
 
     evaluation = evaluate_answer(
@@ -198,11 +177,7 @@ for item in benchmark:
 
     # 5. 诊断失败发生在哪一层
     diagnosis = diagnose_rag_case(
-        retrieved_chunk_ids=(
-            ["expected"]
-            if retrieval_ok
-            else []
-        ),
+        retrieved_chunk_ids=(["expected"] if retrieval_ok else []),
         expected_chunk_id="expected",
         answer_passed=evaluation.passed,
     )
@@ -226,9 +201,7 @@ for item in benchmark:
             f"score={result.score:.4f}",
             f"chunk_id={result.chunk.id}",
         )
-        print(
-            result.chunk.content
-        )
+        print(result.chunk.content)
 
     print()
     print("Answer:")
@@ -291,27 +264,16 @@ print(
 
 print(
     "in_scope_top1_hit_rate:",
-    (
-        in_scope_top1_hits
-        / in_scope_total
-        if in_scope_total
-        else 0.0
-    ),
+    (in_scope_top1_hits / in_scope_total if in_scope_total else 0.0),
 )
 
 print(
     "in_scope_topk_hit_rate:",
-    (
-        in_scope_topk_hits
-        / in_scope_total
-        if in_scope_total
-        else 0.0
-    ),
+    (in_scope_topk_hits / in_scope_total if in_scope_total else 0.0),
 )
 
 mean_expected_rank = (
-    sum(in_scope_expected_ranks)
-    / len(in_scope_expected_ranks)
+    sum(in_scope_expected_ranks) / len(in_scope_expected_ranks)
     if in_scope_expected_ranks
     else None
 )
@@ -328,9 +290,7 @@ print(
 
 print(
     "out_of_scope_expected_miss_rate:",
-    out_of_scope_expected_misses / out_of_scope_total
-    if out_of_scope_total
-    else 0.0,
+    out_of_scope_expected_misses / out_of_scope_total if out_of_scope_total else 0.0,
 )
 
 print(
@@ -345,25 +305,21 @@ print(
 
 print(
     "in_scope_mean_top1_score:",
-    sum(in_scope_top1_scores)
-    / len(in_scope_top1_scores)
+    sum(in_scope_top1_scores) / len(in_scope_top1_scores)
     if in_scope_top1_scores
     else None,
 )
 
 print(
     "out_of_scope_mean_top1_score:",
-    sum(out_of_scope_top1_scores)
-    / len(out_of_scope_top1_scores)
+    sum(out_of_scope_top1_scores) / len(out_of_scope_top1_scores)
     if out_of_scope_top1_scores
     else None,
 )
 
 print(
     "evidence_accuracy:",
-    evidence_correct / evidence_total
-    if evidence_total
-    else 0.0,
+    evidence_correct / evidence_total if evidence_total else 0.0,
 )
 
 print(

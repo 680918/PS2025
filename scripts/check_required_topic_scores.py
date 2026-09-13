@@ -55,9 +55,7 @@ for query, topics in cases:
         prototype_scores = []
 
         for prototype in REQUIRED_TOPIC_PROTOTYPES[topic]:
-            prototype_vector = provider.embed(
-                prototype
-            )
+            prototype_vector = provider.embed(prototype)
 
             score = cosine_similarity(
                 query_vector,
@@ -85,16 +83,9 @@ for query, topics in cases:
     print("Query:", query)
 
     for topic, score in scores:
-        print(
-            f"{topic}: {score:.4f}"
-        )
+        print(f"{topic}: {score:.4f}")
 
     if len(scores) >= 2:
-        margin = (
-            scores[0][1]
-            - scores[1][1]
-        )
+        margin = scores[0][1] - scores[1][1]
 
-        print(
-            f"top1-top2 margin: {margin:.4f}"
-        )
+        print(f"top1-top2 margin: {margin:.4f}")

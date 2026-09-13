@@ -12,9 +12,7 @@ provider = OpenAIEmbeddingProvider(
     model="text-embedding-3-small",
 )
 
-vector = provider.embed(
-    "Python函数可以封装重复逻辑。"
-)
+vector = provider.embed("Python函数可以封装重复逻辑。")
 
 print("vector length:", len(vector))
 print("first 5 values:", vector[:5])

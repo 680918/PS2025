@@ -23,7 +23,4 @@ def resolve_topics(
         embedding_provider=embedding_provider,
     )
 
-    return [
-        match.topic
-        for match in semantic_matches
-    ]
+    return [match.topic for match in semantic_matches]

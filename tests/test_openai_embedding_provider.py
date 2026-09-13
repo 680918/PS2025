@@ -14,9 +14,7 @@ class FakeEmbeddingData:
 
 class FakeEmbeddingResponse:
     def __init__(self):
-        self.data = [
-            FakeEmbeddingData()
-        ]
+        self.data = [FakeEmbeddingData()]
 
 
 class FakeEmbeddings:
@@ -33,22 +31,16 @@ class FakeEmbeddings:
 
 class FakeClient:
     def __init__(self):
-        self.embeddings = (
-            FakeEmbeddings()
-        )
+        self.embeddings = FakeEmbeddings()
 
 
 def test_openai_embedding_provider_should_return_vector():
-    provider = (
-        OpenAIEmbeddingProvider(
-            client=FakeClient(),
-            model="test-model",
-        )
+    provider = OpenAIEmbeddingProvider(
+        client=FakeClient(),
+        model="test-model",
     )
 
-    vector = provider.embed(
-        "Python函数"
-    )
+    vector = provider.embed("Python函数")
 
     assert vector == [
         0.1,

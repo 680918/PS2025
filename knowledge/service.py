@@ -20,14 +20,9 @@ class KnowledgeService:
     ):
         self.store = store or KnowledgeStore()
 
-        self.embedding_provider = (
-            embedding_provider
-        )
+        self.embedding_provider = embedding_provider
 
-        self.vector_store = (
-            vector_store
-            or VectorStore()
-        )
+        self.vector_store = vector_store or VectorStore()
 
     def add_document(
         self,

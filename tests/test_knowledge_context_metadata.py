@@ -27,27 +27,12 @@ def test_retrieval_result_should_expose_debug_metadata():
         "rank": 1,
     }
 
-    assert (
-        context["chunk_id"]
-        == "function-chunk"
-    )
+    assert context["chunk_id"] == "function-chunk"
 
-    assert (
-        context["source"]
-        == "python.txt"
-    )
+    assert context["source"] == "python.txt"
 
-    assert (
-        context["chunk_index"]
-        == 0
-    )
+    assert context["chunk_index"] == 0
 
-    assert (
-        context["score"]
-        == 0.82
-    )
+    assert context["score"] == 0.82
 
-    assert (
-        context["rank"]
-        == 1
-    )
+    assert context["rank"] == 1

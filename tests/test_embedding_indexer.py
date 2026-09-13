@@ -61,9 +61,7 @@ def test_index_chunk_should_save_to_vector_store():
         store,
     )
 
-    saved = store.get_by_chunk_id(
-        "function-chunk"
-    )
+    saved = store.get_by_chunk_id("function-chunk")
 
     assert saved is not None
     assert saved.vector == [1.0, 0.0]

@@ -13,10 +13,7 @@ def diagnose_rag_case(
     expected_chunk_id,
     answer_passed,
 ):
-    retrieval_ok = (
-        expected_chunk_id
-        in retrieved_chunk_ids
-    )
+    retrieval_ok = expected_chunk_id in retrieved_chunk_ids
 
     if not retrieval_ok:
         return RAGDiagnosis(
@@ -38,6 +35,7 @@ def diagnose_rag_case(
         failure_stage=None,
     )
 
+
 def evaluate_retrieval_rank(
     retrieval_results,
     expected_keyword,
@@ -55,10 +53,7 @@ def evaluate_retrieval_rank(
         retrieval_results,
         start=1,
     ):
-        if (
-            expected_keyword
-            in result.chunk.content
-        ):
+        if expected_keyword in result.chunk.content:
             expected_rank = rank
             break
 

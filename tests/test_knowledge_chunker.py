@@ -8,6 +8,7 @@ from knowledge.chunker import (
     add_overlap,
 )
 
+
 def test_chunk_short_document():
     document = KnowledgeDocument(
         title="test",
@@ -74,6 +75,7 @@ def test_chunk_document_rejects_invalid_chunk_size():
             chunk_size=0,
         )
 
+
 def test_chunk_document_with_overlap():
     document = KnowledgeDocument(
         title="test",
@@ -90,6 +92,7 @@ def test_chunk_document_with_overlap():
     assert len(chunks) == 2
     assert chunks[0].content == "abcdef"
     assert chunks[1].content == "efghij"
+
 
 def test_chunk_document_rejects_negative_overlap():
     document = KnowledgeDocument(
@@ -120,12 +123,9 @@ def test_chunk_document_rejects_overlap_equal_to_chunk_size():
             overlap=6,
         )
 
+
 def test_split_sentences_should_keep_sentence_boundaries():
-    text = (
-        "Python函数可以封装逻辑。"
-        "函数可以接受参数。"
-        "函数也可以返回结果。"
-    )
+    text = "Python函数可以封装逻辑。函数可以接受参数。函数也可以返回结果。"
 
     sentences = split_sentences(text)
 
@@ -135,12 +135,9 @@ def test_split_sentences_should_keep_sentence_boundaries():
         "函数也可以返回结果。",
     ]
 
+
 def test_split_sentences_should_support_english():
-    text = (
-        "Python is useful. "
-        "Functions reduce repetition. "
-        "They can return values."
-    )
+    text = "Python is useful. Functions reduce repetition. They can return values."
 
     sentences = split_sentences(text)
 
@@ -150,15 +147,13 @@ def test_split_sentences_should_support_english():
         "They can return values.",
     ]
 
+
 def test_split_sentences_empty_text():
     assert split_sentences("") == []
 
+
 def test_build_sentence_chunks_should_keep_sentences_complete():
-    text = (
-        "Python函数可以封装逻辑。"
-        "函数可以接受参数。"
-        "函数也可以返回结果。"
-    )
+    text = "Python函数可以封装逻辑。函数可以接受参数。函数也可以返回结果。"
 
     chunks = build_sentence_chunks(
         text,
@@ -170,12 +165,9 @@ def test_build_sentence_chunks_should_keep_sentences_complete():
         "函数可以接受参数。函数也可以返回结果。",
     ]
 
+
 def test_build_sentence_chunks_should_combine_short_sentences():
-    text = (
-        "第一句。"
-        "第二句。"
-        "第三句。"
-    )
+    text = "第一句。第二句。第三句。"
 
     chunks = build_sentence_chunks(
         text,
@@ -185,6 +177,7 @@ def test_build_sentence_chunks_should_combine_short_sentences():
     assert chunks == [
         "第一句。第二句。第三句。",
     ]
+
 
 def test_build_sentence_chunks_should_split_long_sentence():
     text = "abcdefghij。"
@@ -200,6 +193,7 @@ def test_build_sentence_chunks_should_split_long_sentence():
         "。",
     ]
 
+
 def test_build_sentence_chunks_empty_text():
     chunks = build_sentence_chunks(
         "",
@@ -207,6 +201,7 @@ def test_build_sentence_chunks_empty_text():
     )
 
     assert chunks == []
+
 
 def test_add_overlap():
     chunks = [
@@ -224,6 +219,7 @@ def test_add_overlap():
         "efghijkl",
     ]
 
+
 def test_add_overlap_zero_should_keep_chunks():
     chunks = [
         "abc",
@@ -240,14 +236,11 @@ def test_add_overlap_zero_should_keep_chunks():
         "def",
     ]
 
+
 def test_chunk_document_should_prefer_sentence_boundaries():
     document = KnowledgeDocument(
         title="test",
-        content=(
-            "第一句。"
-            "第二句。"
-            "第三句。"
-        ),
+        content=("第一句。第二句。第三句。"),
         source="test.txt",
     )
 
@@ -257,10 +250,6 @@ def test_chunk_document_should_prefer_sentence_boundaries():
         overlap=0,
     )
 
-    assert chunks[0].content == (
-        "第一句。第二句。"
-    )
+    assert chunks[0].content == ("第一句。第二句。")
 
-    assert chunks[1].content == (
-        "第三句。"
-    )
+    assert chunks[1].content == ("第三句。")

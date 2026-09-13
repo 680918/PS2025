@@ -14,10 +14,7 @@ def test_rag_evaluator_should_pass_when_all_keywords_exist():
         ],
     )
 
-    answer = (
-        "Python函数可以封装可重复使用的逻辑，"
-        "可以接收参数，并返回结果。"
-    )
+    answer = "Python函数可以封装可重复使用的逻辑，可以接收参数，并返回结果。"
 
     result = evaluate_answer(
         answer,
@@ -38,9 +35,7 @@ def test_rag_evaluator_should_fail_when_keyword_missing():
         ],
     )
 
-    answer = (
-        "Python函数可以封装重复逻辑。"
-    )
+    answer = "Python函数可以封装重复逻辑。"
 
     result = evaluate_answer(
         answer,
@@ -63,10 +58,7 @@ def test_out_of_scope_answer_should_pass_when_boundary_is_clear():
         ],
     )
 
-    answer = (
-        "当前知识库没有关于 Python 类的资料。"
-        "下面基于通用知识进行说明。"
-    )
+    answer = "当前知识库没有关于 Python 类的资料。下面基于通用知识进行说明。"
 
     result = evaluate_answer(
         answer,
@@ -87,10 +79,7 @@ def test_out_of_scope_answer_should_fail_when_boundary_is_missing():
         ],
     )
 
-    answer = (
-        "Python 类用于封装数据和行为，"
-        "也支持继承和多态。"
-    )
+    answer = "Python 类用于封装数据和行为，也支持继承和多态。"
 
     result = evaluate_answer(
         answer,
