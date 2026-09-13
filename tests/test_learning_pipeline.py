@@ -151,3 +151,63 @@ def test_learning_pipeline_does_not_update_skill_with_insufficient_data():
     assert result.evaluation.status == "insufficient_data"
     assert result.skill_update_decision.allowed is False
     assert result.updated_skill is None
+
+
+def test_learning_pipeline_should_return_next_learning_decision():
+    from evaluation.learning_pipeline import process_learning_evaluation
+    from memory.learning_models import LearningRecord
+    from memory.learning_service import LearningMemoryService
+    from memory.service import MemoryService
+    from memory.store import MemoryStore
+
+    store = MemoryStore()
+    memory_service = MemoryService(store)
+    learning_service = LearningMemoryService(memory_service)
+
+    memory_service.remember(
+        memory_type="profile",
+        memory_key="goal",
+        content="AI Agent",
+        importance=0.9,
+        confidence=1.0,
+        source="user_confirmed",
+    )
+
+    memory_service.remember(
+        memory_type="skill",
+        memory_key="Python",
+        content='{"level": 90}',
+        importance=0.9,
+        confidence=0.5,
+        source="agent_inference",
+    )
+
+    first_record = LearningRecord(
+        topic="Python面向对象基础",
+        understanding=90,
+        evidence="完成练习",
+        evidence_type="practice",
+    )
+
+    process_learning_evaluation(
+        learning_service,
+        memory_service,
+        first_record,
+    )
+
+    second_record = LearningRecord(
+        topic="Python面向对象基础",
+        understanding=95,
+        evidence="测验通过",
+        evidence_type="quiz",
+    )
+
+    result = process_learning_evaluation(
+        learning_service,
+        memory_service,
+        second_record,
+    )
+
+    assert result.next_learning_decision is not None
+    assert result.next_learning_decision.action == "advance"
+    assert result.next_learning_decision.next_topic == "Tool Calling"

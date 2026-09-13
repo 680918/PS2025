@@ -201,3 +201,149 @@ def test_second_strong_learning_feedback_updates_skill(monkeypatch):
     assert updated_skill_data["level"] == 80
     assert updated_skill_data["evaluation_status"] == "improving"
     assert updated_skill_data["evaluation_confidence"] == 0.85
+
+
+def test_save_learning_feedback_returns_planning_decision():
+    from memory.service import MemoryService
+    from memory.store import MemoryStore
+    from tools.tools import save_learning_feedback
+
+    store = MemoryStore()
+    memory_service = MemoryService(store)
+
+    # 用户长期目标
+    memory_service.remember(
+        memory_type="profile",
+        memory_key="goal",
+        content="AI Agent",
+        importance=0.9,
+        confidence=1.0,
+        source="user_confirmed",
+    )
+
+    # 当前 Skill
+    memory_service.remember(
+        memory_type="skill",
+        memory_key="Python",
+        content='{"level": 90}',
+        importance=0.9,
+        confidence=0.5,
+        source="agent_inference",
+    )
+
+    # 第一次反馈：建立历史基线
+    first_result = save_learning_feedback(
+        topic="Python面向对象基础",
+        understanding=90,
+        evidence="完成练习",
+        evidence_type="practice",
+        memory_service=memory_service,
+    )
+
+    assert first_result["status"] == "success"
+    assert first_result["data"]["evaluation_status"] == "insufficient_data"
+    assert first_result["data"]["next_learning_action"] is None
+
+    # 第二次反馈：形成 improving 趋势
+    second_result = save_learning_feedback(
+        topic="Python面向对象基础",
+        understanding=95,
+        evidence="测验通过",
+        evidence_type="quiz",
+        memory_service=memory_service,
+    )
+
+    assert second_result["status"] == "success"
+    assert second_result["data"]["evaluation_status"] == "improving"
+    assert second_result["data"]["evaluation_confidence"] == 0.85
+
+    assert second_result["data"]["next_learning_action"] == "advance"
+    assert second_result["data"]["next_learning_topic"] == "Tool Calling"
+    assert second_result["data"]["next_learning_reason"]
+
+
+def test_save_learning_feedback_should_return_coach_response_contract():
+    from memory.service import MemoryService
+    from memory.store import MemoryStore
+    from tools.tools import save_learning_feedback
+
+    memory_service = MemoryService(MemoryStore())
+
+    memory_service.remember(
+        memory_type="profile",
+        memory_key="goal",
+        content="一年内掌握AI Agent应用搭建能力",
+        importance=0.9,
+        confidence=1.0,
+        source="user_confirmed",
+    )
+
+    memory_service.remember(
+        memory_type="skill",
+        memory_key="Python",
+        content='{"level": 90}',
+        importance=0.9,
+        confidence=0.8,
+        source="learning_evaluation",
+    )
+
+    save_learning_feedback(
+        topic="Python面向对象基础",
+        understanding=95,
+        evidence="测验9/10",
+        evidence_type="quiz",
+        memory_service=memory_service,
+    )
+
+    result = save_learning_feedback(
+        topic="Python面向对象基础",
+        understanding=99,
+        evidence="测验10/10",
+        evidence_type="quiz",
+        memory_service=memory_service,
+    )
+
+    coach_response = result["data"]["coach_response"]
+
+    assert "facts" in coach_response
+    assert "assessment" in coach_response
+    assert "recommendation" in coach_response
+
+    assert "理解度自评99%" in coach_response["facts"]
+    assert "测验10/10" in coach_response["facts"]
+    recommendation = coach_response["recommendation"]
+    assert isinstance(recommendation, dict)
+    assert recommendation["action"] == "advance"
+    assert recommendation["next_topic"] == "Tool Calling"
+    assert recommendation["reason"]
+
+
+def test_coach_response_assessment_should_be_structured():
+    from memory.service import MemoryService
+    from memory.store import MemoryStore
+    from tools.tools import save_learning_feedback
+
+    memory_service = MemoryService(MemoryStore())
+
+    save_learning_feedback(
+        topic="Python函数",
+        understanding=95,
+        evidence="测验9/10",
+        evidence_type="quiz",
+        memory_service=memory_service,
+    )
+
+    result = save_learning_feedback(
+        topic="Python函数",
+        understanding=99,
+        evidence="测验10/10",
+        evidence_type="quiz",
+        memory_service=memory_service,
+    )
+
+    assessment = result["data"]["coach_response"]["assessment"]
+
+    assert isinstance(assessment, dict)
+    assert assessment["status"] == "stable"
+    assert assessment["confidence"] == 0.85
+    assert assessment["current_understanding"] == 99
