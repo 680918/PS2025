@@ -1,6 +1,7 @@
 import re
 from knowledge.models import RetrievalResult
 
+
 def normalize_query(query):
     query = query.lower().strip()
 
@@ -53,11 +54,7 @@ def retrieve_chunks(
 def extract_query_terms(query):
     normalized = normalize_query(query)
 
-    terms = [
-        term
-        for term in normalized.split()
-        if term
-    ]
+    terms = [term for term in normalized.split() if term]
 
     expanded_terms = []
 
@@ -78,9 +75,7 @@ def extract_query_terms(query):
                 )
 
                 if cleaned:
-                    expanded_terms.append(
-                        cleaned
-                    )
+                    expanded_terms.append(cleaned)
 
     return expanded_terms
 
