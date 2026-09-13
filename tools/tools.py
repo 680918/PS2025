@@ -14,6 +14,10 @@ from memory.adapters import (
 from evaluation.learning_pipeline import process_learning_evaluation
 from memory.learning_models import LearningRecord
 from memory.learning_service import LearningMemoryService
+from dataclasses import asdict
+from coach.response_contract import (
+    build_coach_response_contract,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +192,17 @@ def save_learning_feedback(
         record,
     )
 
+    planning_decision = result.next_learning_decision
+
+    coach_response = None
+
+    if planning_decision is not None:
+        coach_response = build_coach_response_contract(
+            learning_record=result.learning_record,
+            evaluation=result.evaluation,
+            planning_decision=planning_decision,
+        )
+
     return {
         "status": "success",
         "tool_name": "save_learning_feedback",
@@ -198,6 +213,18 @@ def save_learning_feedback(
             "evaluation_confidence": result.evaluation.confidence,
             "skill_update_allowed": result.skill_update_decision.allowed,
             "skill_updated": result.updated_skill is not None,
+            "next_learning_action": (
+                planning_decision.action if planning_decision is not None else None
+            ),
+            "next_learning_topic": (
+                planning_decision.next_topic if planning_decision is not None else None
+            ),
+            "next_learning_reason": (
+                planning_decision.reason if planning_decision is not None else None
+            ),
+            "coach_response": (
+                asdict(coach_response) if coach_response is not None else None
+            ),
         },
     }
 

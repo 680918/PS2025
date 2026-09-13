@@ -30,6 +30,7 @@ class AgentState:
         self.failure_stage = (
             None  # New attribute to track the stage where the failure occurred
         )
+        self.knowledge_context = []
 
     def update_step(self):
 
@@ -70,8 +71,12 @@ class AgentState:
             "status": self.status,
             "failure_stage": self.failure_stage,
             "last_result": self.last_result,
+            "knowledge_context": self.knowledge_context,
         }
 
     def get_tool_result(self, key):
 
         return self.tool_results.get(key)
+
+    def set_knowledge_context(self, knowledge_context):
+        self.knowledge_context = knowledge_context

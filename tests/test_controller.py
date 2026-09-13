@@ -449,7 +449,8 @@ def test_run_planning_agent_stop_output(monkeypatch):
 
     result = controller_module.run_planning_agent("帮我制定学习计划")
 
-    assert result == "当前任务无法完成"
+    assert "任务未完成" in result
+    assert "test failure" not in result
 
 
 def test_run_simple_agent_handles_llm_error(monkeypatch):
@@ -482,7 +483,8 @@ def test_run_simple_agent_handles_llm_error(monkeypatch):
     )
 
     assert isinstance(result, str)
-    assert "LLM" in result
+    assert "任务未完成" in result
+    assert "LLM final answer failed" not in result
 
 
 @pytest.mark.workflow
@@ -515,45 +517,8 @@ def test_run_planning_agent_handles_final_llm_error(monkeypatch):
 
     assert isinstance(result, str)
 
-    assert "LLM" in result
-
-
-@pytest.mark.workflow
-def test_run_planning_agent_handles_stop_llm_error(monkeypatch):
-
-    import agent.controller as controller_module
-
-    def fake_runtime(user_message, state=None):
-
-        state = AgentState(user_message)
-
-        state.last_result = {
-            "status": "error",
-            "error_type": "test_error",
-            "message": "runtime failed",
-            "retryable": False,
-        }
-
-        return state, "stop"
-
-    def fake_call_llm(system_prompt, user_message):
-
-        return {
-            "status": "error",
-            "error_type": "llm_api_error",
-            "message": "LLM stop message failed",
-            "content": None,
-        }
-
-    monkeypatch.setattr(controller_module, "run_planning_runtime", fake_runtime)
-
-    monkeypatch.setattr(controller_module, "call_llm", fake_call_llm)
-
-    result = controller_module.run_planning_agent("帮我制定学习计划")
-
-    assert isinstance(result, str)
-
-    assert "LLM" in result
+    assert "回答生成失败" in result
+    assert "LLM final answer failed" not in result
 
 
 def test_llm_timeout_should_retry():
@@ -656,7 +621,8 @@ def test_run_simple_agent_does_not_retry_non_retryable_llm_error(monkeypatch):
     state = controller_module.AgentState("你好")
     result = controller_module.run_simple_agent("你好", state=state)
 
-    assert result == "LLM调用失败：Missing DEEPSEEK_API_KEY"
+    assert "任务未完成" in result
+    assert "Missing DEEPSEEK_API_KEY" not in result
     assert len(calls) == 1
 
 
@@ -684,7 +650,8 @@ def test_run_simple_agent_retry_fails_returns_error(monkeypatch):
     state = controller_module.AgentState("你好")
     result = controller_module.run_simple_agent("你好", state=state)
 
-    assert result == "LLM调用失败：timeout"
+    assert "任务未完成" in result
+    assert "LLM调用失败：timeout" not in result
     assert len(calls) == 2
 
 
@@ -1089,52 +1056,6 @@ def test_run_planning_agent_retries_final_llm(monkeypatch):
     result = controller.run_planning_agent("帮我制定学习计划")
 
     assert result == "最终学习建议"
-    assert llm_responses == []
-
-
-def test_run_planning_agent_retries_stop_message_llm(monkeypatch):
-
-    import agent.controller as controller
-
-    llm_responses = [
-        {
-            "status": "error",
-            "error_type": "llm_timeout",
-            "message": "timeout",
-            "content": None,
-            "retryable": True,
-            "replannable": False,
-        },
-        {
-            "status": "success",
-            "content": "任务执行失败，请稍后再试",
-        },
-    ]
-
-    def fake_call_llm(system_prompt, user_message):
-        return llm_responses.pop(0)
-
-    class FakeState:
-        def __init__(self):
-            self.run_id = "run-123"
-
-        def get_state(self):
-            return {
-                "run_id": self.run_id,
-                "status": "stop",
-                "message": "runtime failed",
-            }
-
-    def fake_runtime(user_message, state=None):
-        return FakeState(), "stop"
-
-    monkeypatch.setattr(controller, "call_llm", fake_call_llm)
-    monkeypatch.setattr(controller, "run_planning_runtime", fake_runtime)
-    monkeypatch.setattr(controller.time, "sleep", lambda seconds: None)
-
-    result = controller.run_planning_agent("帮我制定学习计划")
-
-    assert result == "任务执行失败，请稍后再试"
     assert llm_responses == []
 
 
@@ -1653,55 +1574,6 @@ def test_run_planning_agent_passes_run_id_to_final_llm(monkeypatch):
     assert observed["run_id"] == "run-123"
 
 
-def test_run_planning_agent_passes_run_id_to_stop_llm(monkeypatch):
-    import agent.controller as controller
-
-    observed = {}
-
-    class FakeState:
-        def __init__(self):
-            self.run_id = "run-123"
-
-        def get_state(self):
-            return {
-                "run_id": self.run_id,
-            }
-
-    fake_state = FakeState()
-
-    def fake_run_planning_runtime(user_message, state=None):
-        return fake_state, "stop"
-
-    def fake_call_llm_with_retry(
-        system_prompt,
-        user_message,
-        run_id=None,
-    ):
-        observed["run_id"] = run_id
-
-        return {
-            "status": "success",
-            "content": "failed safely",
-        }
-
-    monkeypatch.setattr(
-        controller,
-        "run_planning_runtime",
-        fake_run_planning_runtime,
-    )
-
-    monkeypatch.setattr(
-        controller,
-        "call_llm_with_retry",
-        fake_call_llm_with_retry,
-    )
-
-    result = controller.run_planning_agent("hello")
-
-    assert result == "failed safely"
-    assert observed["run_id"] == "run-123"
-
-
 def test_run_simple_agent_passes_run_id_to_llm(monkeypatch):
     import agent.controller as controller_module
 
@@ -2114,7 +1986,8 @@ def test_run_simple_agent_stops_when_tool_fails(monkeypatch):
     assert call_count["llm"] == 1
     assert state.last_result["status"] == "error"
     assert state.last_result["error_type"] == "tool_error"
-    assert "tool failed" in result
+    assert "任务未完成" in result
+    assert "tool failed" not in result
 
 
 def test_run_simple_agent_records_successful_tool_result(monkeypatch):
@@ -2210,7 +2083,8 @@ def test_run_simple_agent_records_initial_llm_failure(monkeypatch):
     assert state.last_result is not None
     assert state.last_result["status"] == "error"
     assert state.last_result["error_type"] == "llm_timeout"
-    assert "LLM timeout" in result
+    assert "任务未完成" in result
+    assert "LLM timeout" not in result
 
 
 def test_run_simple_agent_records_final_llm_failure(monkeypatch):
@@ -2273,7 +2147,8 @@ def test_run_simple_agent_records_final_llm_failure(monkeypatch):
     assert state.last_result is not None
     assert state.last_result["status"] == "error"
     assert state.last_result["error_type"] == "llm_timeout"
-    assert "final LLM timeout" in result
+    assert "任务未完成" in result
+    assert "LLM timeout" not in result
 
 
 def test_run_simple_agent_records_final_llm_success(monkeypatch):
@@ -2429,7 +2304,8 @@ def test_run_simple_agent_sets_stop_status_on_initial_llm_failure(monkeypatch):
         state=state,
     )
 
-    assert "LLM timeout" in result
+    assert "任务未完成" in result
+    assert "LLM timeout" not in result
     assert state.status == "stop"
 
 
@@ -2470,7 +2346,8 @@ def test_run_simple_agent_sets_stop_status_on_tool_failure(monkeypatch):
         state=state,
     )
 
-    assert "tool failed" in result
+    assert "任务未完成" in result
+    assert "tool failed" not in result
     assert state.status == "stop"
 
 
@@ -2521,7 +2398,8 @@ def test_run_simple_agent_sets_stop_status_on_final_llm_failure(monkeypatch):
         state=state,
     )
 
-    assert "final timeout" in result
+    assert "任务未完成" in result
+    assert "final LLM timeout" not in result
     assert state.status == "stop"
 
 
@@ -3716,6 +3594,183 @@ def test_simple_runtime_executes_learning_feedback_tool(monkeypatch):
     }
 
 
+def test_simple_runtime_final_prompt_enforces_coach_policy(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    prompts = []
+
+    responses = iter(
+        [
+            {
+                "status": "success",
+                "content": """
+                <tool_call>
+                {
+                    "name": "save_learning_feedback",
+                    "arguments": {
+                        "topic": "Python函数",
+                        "understanding": 90
+                    }
+                }
+                </tool_call>
+                """,
+            },
+            {
+                "status": "success",
+                "content": "学习反馈已保存。",
+            },
+        ]
+    )
+
+    def fake_call_llm(system_prompt, user_message):
+        prompts.append(system_prompt)
+        return next(responses)
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm",
+        fake_call_llm,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: ["save_learning_feedback"],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda tool_names: [
+            {
+                "name": "save_learning_feedback",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {"type": "string"},
+                        "understanding": {"type": "integer"},
+                    },
+                    "required": ["topic", "understanding"],
+                },
+            }
+        ],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        lambda *args, **kwargs: {
+            "status": "success",
+            "tool_name": "save_learning_feedback",
+            "data": {},
+        },
+    )
+
+    controller_module.run_simple_runtime("今天学习Python函数，理解90%。")
+
+    final_prompt = prompts[1]
+
+    assert "不得把高理解度" in final_prompt
+    assert "完全掌握" in final_prompt
+    assert "不得使用" in final_prompt
+    assert "已经为你安排" in final_prompt
+    assert "明天几点开始" in final_prompt
+    assert "必须区分事实、评估和建议" in final_prompt
+
+
+def test_simple_runtime_final_prompt_should_prioritize_coach_response(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    prompts = []
+
+    responses = iter(
+        [
+            {
+                "status": "success",
+                "content": """
+                <tool_call>
+                {
+                    "name": "save_learning_feedback",
+                    "arguments": {
+                        "topic": "Python函数",
+                        "understanding": 90
+                    }
+                }
+                </tool_call>
+                """,
+            },
+            {
+                "status": "success",
+                "content": "学习反馈已保存。",
+            },
+        ]
+    )
+
+    def fake_call_llm(system_prompt, user_message):
+        prompts.append(system_prompt)
+        return next(responses)
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm",
+        fake_call_llm,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: ["save_learning_feedback"],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda tool_names: [
+            {
+                "name": "save_learning_feedback",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {"type": "string"},
+                        "understanding": {"type": "integer"},
+                    },
+                    "required": ["topic", "understanding"],
+                },
+            }
+        ],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        lambda *args, **kwargs: {
+            "status": "success",
+            "tool_name": "save_learning_feedback",
+            "data": {},
+        },
+    )
+
+    controller_module.run_simple_runtime("今天学习Python函数，理解90%。")
+
+    final_prompt = prompts[1]
+
+    assert "coach_response" in final_prompt
+    assert "优先使用" in final_prompt
+    assert "facts" in final_prompt
+    assert "assessment" in final_prompt
+    assert "recommendation" in final_prompt
+    assert "不得重新规划" in final_prompt
+    assert "action" in final_prompt
+    assert "next_topic" in final_prompt
+    assert "reason" in final_prompt
+    assert "current_understanding" in final_prompt
+    assert "confidence" in final_prompt
+
+
 def test_simple_runtime_final_prompt_forbids_second_tool_call(
     monkeypatch,
 ):
@@ -3798,3 +3853,750 @@ def test_simple_runtime_final_prompt_forbids_second_tool_call(
 
     assert "不得再次调用任何工具" in final_prompt
     assert "不得输出 <tool_call>" in final_prompt
+
+
+def test_simple_runtime_final_llm_should_receive_filtered_response_input(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    user_messages = []
+
+    responses = iter(
+        [
+            {
+                "status": "success",
+                "content": """
+                <tool_call>
+                {
+                    "name": "save_learning_feedback",
+                    "arguments": {
+                        "topic": "Python函数",
+                        "understanding": 90
+                    }
+                }
+                </tool_call>
+                """,
+            },
+            {
+                "status": "success",
+                "content": "下一步进入 Tool Calling。",
+            },
+        ]
+    )
+
+    def fake_call_llm(system_prompt, user_message):
+        user_messages.append(user_message)
+        return next(responses)
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm",
+        fake_call_llm,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: ["save_learning_feedback"],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda tool_names: [],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        lambda *args, **kwargs: {
+            "status": "success",
+            "tool_name": "save_learning_feedback",
+            "data": {
+                "internal_field": "should_not_reach_final_llm",
+                "coach_response": {
+                    "facts": ["理解度自评90%"],
+                    "assessment": {
+                        "status": "stable",
+                        "confidence": 0.85,
+                        "current_understanding": 90,
+                    },
+                    "recommendation": {
+                        "action": "advance",
+                        "next_topic": "Tool Calling",
+                        "reason": "Advance to the next skill.",
+                    },
+                },
+            },
+        },
+    )
+
+    controller_module.run_simple_runtime("今天学习Python函数，理解90%。")
+
+    final_user_message = user_messages[1]
+
+    assert "Tool Calling" in final_user_message
+    assert "理解度自评90%" in final_user_message
+    assert "internal_field" not in final_user_message
+    assert "should_not_reach_final_llm" not in final_user_message
+
+
+def test_simple_runtime_tool_error_should_stop_without_final_llm(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    user_messages = []
+
+    responses = iter(
+        [
+            {
+                "status": "success",
+                "content": """
+                <tool_call>
+                {
+                    "name": "save_learning_feedback",
+                    "arguments": {
+                        "topic": "Python函数",
+                        "understanding": 90
+                    }
+                }
+                </tool_call>
+                """,
+            },
+        ]
+    )
+
+    def fake_call_llm(system_prompt, user_message):
+        user_messages.append(user_message)
+        return next(responses)
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm",
+        fake_call_llm,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: ["save_learning_feedback"],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda tool_names: [],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        lambda *args, **kwargs: {
+            "status": "error",
+            "tool_name": "save_learning_feedback",
+            "error_type": "tool_execution_error",
+            "message": "Failed to save learning feedback.",
+            "retryable": False,
+            "replannable": False,
+            "internal_exception": ("sqlite3.OperationalError: database is locked"),
+            "traceback": "SECRET_INTERNAL_TRACEBACK",
+            "file_path": ("D:\\personal-growth-coach\\data\\memory.db"),
+        },
+    )
+
+    state, status = controller_module.run_simple_runtime(
+        "今天学习Python函数，理解90%。"
+    )
+
+    assert status == "stop"
+    assert state.status == "stop"
+
+    assert len(user_messages) == 1
+
+
+def test_run_simple_agent_should_present_safe_error(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    class FakeState:
+        status = "stop"
+        last_result = {
+            "status": "error",
+            "error_type": "tool_execution_error",
+            "message": ("sqlite3.OperationalError: database is locked"),
+            "traceback": "SECRET_TRACEBACK",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_runtime",
+        lambda *args, **kwargs: (
+            FakeState(),
+            "stop",
+        ),
+    )
+
+    answer = controller_module.run_simple_agent("记录今天的学习反馈。")
+
+    assert "操作失败" in answer
+    assert "工具执行时出现问题" in answer
+
+    assert "sqlite3" not in answer
+    assert "database is locked" not in answer
+    assert "SECRET_TRACEBACK" not in answer
+
+
+def test_run_planning_agent_should_present_safe_error(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    llm_called = False
+
+    class FakeState:
+        status = "stop"
+        run_id = "test-run"
+
+        last_result = {
+            "status": "error",
+            "error_type": "tool_execution_error",
+            "message": ("sqlite3.OperationalError: database is locked"),
+            "traceback": "SECRET_TRACEBACK",
+        }
+
+        def get_state(self):
+            return {
+                "status": "stop",
+                "internal_secret": "VERY_SECRET_STATE",
+            }
+
+    def fake_llm(*args, **kwargs):
+        nonlocal llm_called
+        llm_called = True
+        raise AssertionError("LLM should not be called on runtime stop")
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_planning_runtime",
+        lambda *args, **kwargs: (
+            FakeState(),
+            "stop",
+        ),
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_llm,
+    )
+
+    answer = controller_module.run_planning_agent("帮我制定下一步学习计划。")
+
+    assert "操作失败" in answer
+    assert "工具执行时出现问题" in answer
+
+    assert "sqlite3" not in answer
+    assert "database is locked" not in answer
+    assert "SECRET_TRACEBACK" not in answer
+    assert "VERY_SECRET_STATE" not in answer
+
+    assert llm_called is False
+
+
+def test_run_planning_agent_should_present_safe_final_llm_error(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    class FakeState:
+        status = "success"
+        run_id = "test-run"
+        last_result = {
+            "status": "success",
+            "content": "internal result",
+        }
+
+        def get_state(self):
+            return {
+                "status": "success",
+                "internal_secret": "SECRET_STATE",
+            }
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_planning_runtime",
+        lambda *args, **kwargs: (
+            FakeState(),
+            "success",
+        ),
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        lambda *args, **kwargs: {
+            "status": "error",
+            "message": ("ConnectionError: api timeout SECRET_PROVIDER_INFO"),
+        },
+    )
+
+    answer = controller_module.run_planning_agent("帮我制定下一步学习计划。")
+
+    assert "回答生成失败" in answer
+    assert "最终回答暂时无法生成" in answer
+
+    assert "ConnectionError" not in answer
+    assert "api timeout" not in answer
+    assert "SECRET_PROVIDER_INFO" not in answer
+
+
+def test_planning_runtime_terminal_status_should_match_state_status(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    class FakeState:
+        def __init__(self):
+            self.status = "running"
+            self.last_result = {
+                "status": "error",
+                "error_type": "tool_execution_error",
+            }
+            self.current_step = 0
+            self.tool_results = {}
+
+        def add_plan(self, steps):
+            pass
+
+        def record_retry(self):
+            pass
+
+        def record_replan(self):
+            pass
+
+    fake_state = FakeState()
+
+    monkeypatch.setattr(
+        controller_module,
+        "create_plan",
+        lambda user_message: {
+            "steps": [{"id": "step-1"}],
+        },
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_plan",
+        lambda state, steps: state,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "decide_failure_action",
+        lambda state, result: "stop",
+    )
+
+    state, runtime_status = controller_module.run_planning_runtime(
+        "测试任务",
+        state=fake_state,
+    )
+
+    assert runtime_status == "stop"
+    assert state.status == runtime_status
+
+
+def test_run_planning_agent_stop_should_not_call_llm(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    llm_called = False
+
+    class FakeState:
+        run_id = "run-123"
+        last_result = {
+            "status": "error",
+            "error_type": "tool_execution_error",
+            "message": "SECRET_INTERNAL_ERROR",
+        }
+
+        def get_state(self):
+            return {
+                "status": "stop",
+                "internal_secret": "SECRET_STATE",
+            }
+
+    def fake_runtime(user_message, state=None):
+        return FakeState(), "stop"
+
+    def fake_llm(*args, **kwargs):
+        nonlocal llm_called
+        llm_called = True
+        raise AssertionError("LLM should not be called")
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_planning_runtime",
+        fake_runtime,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_llm,
+    )
+
+    result = controller_module.run_planning_agent("帮我制定学习计划")
+
+    assert llm_called is False
+    assert "操作失败" in result
+    assert "工具执行时出现问题" in result
+    assert "SECRET_INTERNAL_ERROR" not in result
+    assert "SECRET_STATE" not in result
+
+
+def test_run_agent_should_load_knowledge_context(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    class FakeChunk:
+        def __init__(self):
+            self.id = "fake-chunk-1"
+            self.content = "Python函数可以封装重复逻辑。"
+            self.source = "python.txt"
+            self.chunk_index = 0
+
+    class FakeResult:
+        def __init__(self):
+            self.chunk = FakeChunk()
+            self.score = 4.0
+
+    class FakeKnowledgeService:
+        def search(self, query, top_k=3):
+            assert query == "Python函数是什么？"
+            assert top_k == 3
+            return [FakeResult()]
+
+    captured = {}
+
+    def fake_run_simple_agent(
+        user_message,
+        state=None,
+    ):
+        captured["state"] = state
+        return "ok"
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    result = controller_module.run_agent(
+        "Python函数是什么？",
+        knowledge_service=FakeKnowledgeService(),
+    )
+
+    assert result == "ok"
+
+    state = captured["state"]
+
+    assert len(state.knowledge_context) == 1
+    assert state.knowledge_context[0]["content"] == "Python函数可以封装重复逻辑。"
+    assert state.knowledge_context[0]["source"] == "python.txt"
+    assert state.knowledge_context[0]["score"] == 4.0
+    assert state.knowledge_context[0] == {
+        "chunk_id": "fake-chunk-1",
+        "content": "Python函数可以封装重复逻辑。",
+        "source": "python.txt",
+        "chunk_index": 0,
+        "score": 4.0,
+        "rank": 1,
+    }
+
+
+def test_simple_runtime_initial_llm_should_receive_knowledge_context(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("Python函数是什么？")
+
+    state.set_knowledge_context(
+        [
+            {
+                "content": "Python函数可以封装重复逻辑。",
+                "source": "python.txt",
+                "chunk_index": 0,
+            }
+        ]
+    )
+
+    captured = {}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+        captured["user_message"] = user_message
+
+        return {
+            "status": "success",
+            "content": "Python函数可以封装重复逻辑。",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: [],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda candidate_tools: [],
+    )
+
+    state, runtime_status = controller_module.run_simple_runtime(
+        "Python函数是什么？",
+        state=state,
+    )
+
+    assert runtime_status == "success"
+
+    assert "Python函数可以封装重复逻辑" in captured["system_prompt"]
+
+    assert "python.txt" in captured["system_prompt"]
+
+
+def test_simple_runtime_final_llm_should_receive_knowledge_context(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("请保存我的学习反馈")
+
+    state.set_knowledge_context(
+        [
+            {
+                "content": "学习反馈应记录理解程度和学习证据。",
+                "source": "learning_notes.txt",
+                "chunk_index": 0,
+            }
+        ]
+    )
+
+    calls = []
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        calls.append(
+            {
+                "system_prompt": system_prompt,
+                "user_message": user_message,
+            }
+        )
+
+        if len(calls) == 1:
+            return {
+                "status": "success",
+                "content": """
+                <tool_call>
+                {
+                    "name": "fake_tool",
+                    "arguments": {}
+                }
+                </tool_call>
+                """,
+            }
+
+        return {
+            "status": "success",
+            "content": "学习反馈已处理。",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: ["fake_tool"],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda candidate_tools: [
+            {
+                "name": "fake_tool",
+                "parameters": {},
+            }
+        ],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        lambda name, arguments, **kwargs: {
+            "status": "success",
+            "result": "ok",
+        },
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "build_final_response_input",
+        lambda tool_result: tool_result,
+    )
+
+    state, runtime_status = controller_module.run_simple_runtime(
+        "请保存我的学习反馈",
+        state=state,
+    )
+
+    assert runtime_status == "success"
+    assert len(calls) == 2
+
+    final_system_prompt = calls[1]["system_prompt"]
+
+    assert "学习反馈应记录理解程度和学习证据" in final_system_prompt
+
+    assert "learning_notes.txt" in final_system_prompt
+
+
+def test_run_agent_should_use_real_knowledge_service(
+    tmp_path,
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from knowledge.service import KnowledgeService
+
+    file_path = tmp_path / "python_notes.txt"
+
+    file_path.write_text(
+        "Python函数可以封装重复逻辑。",
+        encoding="utf-8",
+    )
+
+    knowledge_service = KnowledgeService()
+    knowledge_service.add_document(file_path)
+
+    captured = {}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "Python函数可以封装重复逻辑。",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: [],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda candidate_tools: [],
+    )
+
+    result = controller_module.run_agent(
+        "Python 函数",
+        knowledge_service=knowledge_service,
+    )
+
+    assert result == "Python函数可以封装重复逻辑。"
+
+    assert "Python函数可以封装重复逻辑" in captured["system_prompt"]
+
+
+def test_run_agent_should_include_retrieval_score_in_knowledge_context(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    class FakeChunk:
+        id = "fake-chunk-1"
+        content = "Python函数可以封装重复逻辑。"
+        source = "python.txt"
+        chunk_index = 0
+
+    class FakeResult:
+        chunk = FakeChunk()
+        score = 3.25
+
+    class FakeKnowledgeService:
+        def search(self, query, top_k=3):
+            return [FakeResult()]
+
+    captured = {}
+
+    def fake_run_simple_agent(user_message, state=None):
+        captured["state"] = state
+        return "ok"
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    result = controller_module.run_agent(
+        "Python函数是什么？",
+        knowledge_service=FakeKnowledgeService(),
+    )
+
+    assert result == "ok"
+    assert captured["state"].knowledge_context[0]["score"] == 3.25
