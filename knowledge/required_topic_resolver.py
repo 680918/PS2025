@@ -21,6 +21,11 @@ def resolve_required_topics(
     if question_mode == "comparison":
         return mentioned_topics
 
+    explicit_topics = [topic for topic in mentioned_topics if topic in query]
+
+    if len(explicit_topics) == 1:
+        return explicit_topics
+
     if embedding_provider is not None:
         candidate_topics = list(
             dict.fromkeys(
