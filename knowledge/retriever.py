@@ -19,15 +19,21 @@ def retrieve_chunks(
     store,
     top_k=3,
     min_score=1.0,
+    document_ids=None,
 ):
     if not query.strip():
         return []
 
     query_terms = extract_query_terms(query)
 
+    if document_ids is None:
+        chunks = store.list_all()
+    else:
+        chunks = store.list_by_document_ids(document_ids)
+
     scored_chunks = []
 
-    for chunk in store.list_all():
+    for chunk in chunks:
         score = score_chunk(
             query,
             query_terms,

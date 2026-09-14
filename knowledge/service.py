@@ -56,6 +56,7 @@ class KnowledgeService:
         self,
         query,
         top_k=3,
+        document_ids=None,
     ):
         if self.embedding_provider is not None:
             return retrieve_from_vector_store(
@@ -63,12 +64,14 @@ class KnowledgeService:
                 self.vector_store,
                 self.embedding_provider,
                 top_k=top_k,
+                document_ids=document_ids,
             )
 
         return retrieve_chunks(
             query,
             self.store,
             top_k=top_k,
+            document_ids=document_ids,
         )
 
     def list_chunks(self):
