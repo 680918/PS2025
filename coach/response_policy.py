@@ -25,10 +25,6 @@ def apply_response_policy(content):
             safe_content,
         )
 
-    lines = [
-        line
-        for line in safe_content.splitlines()
-        if line.strip()
-    ]
+    lines = [line for line in safe_content.splitlines() if line.strip()]
 
     return "\n".join(lines)

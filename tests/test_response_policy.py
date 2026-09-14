@@ -22,10 +22,7 @@ def test_should_remove_internal_metadata_lines():
 
 
 def test_should_preserve_source():
-    content = (
-        "正常回答\n"
-        "source: python.txt"
-    )
+    content = "正常回答\nsource: python.txt"
 
     result = apply_response_policy(content)
 
@@ -41,11 +38,7 @@ def test_should_not_remove_normal_score_word():
 
 
 def test_should_remove_quoted_metadata_field():
-    content = (
-        '正常回答\n'
-        '"chunk_id": "chunk-123"\n'
-        '"score": 0.88'
-    )
+    content = '正常回答\n"chunk_id": "chunk-123"\n"score": 0.88'
 
     result = apply_response_policy(content)
 

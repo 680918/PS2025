@@ -452,8 +452,6 @@ def run_simple_agent(user_message, state=None):
     if state.last_result:
         content = state.last_result.get("content", "")
         return apply_response_policy(content)
-        
-            
 
     return ""
 
@@ -658,6 +656,4 @@ def run_planning_agent(user_message, state=None):
 
         return f"{user_error.title}：{user_error.message}{retry_text}"
 
-    return apply_response_policy(
-        response["content"]
-    )
+    return apply_response_policy(response["content"])

@@ -4443,6 +4443,7 @@ def test_simple_runtime_initial_llm_should_receive_knowledge_context(
 
     assert "python.txt" in captured["system_prompt"]
 
+
 def test_simple_runtime_prompt_should_define_source_attribution_contract(
     monkeypatch,
 ):
@@ -4716,6 +4717,7 @@ def test_run_agent_should_include_retrieval_score_in_knowledge_context(
     assert result == "ok"
     assert captured["state"].knowledge_context[0]["score"] == 3.25
 
+
 def test_simple_agent_should_redact_internal_knowledge_metadata(
     monkeypatch,
 ):
@@ -4758,6 +4760,7 @@ def test_simple_agent_should_redact_internal_knowledge_metadata(
     assert "chunk_index" not in result
     assert "score: 0.92" not in result
     assert "rank: 1" not in result
+
 
 def test_planning_agent_should_redact_internal_knowledge_metadata(
     monkeypatch,
