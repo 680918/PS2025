@@ -25,3 +25,14 @@ class KnowledgeStore:
                 return chunk
 
         return None
+
+    def delete_by_document_id(self, document_id):
+        deleted_chunks = [
+            chunk for chunk in self._chunks if chunk.document_id == document_id
+        ]
+
+        self._chunks = [
+            chunk for chunk in self._chunks if chunk.document_id != document_id
+        ]
+
+        return deleted_chunks

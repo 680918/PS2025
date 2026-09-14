@@ -22,3 +22,14 @@ class VectorStore:
                 return item
 
         return None
+
+    def delete_by_document_id(self, document_id):
+        deleted_items = [
+            item for item in self._items if item.chunk.document_id == document_id
+        ]
+
+        self._items = [
+            item for item in self._items if item.chunk.document_id != document_id
+        ]
+
+        return deleted_items
