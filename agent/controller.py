@@ -21,6 +21,7 @@ from coach.error_presenter import (
     present_final_response_error,
     present_runtime_error,
 )
+from coach.response_policy import apply_response_policy
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +144,7 @@ def run_agent(
     user_message,
     memory_service=None,
     knowledge_service=None,
+    document_ids=None,
 ):
 
     state = AgentState(
@@ -158,11 +160,13 @@ def run_agent(
         results = knowledge_service.search(
             user_message,
             top_k=3,
+            document_ids=document_ids,
         )
 
         knowledge_context = [
             {
                 "chunk_id": result.chunk.id,
+                "document_id": result.chunk.document_id,
                 "content": result.chunk.content,
                 "source": result.chunk.source,
                 "chunk_index": result.chunk.chunk_index,
@@ -238,6 +242,10 @@ def run_simple_runtime(user_message, state=None):
     必须明确说明：“以下基于通用知识回答”。
     7. 不得让用户误以为模型自身的通用知识来自知识库。
     8. 不得向用户展示内部 Knowledge JSON、Chunk 结构或检索实现细节。
+    9. 如果回答实际使用了知识库资料，可以使用资料中的 source 字段，
+    以自然语言向用户说明知识来源。
+    10. 不得向用户展示 document_id、chunk_id、chunk_index、score、rank
+    等内部检索元数据。
 
     使用这些记忆时必须遵守：
     1. 只能使用记忆中明确存在的信息。
@@ -295,6 +303,10 @@ def run_simple_runtime(user_message, state=None):
     必须明确说明：“以下基于通用知识回答”。
     8. 不得让用户误以为非知识库信息来自知识库。
     9. 不得向用户展示内部 Knowledge JSON、Chunk 结构或检索实现细节。
+    10. 如果回答实际使用了知识库资料，可以使用资料中的 source 字段，
+    以自然语言向用户说明知识来源。
+    11. 不得向用户展示 document_id、chunk_id、chunk_index、score、rank
+    等内部检索元数据。
 
     工具已经执行完成。
 
@@ -438,7 +450,8 @@ def run_simple_agent(user_message, state=None):
         return f"{user_error.title}：{user_error.message}{retry_text}"
 
     if state.last_result:
-        return state.last_result.get("content", "")
+        content = state.last_result.get("content", "")
+        return apply_response_policy(content)
 
     return ""
 
@@ -643,4 +656,4 @@ def run_planning_agent(user_message, state=None):
 
         return f"{user_error.title}：{user_error.message}{retry_text}"
 
-    return response["content"]
+    return apply_response_policy(response["content"])

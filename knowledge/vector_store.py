@@ -16,6 +16,11 @@ class VectorStore:
     def list_all(self):
         return list(self._items)
 
+    def list_by_document_ids(self, document_ids):
+        document_ids = set(document_ids)
+
+        return [item for item in self._items if item.chunk.document_id in document_ids]
+
     def get_by_chunk_id(self, chunk_id):
         for item in self._items:
             if item.chunk.id == chunk_id:

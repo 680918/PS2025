@@ -10,15 +10,21 @@ def retrieve_from_vector_store(
     embedding_provider,
     top_k=3,
     min_score=0.0,
+    document_ids=None,
 ):
     if not query.strip():
         return []
 
     query_vector = embedding_provider.embed(query)
 
+    if document_ids is None:
+        items = vector_store.list_all()
+    else:
+        items = vector_store.list_by_document_ids(document_ids)
+
     scored_items = []
 
-    for item in vector_store.list_all():
+    for item in items:
         score = cosine_similarity(
             query_vector,
             item.vector,

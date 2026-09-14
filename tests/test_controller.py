@@ -4266,6 +4266,7 @@ def test_run_agent_should_load_knowledge_context(
     class FakeChunk:
         def __init__(self):
             self.id = "fake-chunk-1"
+            self.document_id = "fake-document-1"
             self.content = "Python函数可以封装重复逻辑。"
             self.source = "python.txt"
             self.chunk_index = 0
@@ -4276,7 +4277,12 @@ def test_run_agent_should_load_knowledge_context(
             self.score = 4.0
 
     class FakeKnowledgeService:
-        def search(self, query, top_k=3):
+        def search(
+            self,
+            query,
+            top_k=3,
+            document_ids=None,
+        ):
             assert query == "Python函数是什么？"
             assert top_k == 3
             return [FakeResult()]
@@ -4317,12 +4323,62 @@ def test_run_agent_should_load_knowledge_context(
     assert state.knowledge_context[0]["score"] == 4.0
     assert state.knowledge_context[0] == {
         "chunk_id": "fake-chunk-1",
+        "document_id": "fake-document-1",
         "content": "Python函数可以封装重复逻辑。",
         "source": "python.txt",
         "chunk_index": 0,
         "score": 4.0,
         "rank": 1,
     }
+
+
+def test_run_agent_should_pass_document_ids_to_knowledge_service(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    captured = {}
+
+    class FakeKnowledgeService:
+        def search(
+            self,
+            query,
+            top_k=3,
+            document_ids=None,
+        ):
+            captured["query"] = query
+            captured["top_k"] = top_k
+            captured["document_ids"] = document_ids
+            return []
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "ok",
+    )
+
+    result = controller_module.run_agent(
+        "Python函数是什么？",
+        knowledge_service=FakeKnowledgeService(),
+        document_ids=[
+            "doc-1",
+            "doc-2",
+        ],
+    )
+
+    assert result == "ok"
+    assert captured["query"] == "Python函数是什么？"
+    assert captured["top_k"] == 3
+    assert captured["document_ids"] == [
+        "doc-1",
+        "doc-2",
+    ]
 
 
 def test_simple_runtime_initial_llm_should_receive_knowledge_context(
@@ -4386,6 +4442,60 @@ def test_simple_runtime_initial_llm_should_receive_knowledge_context(
     assert "Python函数可以封装重复逻辑" in captured["system_prompt"]
 
     assert "python.txt" in captured["system_prompt"]
+
+
+def test_simple_runtime_prompt_should_define_source_attribution_contract(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("test")
+
+    captured = {}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: [],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda candidate_tools: [],
+    )
+
+    controller_module.run_simple_runtime(
+        "test",
+        state=state,
+    )
+
+    system_prompt = captured["system_prompt"]
+
+    assert "source" in system_prompt
+    assert "document_id" in system_prompt
+    assert "chunk_id" in system_prompt
+    assert "score" in system_prompt
+    assert "rank" in system_prompt
 
 
 def test_simple_runtime_final_llm_should_receive_knowledge_context(
@@ -4563,6 +4673,7 @@ def test_run_agent_should_include_retrieval_score_in_knowledge_context(
 
     class FakeChunk:
         id = "fake-chunk-1"
+        document_id = "fake-document-1"
         content = "Python函数可以封装重复逻辑。"
         source = "python.txt"
         chunk_index = 0
@@ -4572,7 +4683,12 @@ def test_run_agent_should_include_retrieval_score_in_knowledge_context(
         score = 3.25
 
     class FakeKnowledgeService:
-        def search(self, query, top_k=3):
+        def search(
+            self,
+            query,
+            top_k=3,
+            document_ids=None,
+        ):
             return [FakeResult()]
 
     captured = {}
@@ -4600,3 +4716,100 @@ def test_run_agent_should_include_retrieval_score_in_knowledge_context(
 
     assert result == "ok"
     assert captured["state"].knowledge_context[0]["score"] == 3.25
+
+
+def test_simple_agent_should_redact_internal_knowledge_metadata(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("test")
+
+    state.last_result = {
+        "status": "success",
+        "content": (
+            "根据知识库资料回答。\n"
+            "source: python.txt\n"
+            "document_id: doc-123\n"
+            "chunk_id: chunk-456\n"
+            "chunk_index: 2\n"
+            "score: 0.92\n"
+            "rank: 1"
+        ),
+    }
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_runtime",
+        lambda user_message, state=None: (
+            state,
+            "success",
+        ),
+    )
+
+    result = controller_module.run_simple_agent(
+        "test",
+        state=state,
+    )
+
+    assert "source: python.txt" in result
+
+    assert "document_id" not in result
+    assert "chunk_id" not in result
+    assert "chunk_index" not in result
+    assert "score: 0.92" not in result
+    assert "rank: 1" not in result
+
+
+def test_planning_agent_should_redact_internal_knowledge_metadata(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("test")
+
+    state.last_result = {
+        "status": "success",
+        "content": "ok",
+    }
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_planning_runtime",
+        lambda user_message, state=None: (
+            state,
+            "success",
+        ),
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        lambda final_prompt, user_message, run_id=None: {
+            "status": "success",
+            "content": (
+                "根据知识库资料回答。\n"
+                "source: planning_notes.txt\n"
+                "document_id: doc-999\n"
+                "chunk_id: chunk-888\n"
+                "chunk_index: 3\n"
+                "score: 0.88\n"
+                "rank: 2"
+            ),
+        },
+    )
+
+    result = controller_module.run_planning_agent(
+        "test",
+        state=state,
+    )
+
+    assert "source: planning_notes.txt" in result
+
+    assert "document_id" not in result
+    assert "chunk_id" not in result
+    assert "chunk_index" not in result
+    assert "score: 0.88" not in result
+    assert "rank: 2" not in result

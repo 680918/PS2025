@@ -20,6 +20,7 @@ def test_retrieval_result_should_expose_debug_metadata():
 
     context = {
         "chunk_id": result.chunk.id,
+        "document_id": result.chunk.document_id,
         "content": result.chunk.content,
         "source": result.chunk.source,
         "chunk_index": result.chunk.chunk_index,
@@ -28,6 +29,8 @@ def test_retrieval_result_should_expose_debug_metadata():
     }
 
     assert context["chunk_id"] == "function-chunk"
+
+    assert context["document_id"] == "python"
 
     assert context["source"] == "python.txt"
 
