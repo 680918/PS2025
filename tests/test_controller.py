@@ -4277,6 +4277,9 @@ def test_run_agent_should_load_knowledge_context(
             self.score = 4.0
 
     class FakeKnowledgeService:
+        def list_documents(self):
+            return []
+
         def search(
             self,
             query,
@@ -4683,6 +4686,9 @@ def test_run_agent_should_include_retrieval_score_in_knowledge_context(
         score = 3.25
 
     class FakeKnowledgeService:
+        def list_documents(self):
+            return []
+
         def search(
             self,
             query,
@@ -4813,3 +4819,158 @@ def test_planning_agent_should_redact_internal_knowledge_metadata(
     assert "chunk_index" not in result
     assert "score: 0.88" not in result
     assert "rank: 2" not in result
+
+
+def test_run_agent_should_auto_resolve_document_scope_when_not_explicitly_provided(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    captured = {}
+
+    class FakeDocument:
+        def __init__(self, document_id, title, source):
+            self.id = document_id
+            self.title = title
+            self.source = source
+
+    class FakeKnowledgeService:
+        def list_documents(self):
+            return [
+                FakeDocument(
+                    "doc-agent",
+                    "AI Agent Tool Learning",
+                    "agent_tool_notes.txt",
+                ),
+                FakeDocument(
+                    "doc-system",
+                    "System Thinking",
+                    "system_thinking.txt",
+                ),
+            ]
+
+        def search(
+            self,
+            query,
+            top_k=3,
+            document_ids=None,
+        ):
+            captured["document_ids"] = document_ids
+            return []
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "ok",
+    )
+
+    result = controller_module.run_agent(
+        "我想继续学习 agent tool",
+        knowledge_service=FakeKnowledgeService(),
+    )
+
+    assert result == "ok"
+    assert captured["document_ids"] == ["doc-agent"]
+
+
+def test_run_agent_should_prefer_explicit_document_ids_over_auto_scope(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    captured = {}
+
+    class FakeKnowledgeService:
+        def list_documents(self):
+            raise AssertionError(
+                "list_documents should not be called when document_ids are explicit"
+            )
+
+        def search(
+            self,
+            query,
+            top_k=3,
+            document_ids=None,
+        ):
+            captured["document_ids"] = document_ids
+            return []
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "ok",
+    )
+
+    result = controller_module.run_agent(
+        "我想继续学习 agent tool",
+        knowledge_service=FakeKnowledgeService(),
+        document_ids=["manual-doc"],
+    )
+
+    assert result == "ok"
+    assert captured["document_ids"] == ["manual-doc"]
+
+
+def test_run_agent_should_use_unrestricted_search_when_auto_scope_not_resolved(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    captured = {}
+
+    class FakeDocument:
+        def __init__(self, document_id, title, source):
+            self.id = document_id
+            self.title = title
+            self.source = source
+
+    class FakeKnowledgeService:
+        def list_documents(self):
+            return [
+                FakeDocument(
+                    "doc-agent",
+                    "AI Agent Tool Learning",
+                    "agent_tool_notes.txt",
+                )
+            ]
+
+        def search(
+            self,
+            query,
+            top_k=3,
+            document_ids=None,
+        ):
+            captured["document_ids"] = document_ids
+            return []
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "ok",
+    )
+
+    result = controller_module.run_agent(
+        "今天想学习财务分析",
+        knowledge_service=FakeKnowledgeService(),
+    )
+
+    assert result == "ok"
+    assert captured["document_ids"] is None
