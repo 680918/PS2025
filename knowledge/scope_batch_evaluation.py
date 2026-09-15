@@ -7,6 +7,7 @@ def evaluate_scope_cases(
     available_documents,
     top_n=None,
     min_score=1,
+    min_relative_score=None,
 ):
     results = []
 
@@ -19,6 +20,7 @@ def evaluate_scope_cases(
             available_documents,
             top_n=top_n,
             min_score=min_score,
+            min_relative_score=min_relative_score,
         )
 
         if actual_document_ids is None:
@@ -31,6 +33,7 @@ def evaluate_scope_cases(
 
         results.append(
             {
+                "name": case.get("name"),
                 "query": query,
                 "expected_document_ids": expected_document_ids,
                 "actual_document_ids": actual_document_ids,
