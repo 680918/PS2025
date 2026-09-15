@@ -1,6 +1,7 @@
 def resolve_document_scope(
     user_message,
     available_documents,
+    top_n=None,
 ):
     if not user_message:
         return None
@@ -10,35 +11,65 @@ def resolve_document_scope(
 
     normalized_message = user_message.lower()
 
-    matched_document_ids = []
+    scored_documents = []
 
     for document in available_documents:
-        # 兼容当前测试中的 dict
+        # 兼容旧测试：dict + tags
         if isinstance(document, dict):
             document_id = document["id"]
             tags = document.get("tags", [])
 
-            if any(tag.lower() in normalized_message for tag in tags):
-                matched_document_ids.append(document_id)
+            score = 0
+
+            for tag in tags:
+                if tag.lower() in normalized_message:
+                    score += 1
+
+            if score > 0:
+                scored_documents.append(
+                    (
+                        score,
+                        document_id,
+                    )
+                )
 
             continue
 
-        # 真实系统中的 KnowledgeDocument
+        # 真实系统：KnowledgeDocument
         document_id = document.id
-
-        searchable_text = " ".join(
-            [
-                document.title,
-                document.source,
-            ]
-        ).lower()
+        title = document.title.lower()
+        source = document.source.lower()
 
         words = normalized_message.split()
 
-        if any(word in searchable_text for word in words):
-            matched_document_ids.append(document_id)
+        score = 0
 
-    if not matched_document_ids:
+        for word in words:
+            if word in title:
+                score += 2
+
+            if word in source:
+                score += 1
+
+        if score > 0:
+            scored_documents.append(
+                (
+                    score,
+                    document_id,
+                )
+            )
+
+    if not scored_documents:
         return None
 
-    return matched_document_ids
+    scored_documents.sort(
+        key=lambda item: item[0],
+        reverse=True,
+    )
+
+    document_ids = [document_id for score, document_id in scored_documents]
+
+    if top_n is not None:
+        document_ids = document_ids[:top_n]
+
+    return document_ids

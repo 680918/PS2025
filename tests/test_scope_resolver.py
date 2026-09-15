@@ -136,3 +136,110 @@ def test_scope_resolver_should_accept_real_knowledge_documents():
     )
 
     assert result == ["doc-agent"]
+
+
+def test_scope_resolver_should_rank_more_relevant_document_first():
+    documents = [
+        KnowledgeDocument(
+            id="doc-agent",
+            title="AI Agent Tool Calling",
+            content="...",
+            source="agent_notes.txt",
+        ),
+        KnowledgeDocument(
+            id="doc-general",
+            title="General Learning Notes",
+            content="...",
+            source="tool_reference.txt",
+        ),
+    ]
+
+    result = resolve_document_scope(
+        "agent tool",
+        documents,
+    )
+
+    assert result == [
+        "doc-agent",
+        "doc-general",
+    ]
+
+
+def test_scope_resolver_should_rank_by_relevance_not_input_order():
+    documents = [
+        KnowledgeDocument(
+            id="doc-general",
+            title="General Learning Notes",
+            content="...",
+            source="tool_reference.txt",
+        ),
+        KnowledgeDocument(
+            id="doc-agent",
+            title="AI Agent Tool Calling",
+            content="...",
+            source="agent_notes.txt",
+        ),
+    ]
+
+    result = resolve_document_scope(
+        "agent tool",
+        documents,
+    )
+
+    assert result == [
+        "doc-agent",
+        "doc-general",
+    ]
+
+
+def test_scope_resolver_should_limit_results_with_top_n():
+    documents = [
+        KnowledgeDocument(
+            id="doc-general",
+            title="General Tool Notes",
+            content="...",
+            source="tool_notes.txt",
+        ),
+        KnowledgeDocument(
+            id="doc-agent",
+            title="AI Agent Tool Calling",
+            content="...",
+            source="agent_tool_notes.txt",
+        ),
+    ]
+
+    result = resolve_document_scope(
+        "agent tool",
+        documents,
+        top_n=1,
+    )
+
+    assert result == ["doc-agent"]
+
+
+def test_scope_resolver_should_return_all_matches_when_top_n_is_none():
+    documents = [
+        KnowledgeDocument(
+            id="doc-agent",
+            title="AI Agent Tool",
+            content="...",
+            source="agent_notes.txt",
+        ),
+        KnowledgeDocument(
+            id="doc-general",
+            title="Tool Reference",
+            content="...",
+            source="tool_reference.txt",
+        ),
+    ]
+
+    result = resolve_document_scope(
+        "agent tool",
+        documents,
+        top_n=None,
+    )
+
+    assert result == [
+        "doc-agent",
+        "doc-general",
+    ]
