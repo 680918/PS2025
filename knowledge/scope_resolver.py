@@ -3,6 +3,7 @@ def resolve_document_scope_with_trace(
     available_documents,
     top_n=None,
     min_score=1,
+    min_relative_score=None,
 ):
     if not user_message:
         return {
@@ -81,6 +82,20 @@ def resolve_document_scope_with_trace(
         else:
             eligible_candidates.append(candidate)
 
+    if eligible_candidates and min_relative_score is not None:
+        best_score = eligible_candidates[0]["score"]
+        relative_threshold = best_score * min_relative_score
+
+        filtered_candidates = []
+
+        for candidate in eligible_candidates:
+            if candidate["score"] < relative_threshold:
+                candidate["reason"] = "below_relative_score"
+            else:
+                filtered_candidates.append(candidate)
+
+        eligible_candidates = filtered_candidates
+
     if top_n is None:
         selected_candidates = eligible_candidates
     else:
@@ -113,12 +128,14 @@ def resolve_document_scope(
     available_documents,
     top_n=None,
     min_score=1,
+    min_relative_score=None,
 ):
     result = resolve_document_scope_with_trace(
         user_message,
         available_documents,
         top_n=top_n,
         min_score=min_score,
+        min_relative_score=min_relative_score,
     )
 
     return result["selected_document_ids"]

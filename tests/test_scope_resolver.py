@@ -374,3 +374,60 @@ def test_scope_resolver_trace_should_explain_top_n_exclusion():
     assert result["candidates"][1]["document_id"] == "doc-2"
     assert result["candidates"][1]["selected"] is False
     assert result["candidates"][1]["reason"] == "excluded_by_top_n"
+
+
+def test_scope_resolver_should_exclude_candidate_far_below_best_score():
+    documents = [
+        KnowledgeDocument(
+            id="doc-agent",
+            title="AI Agent Tool",
+            content="...",
+            source="notes.txt",
+        ),
+        KnowledgeDocument(
+            id="doc-memory",
+            title="Agent Memory",
+            content="...",
+            source="memory.txt",
+        ),
+    ]
+
+    result = resolve_document_scope(
+        "agent tool",
+        documents,
+        top_n=2,
+        min_score=2,
+        min_relative_score=0.75,
+    )
+
+    assert result == ["doc-agent"]
+
+
+def test_scope_resolver_should_keep_candidates_close_to_best_score():
+    documents = [
+        KnowledgeDocument(
+            id="doc-1",
+            title="Agent Memory",
+            content="...",
+            source="notes.txt",
+        ),
+        KnowledgeDocument(
+            id="doc-2",
+            title="Agent Memory System",
+            content="...",
+            source="other.txt",
+        ),
+    ]
+
+    result = resolve_document_scope(
+        "agent memory",
+        documents,
+        top_n=2,
+        min_score=2,
+        min_relative_score=0.75,
+    )
+
+    assert result == [
+        "doc-1",
+        "doc-2",
+    ]
