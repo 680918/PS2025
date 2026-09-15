@@ -1,5 +1,8 @@
-from knowledge.scope_resolver import resolve_document_scope
 from knowledge.models import KnowledgeDocument
+from knowledge.scope_resolver import (
+    resolve_document_scope,
+    resolve_document_scope_with_trace,
+)
 
 
 def test_scope_resolver_should_return_none_when_user_message_is_empty():
@@ -287,3 +290,87 @@ def test_scope_resolver_should_return_none_when_all_scores_are_below_threshold()
     )
 
     assert result is None
+
+
+def test_scope_resolver_trace_should_explain_selected_and_rejected_documents():
+    documents = [
+        KnowledgeDocument(
+            id="doc-agent",
+            title="AI Agent Tool Calling",
+            content="...",
+            source="learning_notes.txt",
+        ),
+        KnowledgeDocument(
+            id="doc-general",
+            title="General Notes",
+            content="...",
+            source="tool_reference.txt",
+        ),
+    ]
+
+    result = resolve_document_scope_with_trace(
+        "agent tool",
+        documents,
+        top_n=3,
+        min_score=2,
+    )
+
+    assert result["selected_document_ids"] == [
+        "doc-agent",
+    ]
+
+    assert result["candidates"][0] == {
+        "document_id": "doc-agent",
+        "score": 4,
+        "selected": True,
+        "matched_title_terms": [
+            "agent",
+            "tool",
+        ],
+        "matched_source_terms": [],
+        "reason": "selected",
+    }
+
+    assert result["candidates"][1] == {
+        "document_id": "doc-general",
+        "score": 1,
+        "selected": False,
+        "matched_title_terms": [],
+        "matched_source_terms": [
+            "tool",
+        ],
+        "reason": "below_min_score",
+    }
+
+
+def test_scope_resolver_trace_should_explain_top_n_exclusion():
+    documents = [
+        KnowledgeDocument(
+            id="doc-1",
+            title="AI Agent Tool",
+            content="...",
+            source="learning_notes.txt",
+        ),
+        KnowledgeDocument(
+            id="doc-2",
+            title="Agent Learning",
+            content="...",
+            source="tool_reference.txt",
+        ),
+    ]
+
+    result = resolve_document_scope_with_trace(
+        "agent tool",
+        documents,
+        top_n=1,
+        min_score=1,
+    )
+
+    assert result["selected_document_ids"] == ["doc-1"]
+
+    assert result["candidates"][0]["document_id"] == "doc-1"
+    assert result["candidates"][0]["reason"] == "selected"
+
+    assert result["candidates"][1]["document_id"] == "doc-2"
+    assert result["candidates"][1]["selected"] is False
+    assert result["candidates"][1]["reason"] == "excluded_by_top_n"

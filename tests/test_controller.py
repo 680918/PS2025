@@ -4996,7 +4996,7 @@ def test_run_agent_should_use_top_3_for_auto_scope(
             captured["document_ids"] = document_ids
             return []
 
-    def fake_resolve_document_scope(
+    def fake_resolve_document_scope_with_trace(
         user_message,
         available_documents,
         top_n=None,
@@ -5004,12 +5004,16 @@ def test_run_agent_should_use_top_3_for_auto_scope(
     ):
         captured["top_n"] = top_n
         captured["min_score"] = min_score
-        return ["doc-1"]
+
+        return {
+            "selected_document_ids": ["doc-1"],
+            "candidates": [],
+        }
 
     monkeypatch.setattr(
         controller_module,
-        "resolve_document_scope",
-        fake_resolve_document_scope,
+        "resolve_document_scope_with_trace",
+        fake_resolve_document_scope_with_trace,
     )
 
     monkeypatch.setattr(
@@ -5032,7 +5036,6 @@ def test_run_agent_should_use_top_3_for_auto_scope(
     assert result == "ok"
     assert captured["top_n"] == 3
     assert captured["document_ids"] == ["doc-1"]
-    assert captured["min_score"] == 2
 
 
 def test_run_agent_should_use_scope_confidence_threshold(
@@ -5055,7 +5058,7 @@ def test_run_agent_should_use_scope_confidence_threshold(
             captured["document_ids"] = document_ids
             return []
 
-    def fake_resolve_document_scope(
+    def fake_resolve_document_scope_with_trace(
         user_message,
         available_documents,
         top_n=None,
@@ -5063,12 +5066,16 @@ def test_run_agent_should_use_scope_confidence_threshold(
     ):
         captured["top_n"] = top_n
         captured["min_score"] = min_score
-        return ["doc-1"]
+
+        return {
+            "selected_document_ids": ["doc-1"],
+            "candidates": [],
+        }
 
     monkeypatch.setattr(
         controller_module,
-        "resolve_document_scope",
-        fake_resolve_document_scope,
+        "resolve_document_scope_with_trace",
+        fake_resolve_document_scope_with_trace,
     )
 
     monkeypatch.setattr(
@@ -5092,3 +5099,247 @@ def test_run_agent_should_use_scope_confidence_threshold(
     assert captured["top_n"] == 3
     assert captured["min_score"] == 2
     assert captured["document_ids"] == ["doc-1"]
+
+
+def test_run_agent_should_store_auto_scope_routing_trace(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    captured = {}
+
+    class FakeKnowledgeService:
+        def list_documents(self):
+            return []
+
+        def search(
+            self,
+            query,
+            top_k=3,
+            document_ids=None,
+        ):
+            captured["document_ids"] = document_ids
+            return []
+
+    routing_result = {
+        "selected_document_ids": ["doc-1"],
+        "candidates": [
+            {
+                "document_id": "doc-1",
+                "score": 4,
+                "selected": True,
+                "reason": "selected",
+            }
+        ],
+    }
+
+    monkeypatch.setattr(
+        controller_module,
+        "resolve_document_scope_with_trace",
+        lambda user_message, available_documents, top_n=None, min_score=1: (
+            routing_result
+        ),
+    )
+
+    def fake_run_simple_agent(
+        user_message,
+        state=None,
+    ):
+        captured["state"] = state
+        return "ok"
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    result = controller_module.run_agent(
+        "test",
+        knowledge_service=FakeKnowledgeService(),
+    )
+
+    assert result == "ok"
+    assert captured["document_ids"] == ["doc-1"]
+    assert captured["state"].routing_trace == routing_result
+
+
+def test_run_agent_should_not_create_routing_trace_for_explicit_scope(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    captured = {}
+
+    class FakeKnowledgeService:
+        def list_documents(self):
+            raise AssertionError(
+                "list_documents should not be called for explicit scope"
+            )
+
+        def search(
+            self,
+            query,
+            top_k=3,
+            document_ids=None,
+        ):
+            captured["document_ids"] = document_ids
+            return []
+
+    def fake_run_simple_agent(
+        user_message,
+        state=None,
+    ):
+        captured["state"] = state
+        return "ok"
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    result = controller_module.run_agent(
+        "test",
+        knowledge_service=FakeKnowledgeService(),
+        document_ids=["manual-doc"],
+    )
+
+    assert result == "ok"
+    assert captured["document_ids"] == ["manual-doc"]
+    assert captured["state"].routing_trace is None
+
+
+def test_run_agent_should_log_auto_scope_routing_summary(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    captured = {
+        "info_calls": [],
+        "debug_calls": [],
+    }
+
+    class FakeTraceLogger:
+        def info(self, message, *args):
+            captured["info_calls"].append(
+                (
+                    message,
+                    args,
+                )
+            )
+
+        def debug(self, message, *args):
+            captured["debug_calls"].append(
+                (
+                    message,
+                    args,
+                )
+            )
+
+    def fake_get_trace_logger(
+        logger,
+        run_id=None,
+    ):
+        captured["run_id"] = run_id
+        return FakeTraceLogger()
+
+    class FakeKnowledgeService:
+        def list_documents(self):
+            return []
+
+        def search(
+            self,
+            query,
+            top_k=3,
+            document_ids=None,
+        ):
+            return []
+
+    routing_result = {
+        "selected_document_ids": [
+            "doc-1",
+        ],
+        "candidates": [
+            {
+                "document_id": "doc-1",
+                "score": 4,
+                "selected": True,
+                "reason": "selected",
+            },
+            {
+                "document_id": "doc-2",
+                "score": 1,
+                "selected": False,
+                "reason": "below_min_score",
+            },
+        ],
+    }
+
+    monkeypatch.setattr(
+        controller_module,
+        "get_trace_logger",
+        fake_get_trace_logger,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "resolve_document_scope_with_trace",
+        lambda user_message, available_documents, top_n=None, min_score=1: (
+            routing_result
+        ),
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "ok",
+    )
+
+    result = controller_module.run_agent(
+        "test",
+        knowledge_service=FakeKnowledgeService(),
+    )
+
+    assert result == "ok"
+
+    assert captured["run_id"] is not None
+
+    assert len(captured["info_calls"]) == 1
+
+    message, args = captured["info_calls"][0]
+
+    assert message == (
+        "Knowledge scope resolved: selected_document_ids=%s candidates=%s"
+    )
+
+    assert args == (
+        ["doc-1"],
+        2,
+    )
+
+    assert len(captured["debug_calls"]) == 1
+
+    message, args = captured["debug_calls"][0]
+
+    assert message == "Knowledge scope candidates: %s"
+
+    assert args == (routing_result["candidates"],)
