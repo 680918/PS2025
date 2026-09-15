@@ -22,6 +22,7 @@ from coach.error_presenter import (
     present_runtime_error,
 )
 from coach.response_policy import apply_response_policy
+from knowledge.scope_resolver import resolve_document_scope
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,13 @@ def run_agent(
         state.set_memory_context(memory_context)
 
     if knowledge_service is not None:
+        if document_ids is None:
+            available_documents = knowledge_service.list_documents()
+
+            document_ids = resolve_document_scope(
+                user_message,
+                available_documents,
+            )
         results = knowledge_service.search(
             user_message,
             top_k=3,
