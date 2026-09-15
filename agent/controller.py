@@ -164,6 +164,7 @@ def run_agent(
             document_ids = resolve_document_scope(
                 user_message,
                 available_documents,
+                top_n=3,
             )
         results = knowledge_service.search(
             user_message,
