@@ -30,7 +30,6 @@ def test_replan_limit():
 
 
 def test_agent_state_has_run_id():
-    from agent.state import AgentState
 
     state = AgentState("hello")
 
@@ -39,7 +38,6 @@ def test_agent_state_has_run_id():
 
 
 def test_agent_state_run_id_is_unique():
-    from agent.state import AgentState
 
     state1 = AgentState("hello")
     state2 = AgentState("hello")
@@ -48,7 +46,6 @@ def test_agent_state_run_id_is_unique():
 
 
 def test_get_state_includes_run_id():
-    from agent.state import AgentState
 
     state = AgentState("hello")
 
@@ -60,8 +57,6 @@ def test_get_state_includes_run_id():
 
 def test_get_state_includes_status():
 
-    from agent.state import AgentState
-
     state = AgentState("hello")
     state.status = "success"
 
@@ -71,8 +66,6 @@ def test_get_state_includes_status():
 
 
 def test_get_state_includes_last_result():
-
-    from agent.state import AgentState
 
     state = AgentState("hello")
 
@@ -143,3 +136,31 @@ def test_memory_service_dependency_is_not_exposed_in_state_data():
     state_data = state.get_state()
 
     assert "memory_service" not in state_data
+
+
+def test_agent_state_should_store_routing_trace():
+    state = AgentState("test")
+
+    routing_trace = {
+        "selected_document_ids": ["doc-agent"],
+        "candidates": [
+            {
+                "document_id": "doc-agent",
+                "score": 4,
+                "selected": True,
+                "reason": "selected",
+            }
+        ],
+    }
+
+    state.set_routing_trace(routing_trace)
+
+    assert state.routing_trace == routing_trace
+    assert state.get_state()["routing_trace"] == routing_trace
+
+
+def test_agent_state_should_default_routing_trace_to_none():
+    state = AgentState("test")
+
+    assert state.routing_trace is None
+    assert state.get_state()["routing_trace"] is None

@@ -31,6 +31,7 @@ class AgentState:
             None  # New attribute to track the stage where the failure occurred
         )
         self.knowledge_context = []
+        self.routing_trace = None
 
     def update_step(self):
 
@@ -72,6 +73,7 @@ class AgentState:
             "failure_stage": self.failure_stage,
             "last_result": self.last_result,
             "knowledge_context": self.knowledge_context,
+            "routing_trace": self.routing_trace,
         }
 
     def get_tool_result(self, key):
@@ -80,3 +82,6 @@ class AgentState:
 
     def set_knowledge_context(self, knowledge_context):
         self.knowledge_context = knowledge_context
+
+    def set_routing_trace(self, routing_trace):
+        self.routing_trace = routing_trace

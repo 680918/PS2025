@@ -22,7 +22,7 @@ from coach.error_presenter import (
     present_runtime_error,
 )
 from coach.response_policy import apply_response_policy
-from knowledge.scope_resolver import resolve_document_scope
+from knowledge.scope_resolver import resolve_document_scope_with_trace
 
 logger = logging.getLogger(__name__)
 
@@ -161,12 +161,33 @@ def run_agent(
         if document_ids is None:
             available_documents = knowledge_service.list_documents()
 
-            document_ids = resolve_document_scope(
+            routing_result = resolve_document_scope_with_trace(
                 user_message,
                 available_documents,
                 top_n=3,
                 min_score=2,
             )
+
+            document_ids = routing_result["selected_document_ids"]
+
+            state.set_routing_trace(routing_result)
+
+            trace_logger = get_trace_logger(
+                logger,
+                run_id=state.run_id,
+            )
+
+            trace_logger.info(
+                "Knowledge scope resolved: selected_document_ids=%s candidates=%s",
+                routing_result["selected_document_ids"],
+                len(routing_result["candidates"]),
+            )
+
+            trace_logger.debug(
+                "Knowledge scope candidates: %s",
+                routing_result["candidates"],
+            )
+
         results = knowledge_service.search(
             user_message,
             top_k=3,
