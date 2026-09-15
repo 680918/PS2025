@@ -1,5 +1,6 @@
 from knowledge.models import KnowledgeDocument
 from knowledge.scope_tuning import tune_scope_parameters
+from evaluation.scope_cases import SCOPE_EVALUATION_CASES
 
 
 def test_scope_tuning_should_select_best_parameter_combination():
@@ -18,16 +19,7 @@ def test_scope_tuning_should_select_best_parameter_combination():
         ),
     ]
 
-    cases = [
-        {
-            "query": "agent tool",
-            "expected_document_ids": ["doc-agent"],
-        },
-        {
-            "query": "system thinking",
-            "expected_document_ids": ["doc-system"],
-        },
-    ]
+    cases = SCOPE_EVALUATION_CASES
 
     result = tune_scope_parameters(
         cases=cases,

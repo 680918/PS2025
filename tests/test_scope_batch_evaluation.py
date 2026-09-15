@@ -1,5 +1,6 @@
 from knowledge.models import KnowledgeDocument
 from knowledge.scope_batch_evaluation import evaluate_scope_cases
+from evaluation.scope_cases import SCOPE_EVALUATION_CASES
 
 
 def test_scope_batch_evaluation_should_aggregate_multiple_cases():
@@ -18,16 +19,7 @@ def test_scope_batch_evaluation_should_aggregate_multiple_cases():
         ),
     ]
 
-    cases = [
-        {
-            "query": "agent tool",
-            "expected_document_ids": ["doc-agent"],
-        },
-        {
-            "query": "system thinking",
-            "expected_document_ids": ["doc-system"],
-        },
-    ]
+    cases = SCOPE_EVALUATION_CASES
 
     result = evaluate_scope_cases(
         cases,
