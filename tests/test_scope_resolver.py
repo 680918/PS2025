@@ -243,3 +243,47 @@ def test_scope_resolver_should_return_all_matches_when_top_n_is_none():
         "doc-agent",
         "doc-general",
     ]
+
+
+def test_scope_resolver_should_filter_documents_below_min_score():
+    documents = [
+        KnowledgeDocument(
+            id="doc-strong",
+            title="AI Agent Tool Calling",
+            content="...",
+            source="agent_tool_notes.txt",
+        ),
+        KnowledgeDocument(
+            id="doc-weak",
+            title="General Notes",
+            content="...",
+            source="tool.txt",
+        ),
+    ]
+
+    result = resolve_document_scope(
+        "agent tool",
+        documents,
+        min_score=3,
+    )
+
+    assert result == ["doc-strong"]
+
+
+def test_scope_resolver_should_return_none_when_all_scores_are_below_threshold():
+    documents = [
+        KnowledgeDocument(
+            id="doc-weak",
+            title="General Notes",
+            content="...",
+            source="tool.txt",
+        ),
+    ]
+
+    result = resolve_document_scope(
+        "agent tool",
+        documents,
+        min_score=3,
+    )
+
+    assert result is None

@@ -5000,8 +5000,10 @@ def test_run_agent_should_use_top_3_for_auto_scope(
         user_message,
         available_documents,
         top_n=None,
+        min_score=1,
     ):
         captured["top_n"] = top_n
+        captured["min_score"] = min_score
         return ["doc-1"]
 
     monkeypatch.setattr(
@@ -5029,4 +5031,64 @@ def test_run_agent_should_use_top_3_for_auto_scope(
 
     assert result == "ok"
     assert captured["top_n"] == 3
+    assert captured["document_ids"] == ["doc-1"]
+    assert captured["min_score"] == 2
+
+
+def test_run_agent_should_use_scope_confidence_threshold(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+
+    captured = {}
+
+    class FakeKnowledgeService:
+        def list_documents(self):
+            return []
+
+        def search(
+            self,
+            query,
+            top_k=3,
+            document_ids=None,
+        ):
+            captured["document_ids"] = document_ids
+            return []
+
+    def fake_resolve_document_scope(
+        user_message,
+        available_documents,
+        top_n=None,
+        min_score=1,
+    ):
+        captured["top_n"] = top_n
+        captured["min_score"] = min_score
+        return ["doc-1"]
+
+    monkeypatch.setattr(
+        controller_module,
+        "resolve_document_scope",
+        fake_resolve_document_scope,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "ok",
+    )
+
+    result = controller_module.run_agent(
+        "test",
+        knowledge_service=FakeKnowledgeService(),
+    )
+
+    assert result == "ok"
+    assert captured["top_n"] == 3
+    assert captured["min_score"] == 2
     assert captured["document_ids"] == ["doc-1"]

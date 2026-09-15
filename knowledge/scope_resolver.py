@@ -2,6 +2,7 @@ def resolve_document_scope(
     user_message,
     available_documents,
     top_n=None,
+    min_score=1,
 ):
     if not user_message:
         return None
@@ -25,7 +26,7 @@ def resolve_document_scope(
                 if tag.lower() in normalized_message:
                     score += 1
 
-            if score > 0:
+            if score >= min_score:
                 scored_documents.append(
                     (
                         score,
@@ -51,7 +52,7 @@ def resolve_document_scope(
             if word in source:
                 score += 1
 
-        if score > 0:
+        if score >= min_score:
             scored_documents.append(
                 (
                     score,
