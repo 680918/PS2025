@@ -165,6 +165,7 @@ def run_agent(
                 user_message,
                 available_documents,
                 top_n=3,
+                min_score=2,
             )
         results = knowledge_service.search(
             user_message,
