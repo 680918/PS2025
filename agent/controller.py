@@ -141,13 +141,12 @@ def call_llm_with_retry(system_prompt, user_message, run_id=None):
     return response
 
 
-def run_agent(
+def run_agent_runtime(
     user_message,
     memory_service=None,
     knowledge_service=None,
     document_ids=None,
 ):
-
     state = AgentState(
         user_message,
         memory_service=memory_service,
@@ -215,15 +214,33 @@ def run_agent(
     task_type = route_task(user_message)
 
     if task_type == "planning":
-        return run_planning_agent(
+        response = run_planning_agent(
+            user_message,
+            state=state,
+        )
+    else:
+        response = run_simple_agent(
             user_message,
             state=state,
         )
 
-    return run_simple_agent(
-        user_message,
-        state=state,
+    return state, response
+
+
+def run_agent(
+    user_message,
+    memory_service=None,
+    knowledge_service=None,
+    document_ids=None,
+):
+    _, response = run_agent_runtime(
+        user_message=user_message,
+        memory_service=memory_service,
+        knowledge_service=knowledge_service,
+        document_ids=document_ids,
     )
+
+    return response
 
 
 def run_simple_runtime(user_message, state=None):
