@@ -13,6 +13,9 @@ from evaluation.agent_evaluation_benchmark_report import (
 from evaluation.agent_evaluation_cases import (
     AGENT_EVALUATION_CASES,
 )
+from evaluation.agent_evaluation_benchmark_comparison_report import (
+    save_agent_evaluation_benchmark_comparison_report,
+)
 
 
 def run_agent_evaluation_benchmark_pipeline(
@@ -41,9 +44,22 @@ def run_agent_evaluation_benchmark_pipeline(
 
     comparison = compare_latest_agent_evaluation_benchmarks(output_dir)
 
+    comparison_path = None
+
+    if comparison is not None:
+        comparison_path = (
+            output_dir / "latest_agent_evaluation_benchmark_comparison.txt"
+        )
+
+        save_agent_evaluation_benchmark_comparison_report(
+            comparison,
+            comparison_path,
+        )
+
     return {
         "benchmark_result": benchmark_result,
         "report_path": report_path,
         "history_path": history_path,
         "comparison": comparison,
+        "comparison_path": comparison_path,
     }
