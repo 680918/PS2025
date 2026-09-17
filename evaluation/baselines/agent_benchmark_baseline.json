@@ -1,0 +1,10 @@
+{
+  "average_metrics": {
+    "goal_alignment": 0.6,
+    "actionability": 0.8,
+    "memory_usage": 1.0,
+    "knowledge_usage": 1.0,
+    "response_policy": 1.0,
+    "overall_score": 0.88
+  }
+}

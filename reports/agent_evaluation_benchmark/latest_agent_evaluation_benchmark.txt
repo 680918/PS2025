@@ -1,0 +1,11 @@
+Agent Evaluation Benchmark Report
+
+Cases: 5
+
+Average metrics:
+Goal alignment: 0.6000
+Actionability: 0.8000
+Memory usage: 1.0000
+Knowledge usage: 1.0000
+Response policy: 1.0000
+Overall score: 0.8800

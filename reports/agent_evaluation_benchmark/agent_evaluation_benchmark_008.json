@@ -1,0 +1,97 @@
+{
+  "cases": [
+    {
+      "case_id": "goal_alignment_001",
+      "focus_metric": "goal_alignment",
+      "evaluation_result": {
+        "goal_alignment": 1.0,
+        "actionability": 1.0,
+        "memory_usage": 1.0,
+        "knowledge_usage": 1.0,
+        "response_policy": 1.0,
+        "overall_score": 1.0,
+        "passed": true,
+        "findings": [],
+        "improvement_suggestions": []
+      }
+    },
+    {
+      "case_id": "actionability_001",
+      "focus_metric": "actionability",
+      "evaluation_result": {
+        "goal_alignment": 0.0,
+        "actionability": 1.0,
+        "memory_usage": 1.0,
+        "knowledge_usage": 1.0,
+        "response_policy": 1.0,
+        "overall_score": 0.8,
+        "passed": true,
+        "findings": [
+          "回答没有覆盖用户目标"
+        ],
+        "improvement_suggestions": [
+          "下一次回答应更直接围绕用户的核心目标展开"
+        ]
+      }
+    },
+    {
+      "case_id": "memory_usage_001",
+      "focus_metric": "memory_usage",
+      "evaluation_result": {
+        "goal_alignment": 1.0,
+        "actionability": 1.0,
+        "memory_usage": 1.0,
+        "knowledge_usage": 1.0,
+        "response_policy": 1.0,
+        "overall_score": 1.0,
+        "passed": true,
+        "findings": [],
+        "improvement_suggestions": []
+      }
+    },
+    {
+      "case_id": "knowledge_usage_001",
+      "focus_metric": "knowledge_usage",
+      "evaluation_result": {
+        "goal_alignment": 0.0,
+        "actionability": 0.0,
+        "memory_usage": 1.0,
+        "knowledge_usage": 1.0,
+        "response_policy": 1.0,
+        "overall_score": 0.6,
+        "passed": true,
+        "findings": [
+          "回答没有覆盖用户目标",
+          "回答缺少明确下一步行动"
+        ],
+        "improvement_suggestions": [
+          "下一次回答应更直接围绕用户的核心目标展开",
+          "下一次回答应提供明确、可执行的下一步行动"
+        ]
+      }
+    },
+    {
+      "case_id": "response_policy_001",
+      "focus_metric": "response_policy",
+      "evaluation_result": {
+        "goal_alignment": 1.0,
+        "actionability": 1.0,
+        "memory_usage": 1.0,
+        "knowledge_usage": 1.0,
+        "response_policy": 1.0,
+        "overall_score": 1.0,
+        "passed": true,
+        "findings": [],
+        "improvement_suggestions": []
+      }
+    }
+  ],
+  "average_metrics": {
+    "goal_alignment": 0.6,
+    "actionability": 0.8,
+    "memory_usage": 1.0,
+    "knowledge_usage": 1.0,
+    "response_policy": 1.0,
+    "overall_score": 0.8800000000000001
+  }
+}
