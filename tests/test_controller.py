@@ -12,6 +12,7 @@ from agent.controller import (
     run_planning_agent,
     run_agent,
     run_simple_runtime,
+    run_agent_runtime,
 )
 
 
@@ -5343,3 +5344,34 @@ def test_run_agent_should_log_auto_scope_routing_summary(
     assert message == "Knowledge scope candidates: %s"
 
     assert args == (routing_result["candidates"],)
+
+
+def test_run_agent_runtime_should_return_state_and_response(
+    monkeypatch,
+):
+    def fake_route_task(user_message):
+        return "simple"
+
+    def fake_run_simple_agent(
+        user_message,
+        state=None,
+    ):
+        return "下一步继续练习 Tool Calling。"
+
+    monkeypatch.setattr(
+        "agent.controller.route_task",
+        fake_route_task,
+    )
+
+    monkeypatch.setattr(
+        "agent.controller.run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    state, response = run_agent_runtime("我下一步应该学习什么？")
+
+    assert isinstance(state, AgentState)
+
+    assert state.user_message == ("我下一步应该学习什么？")
+
+    assert response == ("下一步继续练习 Tool Calling。")
