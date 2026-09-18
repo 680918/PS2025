@@ -49,6 +49,13 @@ class SQLiteLearningJourneyRepository:
                     updated_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(journey_id)
+                DO UPDATE SET
+                    user_id = excluded.user_id,
+                    domain = excluded.domain,
+                    goal = excluded.goal,
+                    status = excluded.status,
+                    updated_at = excluded.updated_at
                 """,
                 (
                     journey.journey_id,
