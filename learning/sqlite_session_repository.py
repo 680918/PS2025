@@ -55,6 +55,16 @@ class SQLiteLearningSessionRepository:
                     updated_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id)
+                DO UPDATE SET
+                    journey_id = excluded.journey_id,
+                    user_id = excluded.user_id,
+                    topic = excluded.topic,
+                    completed = excluded.completed,
+                    understanding_score = excluded.understanding_score,
+                    difficulty = excluded.difficulty,
+                    next_step = excluded.next_step,
+                    updated_at = excluded.updated_at
                 """,
                 (
                     session.session_id,
