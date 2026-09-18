@@ -46,3 +46,33 @@ def test_build_learning_continuity_context_should_handle_first_session():
     assert context == {
         "has_previous_session": False,
     }
+
+
+def test_build_learning_continuity_context_should_use_user_ownership():
+    class FakeRepository:
+        def get_latest_by_journey_for_user(
+            self,
+            journey_id,
+            user_id,
+        ):
+            assert journey_id == "journey_001"
+            assert user_id == "user_001"
+
+            class Session:
+                topic = "Tool Calling"
+                completed = True
+                understanding_score = 85
+                difficulty = "参数校验还不熟"
+                next_step = "继续练习 Tool Schema"
+
+            return Session()
+
+    context = build_learning_continuity_context(
+        journey_id="journey_001",
+        user_id="user_001",
+        repository=FakeRepository(),
+    )
+
+    assert context["has_previous_session"] is True
+    assert context["topic"] == "Tool Calling"
+    assert context["next_step"] == "继续练习 Tool Schema"

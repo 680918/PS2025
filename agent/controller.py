@@ -153,6 +153,7 @@ def run_agent_runtime(
     journey_id=None,
     learning_session_repository=None,
     learning_session=None,
+    user_id=None,
 ):
     state = AgentState(
         user_message,
@@ -166,6 +167,7 @@ def run_agent_runtime(
     ):
         learning_continuity_context = build_learning_continuity_context(
             journey_id=journey_id,
+            user_id=user_id,
             repository=learning_session_repository,
         )
 
@@ -259,15 +261,17 @@ def run_agent(
     journey_id=None,
     learning_session_repository=None,
     learning_session=None,
+    user_id=None,
 ):
     _, response = run_agent_runtime(
         user_message=user_message,
         memory_service=memory_service,
         knowledge_service=knowledge_service,
         document_ids=document_ids,
-        learning_continuity_context=(learning_continuity_context),
+        learning_continuity_context=learning_continuity_context,
         journey_id=journey_id,
-        learning_session_repository=(learning_session_repository),
+        user_id=user_id,
+        learning_session_repository=learning_session_repository,
         learning_session=learning_session,
     )
 

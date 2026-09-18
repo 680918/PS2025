@@ -77,3 +77,35 @@ def test_sqlite_repository_should_return_latest_session(
     assert latest_session is not None
     assert latest_session.session_id == second_session.session_id
     assert latest_session.topic == "Tool Calling"
+
+
+def test_sqlite_session_repository_should_return_latest_session_only_for_owner(
+    tmp_path,
+):
+    database_path = tmp_path / "learning_sessions.db"
+
+    repository = SQLiteLearningSessionRepository(database_path)
+
+    session = LearningSession(
+        journey_id="journey_001",
+        user_id="user_001",
+        topic="Tool Calling",
+        next_step="继续练习 Tool Schema",
+    )
+
+    repository.save(session)
+
+    owned_session = repository.get_latest_by_journey_for_user(
+        journey_id="journey_001",
+        user_id="user_001",
+    )
+
+    other_user_result = repository.get_latest_by_journey_for_user(
+        journey_id="journey_001",
+        user_id="user_002",
+    )
+
+    assert owned_session is not None
+    assert owned_session.session_id == session.session_id
+
+    assert other_user_result is None
