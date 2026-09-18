@@ -23,6 +23,9 @@ from coach.error_presenter import (
 )
 from coach.response_policy import apply_response_policy
 from knowledge.scope_resolver import resolve_document_scope_with_trace
+from learning.continuity import (
+    build_learning_continuity_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,11 +149,28 @@ def run_agent_runtime(
     memory_service=None,
     knowledge_service=None,
     document_ids=None,
+    learning_continuity_context=None,
+    journey_id=None,
+    learning_session_repository=None,
+    learning_session=None,
 ):
     state = AgentState(
         user_message,
         memory_service=memory_service,
     )
+
+    if (
+        learning_continuity_context is None
+        and journey_id is not None
+        and learning_session_repository is not None
+    ):
+        learning_continuity_context = build_learning_continuity_context(
+            journey_id=journey_id,
+            repository=learning_session_repository,
+        )
+
+    if learning_continuity_context is not None:
+        state.set_learning_continuity_context(learning_continuity_context)
 
     if memory_service is not None:
         memory_context = memory_service.get_context()
@@ -224,6 +244,9 @@ def run_agent_runtime(
             state=state,
         )
 
+    if learning_session is not None and learning_session_repository is not None:
+        learning_session_repository.save(learning_session)
+
     return state, response
 
 
@@ -232,12 +255,20 @@ def run_agent(
     memory_service=None,
     knowledge_service=None,
     document_ids=None,
+    learning_continuity_context=None,
+    journey_id=None,
+    learning_session_repository=None,
+    learning_session=None,
 ):
     _, response = run_agent_runtime(
         user_message=user_message,
         memory_service=memory_service,
         knowledge_service=knowledge_service,
         document_ids=document_ids,
+        learning_continuity_context=(learning_continuity_context),
+        journey_id=journey_id,
+        learning_session_repository=(learning_session_repository),
+        learning_session=learning_session,
     )
 
     return response
@@ -270,11 +301,27 @@ def run_simple_runtime(user_message, state=None):
         indent=2,
     )
 
+    continuity_description = json.dumps(
+        state.learning_continuity_context,
+        ensure_ascii=False,
+        indent=2,
+    )
+
     system_prompt = f"""
     你是Personal Growth AI Coach。
 
     以下是与当前用户有关的长期记忆：
     {memory_description}
+
+    以下是用户最近一次学习状态，用于保持跨天学习连续性：
+    {continuity_description}
+
+    使用最近学习状态时必须遵守：
+    1. 如果 has_previous_session 为 false，不得虚构之前的学习经历。
+    2. 如果存在 previous session，应优先参考 topic、completed、understanding_score、difficulty 和 next_step。
+    3. next_step 表示上一次学习留下的后续方向，应优先作为本轮学习建议的依据。
+    4. 不得把历史学习状态描述成当前已经完成的新事实。
+    5. 如果本轮用户明确改变目标或学习方向，应优先服从本轮用户输入。
 
     以下是从知识库中检索到的相关资料：
     {knowledge_description}
@@ -334,6 +381,16 @@ def run_simple_runtime(user_message, state=None):
 
     以下是与当前用户有关的长期记忆：
     {memory_description}
+
+    以下是用户最近一次学习状态，用于保持跨天学习连续性：
+    {continuity_description}
+
+    使用最近学习状态时必须遵守：
+    1. 如果 has_previous_session 为 false，不得虚构之前的学习经历。
+    2. 如果存在 previous session，应优先参考其 topic、difficulty 和 next_step。
+    3. 如果存在 next_step，应优先结合它生成本轮下一步学习建议。
+    4. 不得把历史记录描述成本轮已经完成的新事实。
+    5. 本轮用户明确提供的新信息优先于历史学习状态。
 
     以下是从知识库中检索到的相关资料：
     {knowledge_description}
