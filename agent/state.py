@@ -33,6 +33,8 @@ class AgentState:
         self.knowledge_context = []
         self.routing_trace = None
 
+        self.learning_continuity_context = {}
+
     def update_step(self):
 
         self.current_step += 1
@@ -85,3 +87,9 @@ class AgentState:
 
     def set_routing_trace(self, routing_trace):
         self.routing_trace = routing_trace
+
+    def set_learning_continuity_context(
+        self,
+        learning_continuity_context,
+    ):
+        self.learning_continuity_context = learning_continuity_context

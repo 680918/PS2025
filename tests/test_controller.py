@@ -14,6 +14,7 @@ from agent.controller import (
     run_simple_runtime,
     run_agent_runtime,
 )
+from learning.session import LearningSession
 
 
 @pytest.mark.unit
@@ -5375,3 +5376,298 @@ def test_run_agent_runtime_should_return_state_and_response(
     assert state.user_message == ("我下一步应该学习什么？")
 
     assert response == ("下一步继续练习 Tool Calling。")
+
+
+def test_run_agent_runtime_should_store_learning_continuity_context(
+    monkeypatch,
+):
+    continuity_context = {
+        "has_previous_session": True,
+        "topic": "Tool Calling",
+        "completed": True,
+        "understanding_score": 80,
+        "difficulty": "参数结构还不熟",
+        "next_step": "继续练习参数结构",
+    }
+
+    def fake_route_task(user_message):
+        return "simple"
+
+    def fake_run_simple_agent(
+        user_message,
+        state=None,
+    ):
+        return "继续练习参数结构。"
+
+    monkeypatch.setattr(
+        "agent.controller.route_task",
+        fake_route_task,
+    )
+
+    monkeypatch.setattr(
+        "agent.controller.run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    state, response = run_agent_runtime(
+        user_message="我今天应该学习什么？",
+        learning_continuity_context=continuity_context,
+    )
+
+    assert state.learning_continuity_context == continuity_context
+
+    assert response == "继续练习参数结构。"
+
+
+def test_run_simple_runtime_should_include_learning_continuity_context(
+    monkeypatch,
+):
+    captured = {}
+
+    state = AgentState("我今天应该学习什么？")
+
+    state.set_learning_continuity_context(
+        {
+            "has_previous_session": True,
+            "topic": "Tool Calling",
+            "completed": True,
+            "understanding_score": 80,
+            "difficulty": "参数结构还不熟",
+            "next_step": "继续练习参数结构",
+        }
+    )
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "继续练习参数结构。",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    run_simple_runtime(
+        "我今天应该学习什么？",
+        state=state,
+    )
+
+    assert "Tool Calling" in captured["system_prompt"]
+    assert "参数结构还不熟" in captured["system_prompt"]
+    assert "继续练习参数结构" in captured["system_prompt"]
+
+
+def test_run_simple_runtime_should_prioritize_previous_next_step(
+    monkeypatch,
+):
+    captured = {}
+
+    state = AgentState("我今天应该学习什么？")
+
+    state.set_learning_continuity_context(
+        {
+            "has_previous_session": True,
+            "topic": "Tool Calling",
+            "completed": True,
+            "understanding_score": 80,
+            "difficulty": "参数结构还不熟",
+            "next_step": "继续练习参数结构",
+        }
+    )
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "继续练习参数结构。",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    state, status = run_simple_runtime(
+        "我今天应该学习什么？",
+        state=state,
+    )
+
+    assert status == "success"
+
+    assert "next_step 表示上一次学习留下的后续方向" in captured["system_prompt"]
+
+    assert "继续练习参数结构" in captured["system_prompt"]
+
+
+def test_run_agent_runtime_should_restore_continuity_from_repository(
+    monkeypatch,
+):
+    class FakeRepository:
+        def get_latest_by_journey(
+            self,
+            journey_id,
+        ):
+            assert journey_id == "journey_001"
+
+            class Session:
+                topic = "Tool Calling"
+                completed = True
+                understanding_score = 80
+                difficulty = "参数结构还不熟"
+                next_step = "继续练习参数结构"
+
+            return Session()
+
+    def fake_route_task(user_message):
+        return "simple"
+
+    def fake_run_simple_agent(
+        user_message,
+        state=None,
+    ):
+        return "继续练习参数结构。"
+
+    monkeypatch.setattr(
+        "agent.controller.route_task",
+        fake_route_task,
+    )
+
+    monkeypatch.setattr(
+        "agent.controller.run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    state, response = run_agent_runtime(
+        user_message="我今天应该学习什么？",
+        journey_id="journey_001",
+        learning_session_repository=FakeRepository(),
+    )
+
+    assert state.learning_continuity_context["has_previous_session"] is True
+
+    assert state.learning_continuity_context["next_step"] == "继续练习参数结构"
+
+    assert response == "继续练习参数结构。"
+
+
+def test_run_agent_runtime_should_prefer_explicit_continuity_context(
+    monkeypatch,
+):
+    class FakeRepository:
+        def get_latest_by_journey(
+            self,
+            journey_id,
+        ):
+            class Session:
+                topic = "旧主题"
+                completed = True
+                understanding_score = 60
+                difficulty = "旧困难"
+                next_step = "旧下一步"
+
+            return Session()
+
+    explicit_context = {
+        "has_previous_session": True,
+        "topic": "新主题",
+        "completed": True,
+        "understanding_score": 90,
+        "difficulty": "新困难",
+        "next_step": "新下一步",
+    }
+
+    def fake_route_task(user_message):
+        return "simple"
+
+    def fake_run_simple_agent(
+        user_message,
+        state=None,
+    ):
+        return "新下一步"
+
+    monkeypatch.setattr(
+        "agent.controller.route_task",
+        fake_route_task,
+    )
+
+    monkeypatch.setattr(
+        "agent.controller.run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    state, response = run_agent_runtime(
+        user_message="我今天学什么？",
+        journey_id="journey_001",
+        learning_session_repository=FakeRepository(),
+        learning_continuity_context=explicit_context,
+    )
+
+    assert state.learning_continuity_context == explicit_context
+
+    assert state.learning_continuity_context["next_step"] == "新下一步"
+
+    assert response == "新下一步"
+
+
+def test_run_agent_runtime_should_save_completed_learning_session(
+    monkeypatch,
+):
+    class FakeRepository:
+        def __init__(self):
+            self.saved_sessions = []
+
+        def save(self, session):
+            self.saved_sessions.append(session)
+
+    repository = FakeRepository()
+
+    session = LearningSession(
+        journey_id="journey_001",
+        user_id="user_001",
+        topic="Tool Calling",
+        completed=True,
+        understanding_score=85,
+        difficulty="参数校验还不熟",
+        next_step="继续练习 Tool Schema",
+    )
+
+    def fake_route_task(user_message):
+        return "simple"
+
+    def fake_run_simple_agent(
+        user_message,
+        state=None,
+    ):
+        return "今天学习完成。"
+
+    monkeypatch.setattr(
+        "agent.controller.route_task",
+        fake_route_task,
+    )
+
+    monkeypatch.setattr(
+        "agent.controller.run_simple_agent",
+        fake_run_simple_agent,
+    )
+
+    state, response = run_agent_runtime(
+        user_message="我完成今天的学习了。",
+        learning_session_repository=repository,
+        learning_session=session,
+    )
+
+    assert repository.saved_sessions == [session]
+
+    assert response == "今天学习完成。"
