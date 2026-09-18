@@ -1,8 +1,15 @@
 def build_learning_continuity_context(
     journey_id,
     repository,
+    user_id=None,
 ):
-    latest_session = repository.get_latest_by_journey(journey_id)
+    if user_id is not None:
+        latest_session = repository.get_latest_by_journey_for_user(
+            journey_id=journey_id,
+            user_id=user_id,
+        )
+    else:
+        latest_session = repository.get_latest_by_journey(journey_id)
 
     if latest_session is None:
         return {

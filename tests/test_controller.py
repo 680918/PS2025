@@ -5671,3 +5671,34 @@ def test_run_agent_runtime_should_save_completed_learning_session(
     assert repository.saved_sessions == [session]
 
     assert response == "今天学习完成。"
+
+
+def test_run_agent_runtime_should_restore_continuity_for_user():
+    class FakeRepository:
+        def get_latest_by_journey_for_user(
+            self,
+            journey_id,
+            user_id,
+        ):
+            assert journey_id == "journey_001"
+            assert user_id == "user_001"
+
+            class Session:
+                topic = "Tool Calling"
+                completed = True
+                understanding_score = 85
+                difficulty = "参数校验还不熟"
+                next_step = "继续练习 Tool Schema"
+
+            return Session()
+
+    state, response = run_agent_runtime(
+        user_message="我今天继续学习什么？",
+        journey_id="journey_001",
+        user_id="user_001",
+        learning_session_repository=FakeRepository(),
+    )
+
+    assert state.learning_continuity_context["has_previous_session"] is True
+    assert state.learning_continuity_context["topic"] == "Tool Calling"
+    assert state.learning_continuity_context["next_step"] == "继续练习 Tool Schema"
