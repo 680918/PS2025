@@ -18,6 +18,7 @@ from learning.continuity import (
 from fastapi.responses import HTMLResponse
 from learning.session_service import (
     update_learning_session_feedback,
+    get_or_create_learning_session,
 )
 from agent.controller import run_agent
 from html import escape
@@ -260,9 +261,9 @@ def create_app(
             )
 
         continuity = build_learning_continuity_context(
-            journey_id=journey_id,
-            user_id=user_id,
+            journey_id=journey.journey_id,
             repository=session_repository,
+            user_id=user_id,
         )
 
         coach_task = run_agent(
@@ -272,6 +273,13 @@ def create_app(
                 "goal": journey.goal,
             },
             learning_continuity_context=continuity,
+        )
+
+        get_or_create_learning_session(
+            repository=session_repository,
+            journey_id=journey.journey_id,
+            user_id=user_id,
+            topic=journey.domain,
         )
         safe_coach_task = escape(str(coach_task))
 

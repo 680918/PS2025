@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
-
 from api.app import create_app
+from learning.sqlite_session_repository import (
+    SQLiteLearningSessionRepository,
+)
 
 
 def test_web_continue_journey_should_render_previous_learning_context(
@@ -238,3 +240,97 @@ def test_web_learning_loop_should_use_previous_feedback_for_next_coach_task(
     assert continuity["difficulty"] == "听力速度较快"
 
     assert continuity["next_step"] == "练习慢速英语听力"
+
+
+def test_web_continue_should_create_new_session_after_previous_completed(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "英语",
+            "goal": "6个月达到日常交流",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    def fake_run_agent(user_message, **kwargs):
+        return "今天进行慢速英语听力练习"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    # 先完成第一节。
+    feedback_response = client.post(
+        f"/web/journeys/{journey['journey_id']}/feedback",
+        data={
+            "user_id": user["user_id"],
+            "understanding_score": "80",
+            "difficulty": "听力速度较快",
+            "next_step": "练习慢速英语听力",
+        },
+    )
+
+    assert feedback_response.status_code == 200
+
+    # 再次打开 continue。
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    # 再次提交反馈。
+    second_feedback = client.post(
+        f"/web/journeys/{journey['journey_id']}/feedback",
+        data={
+            "user_id": user["user_id"],
+            "understanding_score": "90",
+            "difficulty": "个别句子仍听不清",
+            "next_step": "练习正常语速英语",
+        },
+    )
+
+    assert second_feedback.status_code == 200
+    assert "90" in second_feedback.text
+    assert "个别句子仍听不清" in second_feedback.text
+
+    repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
+
+    sessions = repository.list_by_journey(journey["journey_id"])
+
+    assert len(sessions) == 2
+
+    first_session = sessions[0]
+    second_session = sessions[1]
+
+    assert first_session.session_id != second_session.session_id
+
+    assert first_session.completed is True
+    assert first_session.understanding_score == 80
+    assert first_session.difficulty == "听力速度较快"
+    assert first_session.next_step == "练习慢速英语听力"
+
+    assert second_session.completed is True
+    assert second_session.understanding_score == 90
+    assert second_session.difficulty == "个别句子仍听不清"
+    assert second_session.next_step == "练习正常语速英语"
