@@ -1,18 +1,21 @@
-def build_next_learning_task_context(
-    journey,
-    continuity,
-):
+def build_next_learning_task_context(journey, continuity):
+    has_previous_learning = (
+        continuity.get("has_previous_session", False)
+        and continuity.get("completed") is not False
+    )
+
     return {
         "domain": journey["domain"],
         "goal": journey["goal"],
-        "has_previous_session": continuity.get(
-            "has_previous_session",
-            False,
+        "has_previous_session": has_previous_learning,
+        "previous_topic": (continuity.get("topic") if has_previous_learning else None),
+        "understanding_score": (
+            continuity.get("understanding_score") if has_previous_learning else None
         ),
-        "previous_topic": continuity.get("topic"),
-        "understanding_score": continuity.get("understanding_score"),
-        "difficulty": continuity.get("difficulty"),
-        "recommended_next_step": continuity.get("next_step"),
+        "difficulty": (continuity.get("difficulty") if has_previous_learning else None),
+        "recommended_next_step": (
+            continuity.get("next_step") if has_previous_learning else None
+        ),
     }
 
 
