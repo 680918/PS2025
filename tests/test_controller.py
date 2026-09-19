@@ -5702,3 +5702,179 @@ def test_run_agent_runtime_should_restore_continuity_for_user():
     assert state.learning_continuity_context["has_previous_session"] is True
     assert state.learning_continuity_context["topic"] == "Tool Calling"
     assert state.learning_continuity_context["next_step"] == "继续练习 Tool Schema"
+
+
+def test_run_agent_runtime_should_build_next_learning_task():
+    learning_journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    learning_continuity_context = {
+        "has_previous_session": True,
+        "topic": "英语听力",
+        "understanding_score": 80,
+        "difficulty": "听力速度较快",
+        "next_step": "练习慢速英语听力",
+    }
+
+    state, response = run_agent_runtime(
+        user_message="我今天继续学习什么？",
+        learning_journey=learning_journey,
+        learning_continuity_context=(learning_continuity_context),
+    )
+
+    assert state.next_learning_task is not None
+
+    assert state.next_learning_task["context"]["domain"] == "英语"
+
+    assert (
+        state.next_learning_task["context"]["recommended_next_step"]
+        == "练习慢速英语听力"
+    )
+
+    assert "听力速度较快" in state.next_learning_task["prompt"]
+
+
+def test_run_agent_runtime_should_include_next_learning_task_prompt_in_llm_prompt(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_call_llm(
+        system_prompt,
+        user_message,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "继续练习英语听力",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    learning_journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    learning_continuity_context = {
+        "has_previous_session": True,
+        "topic": "英语听力",
+        "understanding_score": 80,
+        "difficulty": "听力速度较快",
+        "next_step": "练习慢速英语听力",
+    }
+
+    run_agent_runtime(
+        user_message="我今天继续学习什么？",
+        learning_journey=learning_journey,
+        learning_continuity_context=(learning_continuity_context),
+    )
+
+    system_prompt = captured["system_prompt"]
+
+    assert "英语" in system_prompt
+    assert "6个月达到日常交流" in system_prompt
+    assert "听力速度较快" in system_prompt
+    assert "练习慢速英语听力" in system_prompt
+
+
+def test_run_agent_runtime_should_generate_feedback_driven_next_task(
+    monkeypatch,
+):
+    def fake_call_llm(
+        system_prompt,
+        user_message,
+    ):
+        assert "听力速度较快" in system_prompt
+        assert "练习慢速英语听力" in system_prompt
+
+        return {
+            "status": "success",
+            "content": (
+                "今天继续英语听力训练。"
+                "先进行20分钟慢速英语听力练习，"
+                "重点适应语速并记录听不清的句子。"
+            ),
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    learning_journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    learning_continuity_context = {
+        "has_previous_session": True,
+        "topic": "英语听力",
+        "understanding_score": 80,
+        "difficulty": "听力速度较快",
+        "next_step": "练习慢速英语听力",
+    }
+
+    state, response = run_agent_runtime(
+        user_message="我今天应该学习什么？",
+        learning_journey=learning_journey,
+        learning_continuity_context=(learning_continuity_context),
+    )
+
+    assert state.next_learning_task is not None
+
+    assert "慢速英语听力" in response
+    assert "听力" in response
+
+
+def test_run_agent_runtime_should_generate_first_task_without_fake_history(
+    monkeypatch,
+):
+    def fake_call_llm(
+        system_prompt,
+        user_message,
+    ):
+        assert "这是第一次学习" in system_prompt
+        assert "不要虚构之前的学习记录" in system_prompt
+
+        assert "上一节主题：\nNone" not in system_prompt
+        assert "当前难点：\nNone" not in system_prompt
+
+        return {
+            "status": "success",
+            "content": (
+                "今天是第一节英语学习。先完成20分钟基础听说练习，建立当前水平基线。"
+            ),
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    learning_journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    learning_continuity_context = {
+        "has_previous_session": False,
+    }
+
+    state, response = run_agent_runtime(
+        user_message="我今天应该学习什么？",
+        learning_journey=learning_journey,
+        learning_continuity_context=(learning_continuity_context),
+    )
+
+    assert state.next_learning_task is not None
+    assert state.next_learning_task["context"]["has_previous_session"] is False
+
+    assert "第一节英语学习" in response
+    assert "基础听说练习" in response

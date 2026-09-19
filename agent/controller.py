@@ -26,6 +26,9 @@ from knowledge.scope_resolver import resolve_document_scope_with_trace
 from learning.continuity import (
     build_learning_continuity_context,
 )
+from learning.next_task import (
+    build_next_learning_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +157,7 @@ def run_agent_runtime(
     learning_session_repository=None,
     learning_session=None,
     user_id=None,
+    learning_journey=None,
 ):
     state = AgentState(
         user_message,
@@ -173,6 +177,12 @@ def run_agent_runtime(
 
     if learning_continuity_context is not None:
         state.set_learning_continuity_context(learning_continuity_context)
+
+    if learning_journey is not None:
+        state.next_learning_task = build_next_learning_task(
+            journey=learning_journey,
+            continuity=state.learning_continuity_context,
+        )
 
     if memory_service is not None:
         memory_context = memory_service.get_context()
@@ -262,6 +272,7 @@ def run_agent(
     learning_session_repository=None,
     learning_session=None,
     user_id=None,
+    learning_journey=None,
 ):
     _, response = run_agent_runtime(
         user_message=user_message,
@@ -311,6 +322,11 @@ def run_simple_runtime(user_message, state=None):
         indent=2,
     )
 
+    next_learning_task_prompt = ""
+
+    if state.next_learning_task is not None:
+        next_learning_task_prompt = state.next_learning_task["prompt"]
+
     system_prompt = f"""
     你是Personal Growth AI Coach。
 
@@ -319,6 +335,9 @@ def run_simple_runtime(user_message, state=None):
 
     以下是用户最近一次学习状态，用于保持跨天学习连续性：
     {continuity_description}
+
+    以下是根据用户学习目标和历史学习状态生成的下一节学习任务指导：
+    {next_learning_task_prompt}
 
     使用最近学习状态时必须遵守：
     1. 如果 has_previous_session 为 false，不得虚构之前的学习经历。
@@ -388,6 +407,9 @@ def run_simple_runtime(user_message, state=None):
 
     以下是用户最近一次学习状态，用于保持跨天学习连续性：
     {continuity_description}
+
+    以下是根据用户学习目标和历史学习状态生成的下一节学习任务指导：
+    {next_learning_task_prompt}
 
     使用最近学习状态时必须遵守：
     1. 如果 has_previous_session 为 false，不得虚构之前的学习经历。
