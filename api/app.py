@@ -19,6 +19,8 @@ from fastapi.responses import HTMLResponse
 from learning.session_service import (
     update_learning_session_feedback,
 )
+from agent.controller import run_agent
+from html import escape
 
 
 def create_app(
@@ -263,6 +265,16 @@ def create_app(
             repository=session_repository,
         )
 
+        coach_task = run_agent(
+            user_message="请根据我的学习目标和上一次学习反馈，安排今天的学习任务。",
+            learning_journey={
+                "domain": journey.domain,
+                "goal": journey.goal,
+            },
+            learning_continuity_context=continuity,
+        )
+        safe_coach_task = escape(str(coach_task))
+
         return f"""
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -272,6 +284,9 @@ def create_app(
         </head>
         <body>
             <h1>继续学习</h1>
+            <h2>今天学习什么</h2>
+
+            <p>{safe_coach_task}</p>
 
             <p>学习领域：{journey.domain}</p>
             <p>学习目标：{journey.goal}</p>
