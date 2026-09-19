@@ -63,3 +63,33 @@ def test_web_journey_success_page_should_render_start_button(
     assert "开始学习" in response.text
     assert "/web/journeys/" in response.text
     assert "/start" in response.text
+
+
+def test_web_journey_success_page_should_include_journey_id_in_start_action(
+    tmp_path,
+):
+    app = create_app(database_dir=tmp_path)
+
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    response = client.post(
+        "/web/journeys",
+        data={
+            "user_id": user["user_id"],
+            "domain": "英语",
+            "goal": "6个月达到日常交流",
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert "/web/journeys/" in response.text
+    assert "/start" in response.text

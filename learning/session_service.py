@@ -44,3 +44,32 @@ def create_and_save_learning_session(
     repository.save(session)
 
     return session
+
+
+def update_learning_session_feedback(
+    repository,
+    session,
+    understanding_score,
+    difficulty,
+    next_step,
+):
+    if not 0 <= understanding_score <= 100:
+        raise ValueError("understanding_score must be between 0 and 100")
+
+    difficulty = difficulty.strip()
+    next_step = next_step.strip()
+
+    if not difficulty:
+        raise ValueError("difficulty is required")
+
+    if not next_step:
+        raise ValueError("next_step is required")
+
+    session.completed = True
+    session.understanding_score = understanding_score
+    session.difficulty = difficulty
+    session.next_step = next_step
+
+    repository.save(session)
+
+    return session
