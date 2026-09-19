@@ -54,3 +54,30 @@ def test_build_next_learning_task_context_should_handle_first_session():
     assert context["difficulty"] is None
     assert context["recommended_next_step"] is None
     assert context["has_previous_session"] is False
+
+
+def test_uncompleted_session_should_be_treated_as_first_learning():
+    journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    continuity = {
+        "has_previous_session": True,
+        "topic": "英语",
+        "completed": False,
+        "understanding_score": None,
+        "difficulty": None,
+        "next_step": None,
+    }
+
+    context = build_next_learning_task_context(
+        journey=journey,
+        continuity=continuity,
+    )
+
+    assert context["has_previous_session"] is False
+    assert context["previous_topic"] is None
+    assert context["understanding_score"] is None
+    assert context["difficulty"] is None
+    assert context["recommended_next_step"] is None

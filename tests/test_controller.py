@@ -5736,6 +5736,64 @@ def test_run_agent_runtime_should_build_next_learning_task():
     assert "听力速度较快" in state.next_learning_task["prompt"]
 
 
+def test_run_agent_runtime_should_treat_uncompleted_session_as_first_learning(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_call_llm(system_prompt, user_message):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "第一节：基础英语听力练习",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    learning_journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    learning_continuity_context = {
+        "has_previous_session": True,
+        "topic": "英语",
+        "completed": False,
+        "understanding_score": None,
+        "difficulty": None,
+        "next_step": None,
+    }
+
+    state, response = run_agent_runtime(
+        user_message="我今天应该学习什么？",
+        learning_journey=learning_journey,
+        learning_continuity_context=learning_continuity_context,
+    )
+
+    context = state.next_learning_task["context"]
+    next_task_prompt = state.next_learning_task["prompt"]
+    system_prompt = captured["system_prompt"]
+
+    # 原始 Session 仍然存在，并且保持未完成状态。
+    assert state.learning_continuity_context["has_previous_session"] is True
+    assert state.learning_continuity_context["completed"] is False
+
+    # Next Task 不把未完成的 Session 当成历史学习成果。
+    assert context["has_previous_session"] is False
+    assert context["previous_topic"] is None
+    assert context["difficulty"] is None
+
+    # 实际送入 LLM 的指导应当是首次学习。
+    assert "这是第一次学习" in next_task_prompt
+    assert "不要虚构之前的学习记录" in system_prompt
+
+    assert "第一节：基础英语听力练习" in response
+
+
 def test_run_agent_runtime_should_include_next_learning_task_prompt_in_llm_prompt(
     monkeypatch,
 ):
