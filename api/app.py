@@ -1,4 +1,4 @@
-from fastapi import FastAPI, status, HTTPException
+from fastapi import FastAPI, status, HTTPException, Form
 
 from user.service import register_user
 from user.sqlite_repository import SQLiteUserRepository
@@ -15,6 +15,7 @@ from learning.sqlite_session_repository import (
 from learning.continuity import (
     build_learning_continuity_context,
 )
+from fastapi.responses import HTMLResponse
 
 
 def create_app(
@@ -27,6 +28,273 @@ def create_app(
     journey_repository = SQLiteLearningJourneyRepository(database_dir / "journeys.db")
 
     session_repository = SQLiteLearningSessionRepository(database_dir / "sessions.db")
+
+    @app.get(
+        "/",
+        response_class=HTMLResponse,
+    )
+    def home():
+        return """
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <title>AI Learning Coach</title>
+        </head>
+        <body>
+            <h1>AI Learning Coach</h1>
+            <p>你的长期学习伙伴</p>
+
+            <h2>注册</h2>
+
+            <form method="post" action="/web/register">
+                <label>
+                    姓名：
+                    <input
+                        type="text"
+                        name="name"
+                        required
+                    >
+                </label>
+
+                <br>
+
+                <label>
+                    邮箱：
+                    <input
+                        type="email"
+                        name="email"
+                        required
+                    >
+                </label>
+
+                <br>
+
+                <button type="submit">
+                    注册
+                </button>
+            </form>
+        </body>
+        </html>
+        """
+
+    @app.post(
+        "/web/register",
+        response_class=HTMLResponse,
+    )
+    def web_register(
+        name: str = Form(...),
+        email: str = Form(...),
+    ):
+        user = register_user(
+            repository=user_repository,
+            name=name,
+            email=email,
+        )
+
+        return f"""
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <title>注册成功</title>
+        </head>
+        <body>
+            <h1>注册成功</h1>
+
+            <p>姓名：{user.name}</p>
+            <p>邮箱：{user.email}</p>
+
+            <h2>创建学习目标</h2>
+
+            <form method="post" action="/web/journeys">
+                <input
+                    type="hidden"
+                    name="user_id"
+                    value="{user.user_id}"
+                >
+
+                <label>
+                    学习领域：
+                    <input
+                        type="text"
+                        name="domain"
+                        required
+                    >
+                </label>
+
+                <br>
+
+                <label>
+                    学习目标：
+                    <input
+                        type="text"
+                        name="goal"
+                        required
+                    >
+                </label>
+
+                <br>
+
+                <button type="submit">
+                    创建学习目标
+                </button>
+            </form>
+        </body>
+        </html>
+        """
+
+    @app.post(
+        "/web/journeys",
+        response_class=HTMLResponse,
+    )
+    def web_create_journey(
+        user_id: str = Form(...),
+        domain: str = Form(...),
+        goal: str = Form(...),
+    ):
+        journey = create_learning_journey(
+            repository=journey_repository,
+            user_repository=user_repository,
+            user_id=user_id,
+            domain=domain,
+            goal=goal,
+        )
+
+        return f"""
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <title>学习目标创建成功</title>
+        </head>
+        <body>
+            <h1>学习目标创建成功</h1>
+
+            <p>学习领域：{journey.domain}</p>
+            <p>学习目标：{journey.goal}</p>
+            <p>状态：{journey.status}</p>
+
+            <form
+                method="post"
+                action="/web/journeys/{journey.journey_id}/start"
+            >
+                <button type="submit">
+                    开始学习
+                </button>
+            </form>
+        </body>
+        </html>
+        """
+
+    @app.post(
+        "/web/journeys/{journey_id}/start",
+        response_class=HTMLResponse,
+    )
+    def web_start_journey(
+        journey_id: str,
+    ):
+        journey = journey_repository.get_by_id(journey_id)
+
+        if journey is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="journey not found",
+            )
+
+        try:
+            session = start_learning_journey(
+                repository=journey_repository,
+                journey=journey,
+                session_repository=session_repository,
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+
+        return f"""
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <title>学习已开始</title>
+        </head>
+        <body>
+            <h1>学习已开始</h1>
+
+            <p>学习领域：{journey.domain}</p>
+            <p>学习目标：{journey.goal}</p>
+            <p>状态：{journey.status}</p>
+            <p>当前主题：{session.topic}</p>
+            <a href="/web/journeys/{journey.journey_id}/continue?user_id={journey.user_id}">
+                继续学习
+            </a>
+        </body>
+        </html>
+        """
+
+    @app.get(
+        "/web/journeys/{journey_id}/continue",
+        response_class=HTMLResponse,
+    )
+    def web_continue_journey(
+        journey_id: str,
+        user_id: str,
+    ):
+        journey = journey_repository.get_by_id_for_user(
+            journey_id=journey_id,
+            user_id=user_id,
+        )
+
+        if journey is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="journey not found",
+            )
+
+        continuity = build_learning_continuity_context(
+            journey_id=journey_id,
+            user_id=user_id,
+            repository=session_repository,
+        )
+
+        return f"""
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <title>继续学习</title>
+        </head>
+        <body>
+            <h1>继续学习</h1>
+
+            <p>学习领域：{journey.domain}</p>
+            <p>学习目标：{journey.goal}</p>
+
+            <p>
+                上次主题：
+                {continuity.get("topic", "暂无")}
+            </p>
+
+            <p>
+                理解程度：
+                {continuity.get("understanding_score", "暂无")}
+            </p>
+
+            <p>
+                难点：
+                {continuity.get("difficulty", "暂无")}
+            </p>
+
+            <p>
+                下一步：
+                {continuity.get("next_step", "暂无")}
+            </p>
+        </body>
+        </html>
+        """
 
     @app.post(
         "/users",
