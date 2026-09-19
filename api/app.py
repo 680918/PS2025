@@ -16,6 +16,9 @@ from learning.continuity import (
     build_learning_continuity_context,
 )
 from fastapi.responses import HTMLResponse
+from learning.session_service import (
+    update_learning_session_feedback,
+)
 
 
 def create_app(
@@ -292,6 +295,139 @@ def create_app(
                 下一步：
                 {continuity.get("next_step", "暂无")}
             </p>
+
+            <h2>提交学习反馈</h2>
+
+            <form
+                method="post"
+                action="/web/journeys/{journey.journey_id}/feedback"
+            >
+                <input
+                    type="hidden"
+                    name="user_id"
+                    value="{user_id}"
+                >
+
+                <label>
+                    理解程度：
+                    <input
+                        type="number"
+                        name="understanding_score"
+                        min="0"
+                        max="100"
+                        required
+                    >
+                </label>
+
+                <br>
+
+                <label>
+                    当前难点：
+                    <input
+                        type="text"
+                        name="difficulty"
+                        required
+                    >
+                </label>
+
+                <br>
+
+                <label>
+                    下一步：
+                    <input
+                        type="text"
+                        name="next_step"
+                        required
+                    >
+                </label>
+
+                <br>
+
+                <button type="submit">
+                    提交学习反馈
+                </button>
+            </form>
+        </body>
+        </html>
+        """
+
+    @app.post(
+        "/web/journeys/{journey_id}/feedback",
+        response_class=HTMLResponse,
+    )
+    def web_submit_feedback(
+        journey_id: str,
+        user_id: str = Form(...),
+        understanding_score: int = Form(...),
+        difficulty: str = Form(...),
+        next_step: str = Form(...),
+    ):
+        journey = journey_repository.get_by_id_for_user(
+            journey_id=journey_id,
+            user_id=user_id,
+        )
+
+        if journey is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="journey not found",
+            )
+
+        session = session_repository.get_latest_by_journey_for_user(
+            journey_id=journey_id,
+            user_id=user_id,
+        )
+
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="learning session not found",
+            )
+
+        try:
+            updated_session = update_learning_session_feedback(
+                repository=session_repository,
+                session=session,
+                understanding_score=understanding_score,
+                difficulty=difficulty,
+                next_step=next_step,
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+
+        return f"""
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <title>学习反馈已保存</title>
+        </head>
+        <body>
+            <h1>学习反馈已保存</h1>
+
+            <p>
+                理解程度：
+                {updated_session.understanding_score}
+            </p>
+
+            <p>
+                当前难点：
+                {updated_session.difficulty}
+            </p>
+
+            <p>
+                下一步：
+                {updated_session.next_step}
+            </p>
+
+            <a
+                href="/web/journeys/{journey_id}/continue?user_id={user_id}"
+            >
+                继续学习
+            </a>
         </body>
         </html>
         """

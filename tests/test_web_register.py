@@ -49,3 +49,24 @@ def test_web_register_should_render_create_journey_form(
     assert 'name="goal"' in response.text
 
     assert "创建学习目标" in response.text
+
+
+def test_web_register_should_include_user_id_in_journey_form(
+    tmp_path,
+):
+    app = create_app(database_dir=tmp_path)
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/web/register",
+        data={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert 'name="user_id"' in response.text
+    assert 'type="hidden"' in response.text
