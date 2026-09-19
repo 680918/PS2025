@@ -34,6 +34,7 @@ class AgentState:
         self.routing_trace = None
 
         self.learning_continuity_context = {}
+        self.next_learning_task = None
 
     def update_step(self):
 

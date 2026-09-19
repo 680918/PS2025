@@ -1,0 +1,56 @@
+from learning.next_task import (
+    build_next_learning_task_context,
+)
+
+
+def test_build_next_learning_task_context_should_combine_journey_and_continuity():
+    journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    continuity = {
+        "has_previous_session": True,
+        "topic": "英语听力",
+        "understanding_score": 80,
+        "difficulty": "听力速度较快",
+        "next_step": "练习慢速英语听力",
+    }
+
+    context = build_next_learning_task_context(
+        journey=journey,
+        continuity=continuity,
+    )
+
+    assert context["domain"] == "英语"
+    assert context["goal"] == "6个月达到日常交流"
+    assert context["previous_topic"] == "英语听力"
+    assert context["understanding_score"] == 80
+    assert context["difficulty"] == "听力速度较快"
+    assert context["recommended_next_step"] == "练习慢速英语听力"
+    assert context["has_previous_session"] is True
+
+
+def test_build_next_learning_task_context_should_handle_first_session():
+    journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    continuity = {
+        "has_previous_session": False,
+    }
+
+    context = build_next_learning_task_context(
+        journey=journey,
+        continuity=continuity,
+    )
+
+    assert context["domain"] == "英语"
+    assert context["goal"] == "6个月达到日常交流"
+
+    assert context["previous_topic"] is None
+    assert context["understanding_score"] is None
+    assert context["difficulty"] is None
+    assert context["recommended_next_step"] is None
+    assert context["has_previous_session"] is False
