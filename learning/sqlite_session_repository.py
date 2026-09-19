@@ -168,3 +168,44 @@ class SQLiteLearningSessionRepository:
             created_at=datetime.fromisoformat(row[8]),
             updated_at=datetime.fromisoformat(row[9]),
         )
+
+    def list_by_journey(
+        self,
+        journey_id,
+    ):
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    session_id,
+                    journey_id,
+                    user_id,
+                    topic,
+                    completed,
+                    understanding_score,
+                    difficulty,
+                    next_step,
+                    created_at,
+                    updated_at
+                FROM learning_sessions
+                WHERE journey_id = ?
+                ORDER BY created_at ASC
+                """,
+                (journey_id,),
+            ).fetchall()
+
+        return [
+            LearningSession(
+                session_id=row[0],
+                journey_id=row[1],
+                user_id=row[2],
+                topic=row[3],
+                completed=bool(row[4]),
+                understanding_score=row[5],
+                difficulty=row[6],
+                next_step=row[7],
+                created_at=datetime.fromisoformat(row[8]),
+                updated_at=datetime.fromisoformat(row[9]),
+            )
+            for row in rows
+        ]

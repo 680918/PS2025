@@ -73,3 +73,34 @@ def update_learning_session_feedback(
     repository.save(session)
 
     return session
+
+
+def get_or_create_learning_session(
+    repository,
+    journey_id,
+    user_id,
+    topic,
+):
+    if hasattr(
+        repository,
+        "get_latest_by_journey_for_user",
+    ):
+        latest_session = repository.get_latest_by_journey_for_user(
+            journey_id,
+            user_id,
+        )
+    else:
+        latest_session = repository.get_latest_by_journey(journey_id)
+
+        if latest_session is not None and latest_session.user_id != user_id:
+            latest_session = None
+
+    if latest_session is not None and latest_session.completed is False:
+        return latest_session
+
+    return create_and_save_learning_session(
+        repository=repository,
+        journey_id=journey_id,
+        user_id=user_id,
+        topic=topic,
+    )

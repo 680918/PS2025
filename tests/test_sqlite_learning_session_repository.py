@@ -109,3 +109,42 @@ def test_sqlite_session_repository_should_return_latest_session_only_for_owner(
     assert owned_session.session_id == session.session_id
 
     assert other_user_result is None
+
+
+def test_list_by_journey_should_return_all_sessions_in_creation_order(
+    tmp_path,
+):
+    repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
+
+    first = LearningSession(
+        journey_id="journey-001",
+        user_id="user-001",
+        topic="英语听力",
+        completed=True,
+        understanding_score=80,
+        difficulty="听力速度较快",
+        next_step="练习慢速英语听力",
+    )
+
+    second = LearningSession(
+        journey_id="journey-001",
+        user_id="user-001",
+        topic="慢速英语听力",
+        completed=False,
+    )
+
+    repository.save(first)
+    repository.save(second)
+
+    sessions = repository.list_by_journey("journey-001")
+
+    assert len(sessions) == 2
+
+    assert sessions[0].session_id == first.session_id
+    assert sessions[1].session_id == second.session_id
+
+    assert sessions[0].completed is True
+    assert sessions[0].difficulty == "听力速度较快"
+
+    assert sessions[1].completed is False
+    assert sessions[1].difficulty is None
