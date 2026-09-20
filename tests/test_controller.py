@@ -6032,3 +6032,73 @@ def test_run_agent_runtime_should_evaluate_current_user_journey(
     assert "已完成学习：2" in state.next_learning_task["prompt"]
     assert "练习慢速英语听力" in state.next_learning_task["prompt"]
     assert response == "今天的学习任务"
+
+
+def test_run_agent_runtime_should_include_adaptive_planning_decision(
+    monkeypatch,
+):
+    def fake_call_llm(system_prompt, user_message):
+        return {
+            "status": "success",
+            "content": "今天的学习任务",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    class FakeRepository:
+        def list_by_journey_for_user(
+            self,
+            journey_id,
+            user_id,
+        ):
+            assert journey_id == "journey-001"
+            assert user_id == "user-a"
+
+            class Session:
+                completed = True
+
+                def __init__(self, score):
+                    self.understanding_score = score
+
+            return [
+                Session(80),
+                Session(60),
+            ]
+
+    continuity = {
+        "has_previous_session": True,
+        "completed": True,
+        "topic": "英语听力",
+        "understanding_score": 60,
+        "difficulty": "语速太快，跟不上",
+        "next_step": "先练习慢速英语听力",
+    }
+
+    state, response = run_agent_runtime(
+        user_message="今天学习什么？",
+        journey_id="journey-001",
+        user_id="user-a",
+        learning_session_repository=FakeRepository(),
+        learning_journey={
+            "domain": "英语",
+            "goal": "6个月达到日常交流",
+        },
+        learning_continuity_context=continuity,
+    )
+
+    decision = state.next_learning_task["context"]["planning_decision"]
+
+    assert decision["topic"] == "英语听力"
+    assert decision["action"] == "continue"
+    assert decision["next_topic"] is None
+
+    assert "语速太快，跟不上" in decision["reason"]
+    assert "先练习慢速英语听力" in decision["reason"]
+
+    assert "教学调整建议" in state.next_learning_task["prompt"]
+    assert "适当减小单次任务量" in state.next_learning_task["prompt"]
+
+    assert response == "今天的学习任务"

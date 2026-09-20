@@ -397,3 +397,102 @@ def test_web_continue_should_pass_evaluation_dependencies_to_agent(
     assert captured["learning_journey"]["goal"] == "6个月达到日常交流"
 
     assert captured["learning_continuity_context"] is not None
+
+
+def test_web_continue_should_include_adaptive_planning_in_coach_prompt(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "自适应学习测试用户",
+            "email": "adaptive-web@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "英语",
+            "goal": "6个月达到日常交流",
+        },
+    ).json()
+
+    start_response = client.post(f"/journeys/{journey['journey_id']}/start")
+
+    assert start_response.status_code == 200
+
+    captured_prompts = []
+
+    def fake_call_llm(system_prompt, user_message):
+        captured_prompts.append(system_prompt)
+
+        return {
+            "status": "success",
+            "content": "今天练习慢速英语听力",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    journey_url = f"/web/journeys/{journey['journey_id']}"
+
+    # 完成第一节：自评 80。
+    first_feedback = client.post(
+        f"{journey_url}/feedback",
+        data={
+            "user_id": user["user_id"],
+            "understanding_score": "80",
+            "difficulty": "听力速度较快",
+            "next_step": "练习慢速英语听力",
+        },
+    )
+
+    assert first_feedback.status_code == 200
+
+    # 继续学习：生成任务，并创建第二节 Session。
+    second_continue = client.get(
+        f"{journey_url}/continue",
+        params={"user_id": user["user_id"]},
+    )
+
+    assert second_continue.status_code == 200
+
+    # 完成第二节：自评降至 60。
+    second_feedback = client.post(
+        f"{journey_url}/feedback",
+        data={
+            "user_id": user["user_id"],
+            "understanding_score": "60",
+            "difficulty": "语速太快，跟不上",
+            "next_step": "先练习慢速英语听力",
+        },
+    )
+
+    assert second_feedback.status_code == 200
+
+    # 再次继续学习：此时应读取两次已完成的记录。
+    third_continue = client.get(
+        f"{journey_url}/continue",
+        params={"user_id": user["user_id"]},
+    )
+
+    assert third_continue.status_code == 200
+    assert captured_prompts
+
+    coach_prompt = captured_prompts[-1]
+
+    assert "declining" in coach_prompt
+    assert "语速太快，跟不上" in coach_prompt
+    assert "先练习慢速英语听力" in coach_prompt
+    assert "教学调整建议" in coach_prompt
+    assert "适当减小单次任务量" in coach_prompt
+
+    assert "今天练习慢速英语听力" in third_continue.text
