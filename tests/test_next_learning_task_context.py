@@ -118,3 +118,45 @@ def test_next_learning_task_context_should_include_journey_evaluation():
     assert context["evaluation"]["completed_sessions"] == 3
     assert context["evaluation"]["understanding_change"] == 20
     assert context["evaluation"]["trend"] == "improving"
+
+
+def test_next_learning_task_context_should_include_planning_decision():
+    journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    continuity = {
+        "has_previous_session": True,
+        "completed": True,
+        "topic": "英语听力",
+        "understanding_score": 60,
+        "difficulty": "语速太快，跟不上",
+        "next_step": "先练习慢速英语听力",
+    }
+
+    evaluation = {
+        "completed_sessions": 3,
+        "first_understanding": 80,
+        "latest_understanding": 60,
+        "understanding_change": -20,
+        "trend": "declining",
+    }
+
+    planning_decision = {
+        "topic": "英语听力",
+        "action": "continue",
+        "reason": "围绕语速问题调整练习，减小单次任务量。",
+        "next_topic": None,
+    }
+
+    context = build_next_learning_task_context(
+        journey=journey,
+        continuity=continuity,
+        evaluation=evaluation,
+        planning_decision=planning_decision,
+    )
+
+    assert context["evaluation"] == evaluation
+    assert context["planning_decision"] == planning_decision
+    assert context["recommended_next_step"] == "先练习慢速英语听力"

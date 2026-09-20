@@ -1,7 +1,11 @@
+from dataclasses import asdict, is_dataclass
+
+
 def build_next_learning_task_context(
     journey,
     continuity,
     evaluation=None,
+    planning_decision=None,
 ):
     has_previous_learning = (
         continuity.get("has_previous_session", False)
@@ -21,6 +25,7 @@ def build_next_learning_task_context(
             continuity.get("next_step") if has_previous_learning else None
         ),
         "evaluation": evaluation,
+        "planning_decision": planning_decision,
     }
 
 
@@ -67,6 +72,21 @@ def build_next_learning_task_prompt(
 请结合趋势辅助制定下一节学习任务。
 """
 
+    planning_text = ""
+
+    planning_decision = context.get("planning_decision")
+
+    if planning_decision:
+        planning_text = f"""
+教学调整建议：
+
+教学动作：{planning_decision.get("action")}
+
+调整理由：{planning_decision.get("reason")}
+
+下一主题：{planning_decision.get("next_topic")}
+"""
+
     return f"""
 你是一名长期学习教练。
 
@@ -92,6 +112,8 @@ def build_next_learning_task_prompt(
 
 {evaluation_text}
 
+{planning_text}
+
 请根据以上学习历史，
 为用户生成下一节具体、可执行的学习任务。
 
@@ -100,11 +122,20 @@ def build_next_learning_task_prompt(
 """
 
 
-def build_next_learning_task(journey, continuity, evaluation=None):
+def build_next_learning_task(
+    journey,
+    continuity,
+    evaluation=None,
+    planning_decision=None,
+):
+    if planning_decision is not None and is_dataclass(planning_decision):
+        planning_decision = asdict(planning_decision)
+
     context = build_next_learning_task_context(
         journey=journey,
         continuity=continuity,
         evaluation=evaluation,
+        planning_decision=planning_decision,
     )
 
     prompt = build_next_learning_task_prompt(context)

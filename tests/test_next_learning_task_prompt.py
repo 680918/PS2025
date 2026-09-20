@@ -77,3 +77,38 @@ def test_next_learning_task_prompt_should_include_journey_evaluation():
     assert "练习慢速英语听力" in prompt
 
     assert "自评" in prompt
+
+
+def test_next_learning_task_prompt_should_include_planning_decision():
+    context = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+        "has_previous_session": True,
+        "previous_topic": "英语听力",
+        "understanding_score": 60,
+        "difficulty": "语速太快，跟不上",
+        "recommended_next_step": "先练习慢速英语听力",
+        "evaluation": {
+            "completed_sessions": 3,
+            "first_understanding": 80,
+            "latest_understanding": 60,
+            "understanding_change": -20,
+            "trend": "declining",
+        },
+        "planning_decision": {
+            "topic": "英语听力",
+            "action": "continue",
+            "reason": "围绕语速问题调整练习，适当减小单次任务量。",
+            "next_topic": None,
+        },
+    }
+
+    prompt = build_next_learning_task_prompt(context)
+
+    assert "教学调整建议" in prompt
+    assert "continue" in prompt
+    assert "围绕语速问题调整练习，适当减小单次任务量。" in prompt
+
+    assert "语速太快，跟不上" in prompt
+    assert "先练习慢速英语听力" in prompt
+    assert "declining" in prompt

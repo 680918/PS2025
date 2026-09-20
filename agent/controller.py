@@ -32,6 +32,9 @@ from learning.next_task import (
 from evaluation.journey_evaluation_service import (
     evaluate_journey_from_repository,
 )
+from planning.journey_planning_adapter import (
+    build_journey_planning_decision,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -194,11 +197,24 @@ def run_agent_runtime(
             user_id=user_id,
         )
 
+    planning_decision = None
+
+    if (
+        learning_journey is not None
+        and journey_evaluation is not None
+        and state.learning_continuity_context.get("has_previous_session") is True
+    ):
+        planning_decision = build_journey_planning_decision(
+            continuity=state.learning_continuity_context,
+            evaluation=journey_evaluation,
+        )
+
     if learning_journey is not None:
         state.next_learning_task = build_next_learning_task(
             journey=learning_journey,
             continuity=state.learning_continuity_context,
             evaluation=journey_evaluation,
+            planning_decision=planning_decision,
         )
 
     if memory_service is not None:
