@@ -5936,3 +5936,99 @@ def test_run_agent_runtime_should_generate_first_task_without_fake_history(
 
     assert "第一节英语学习" in response
     assert "基础听说练习" in response
+
+
+def test_run_agent_should_forward_learning_journey_to_runtime(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_run_agent_runtime(**kwargs):
+        captured.update(kwargs)
+        return None, "教练任务"
+
+    monkeypatch.setattr(
+        "agent.controller.run_agent_runtime",
+        fake_run_agent_runtime,
+    )
+
+    journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    response = run_agent(
+        user_message="今天学习什么？",
+        learning_journey=journey,
+    )
+
+    assert response == "教练任务"
+    assert captured["learning_journey"] == journey
+
+
+def test_run_agent_runtime_should_evaluate_current_user_journey(
+    monkeypatch,
+):
+    def fake_call_llm(system_prompt, user_message):
+        return {
+            "status": "success",
+            "content": "今天的学习任务",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    class FakeRepository:
+        def list_by_journey_for_user(
+            self,
+            journey_id,
+            user_id,
+        ):
+            assert journey_id == "journey-001"
+            assert user_id == "user-a"
+
+            class Session:
+                completed = True
+
+                def __init__(self, score):
+                    self.understanding_score = score
+
+            return [
+                Session(60),
+                Session(80),
+            ]
+
+    continuity = {
+        "has_previous_session": True,
+        "completed": True,
+        "topic": "英语听力",
+        "understanding_score": 80,
+        "difficulty": "听力速度较快",
+        "next_step": "练习慢速英语听力",
+    }
+
+    state, response = run_agent_runtime(
+        user_message="今天学习什么？",
+        journey_id="journey-001",
+        user_id="user-a",
+        learning_session_repository=FakeRepository(),
+        learning_journey={
+            "domain": "英语",
+            "goal": "6个月达到日常交流",
+        },
+        learning_continuity_context=continuity,
+    )
+
+    evaluation = state.next_learning_task["context"]["evaluation"]
+
+    assert evaluation["completed_sessions"] == 2
+    assert evaluation["first_understanding"] == 60
+    assert evaluation["latest_understanding"] == 80
+    assert evaluation["understanding_change"] == 20
+    assert evaluation["trend"] == "improving"
+
+    assert "已完成学习：2" in state.next_learning_task["prompt"]
+    assert "练习慢速英语听力" in state.next_learning_task["prompt"]
+    assert response == "今天的学习任务"

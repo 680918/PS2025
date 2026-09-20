@@ -6,6 +6,7 @@ from learning.sqlite_session_repository import (
     SQLiteLearningSessionRepository,
 )
 
+
 def test_should_evaluate_journey_from_repository():
     class FakeSessionRepository:
         def __init__(self):
@@ -52,6 +53,7 @@ def test_should_evaluate_journey_from_repository():
     assert result["understanding_change"] == 20
     assert result["trend"] == "improving"
 
+
 def test_should_evaluate_journey_with_user_scope():
     class FakeSessionRepository:
         def __init__(self):
@@ -62,9 +64,7 @@ def test_should_evaluate_journey_with_user_scope():
             journey_id,
             user_id,
         ):
-            self.calls.append(
-                (journey_id, user_id)
-            )
+            self.calls.append((journey_id, user_id))
 
             return [
                 LearningSession(
@@ -91,20 +91,17 @@ def test_should_evaluate_journey_with_user_scope():
         user_id="user-001",
     )
 
-    assert repository.calls == [
-        ("journey-001", "user-001")
-    ]
+    assert repository.calls == [("journey-001", "user-001")]
 
     assert result["completed_sessions"] == 2
     assert result["understanding_change"] == 20
     assert result["trend"] == "improving"
 
+
 def test_should_evaluate_only_current_user_sessions_from_sqlite(
     tmp_path,
 ):
-    repository = SQLiteLearningSessionRepository(
-        tmp_path / "sessions.db"
-    )
+    repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
 
     sessions = [
         LearningSession(

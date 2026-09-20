@@ -29,6 +29,9 @@ from learning.continuity import (
 from learning.next_task import (
     build_next_learning_task,
 )
+from evaluation.journey_evaluation_service import (
+    evaluate_journey_from_repository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -178,10 +181,24 @@ def run_agent_runtime(
     if learning_continuity_context is not None:
         state.set_learning_continuity_context(learning_continuity_context)
 
+    journey_evaluation = None
+    if (
+        learning_journey is not None
+        and journey_id is not None
+        and user_id is not None
+        and learning_session_repository is not None
+    ):
+        journey_evaluation = evaluate_journey_from_repository(
+            repository=learning_session_repository,
+            journey_id=journey_id,
+            user_id=user_id,
+        )
+
     if learning_journey is not None:
         state.next_learning_task = build_next_learning_task(
             journey=learning_journey,
             continuity=state.learning_continuity_context,
+            evaluation=journey_evaluation,
         )
 
     if memory_service is not None:
@@ -284,6 +301,7 @@ def run_agent(
         user_id=user_id,
         learning_session_repository=learning_session_repository,
         learning_session=learning_session,
+        learning_journey=learning_journey,
     )
 
     return response

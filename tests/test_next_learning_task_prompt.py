@@ -44,6 +44,7 @@ def test_build_next_learning_task_prompt_should_handle_first_session_without_fak
     assert "当前难点：\nNone" not in prompt
     assert "建议下一步：\nNone" not in prompt
 
+
 def test_next_learning_task_prompt_should_include_journey_evaluation():
     context = {
         "domain": "英语",

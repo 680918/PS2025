@@ -12,33 +12,17 @@ def build_next_learning_task_context(
         "domain": journey["domain"],
         "goal": journey["goal"],
         "has_previous_session": has_previous_learning,
-
-        "previous_topic": (
-            continuity.get("topic")
-            if has_previous_learning
-            else None
-        ),
-
+        "previous_topic": (continuity.get("topic") if has_previous_learning else None),
         "understanding_score": (
-            continuity.get("understanding_score")
-            if has_previous_learning
-            else None
+            continuity.get("understanding_score") if has_previous_learning else None
         ),
-
-        "difficulty": (
-            continuity.get("difficulty")
-            if has_previous_learning
-            else None
-        ),
-
+        "difficulty": (continuity.get("difficulty") if has_previous_learning else None),
         "recommended_next_step": (
-            continuity.get("next_step")
-            if has_previous_learning
-            else None
+            continuity.get("next_step") if has_previous_learning else None
         ),
-
         "evaluation": evaluation,
     }
+
 
 def build_next_learning_task_prompt(
     context,
@@ -115,11 +99,8 @@ def build_next_learning_task_prompt(
 不要把历史学习状态描述成这一次已经完成的内容。
 """
 
-def build_next_learning_task(
-    journey,
-    continuity,
-    evaluation=None
-):
+
+def build_next_learning_task(journey, continuity, evaluation=None):
     context = build_next_learning_task_context(
         journey=journey,
         continuity=continuity,

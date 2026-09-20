@@ -1,6 +1,7 @@
 from learning.session import LearningSession
 from evaluation.journey_evaluator import evaluate_journey_progress
 
+
 def test_evaluation_should_count_only_completed_sessions():
     sessions = [
         LearningSession(
@@ -31,9 +32,10 @@ def test_evaluation_should_count_only_completed_sessions():
 
     result = evaluate_journey_progress(
         sessions=sessions,
-    )    
+    )
 
     assert result["completed_sessions"] == 2
+
 
 def test_evaluation_should_calculate_understanding_change():
     sessions = [
@@ -69,6 +71,7 @@ def test_evaluation_should_calculate_understanding_change():
     assert result["latest_understanding"] == 80
     assert result["understanding_change"] == 20
 
+
 def test_evaluation_should_not_calculate_change_with_only_one_score():
     sessions = [
         LearningSession(
@@ -90,6 +93,7 @@ def test_evaluation_should_not_calculate_change_with_only_one_score():
 
     # 只有一节，无法比较变化。
     assert result["understanding_change"] is None
+
 
 def test_evaluation_should_return_zero_when_scores_are_equal():
     sessions = [
@@ -117,6 +121,7 @@ def test_evaluation_should_return_zero_when_scores_are_equal():
     assert result["first_understanding"] == 80
     assert result["latest_understanding"] == 80
     assert result["understanding_change"] == 0
+
 
 def test_evaluation_should_detect_improving_trend():
     sessions = [
@@ -150,6 +155,7 @@ def test_evaluation_should_detect_improving_trend():
     assert result["understanding_change"] == 20
     assert result["trend"] == "improving"
 
+
 def test_evaluation_should_detect_stable_trend():
     sessions = [
         LearningSession(
@@ -175,6 +181,7 @@ def test_evaluation_should_detect_stable_trend():
     assert result["completed_sessions"] == 2
     assert result["understanding_change"] == 0
     assert result["trend"] == "stable"
+
 
 def test_evaluation_should_detect_declining_trend():
     sessions = [
@@ -211,6 +218,7 @@ def test_evaluation_should_detect_declining_trend():
     assert result["understanding_change"] == -20
     assert result["trend"] == "declining"
 
+
 def test_evaluation_should_detect_insufficient_data():
     sessions = [
         LearningSession(
@@ -232,6 +240,7 @@ def test_evaluation_should_detect_insufficient_data():
     assert result["understanding_change"] is None
     assert result["trend"] == "insufficient_data"
 
+
 def test_evaluation_should_handle_empty_session_history():
     result = evaluate_journey_progress(
         sessions=[],
@@ -242,6 +251,7 @@ def test_evaluation_should_handle_empty_session_history():
     assert result["latest_understanding"] is None
     assert result["understanding_change"] is None
     assert result["trend"] == "insufficient_data"
+
 
 def test_evaluation_should_ignore_all_uncompleted_sessions():
     sessions = [

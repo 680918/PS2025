@@ -149,10 +149,9 @@ def test_list_by_journey_should_return_all_sessions_in_creation_order(
     assert sessions[1].completed is False
     assert sessions[1].difficulty is None
 
+
 def test_list_by_journey_for_user_should_isolate_users(tmp_path):
-    repository = SQLiteLearningSessionRepository(
-        tmp_path / "sessions.db"
-    )
+    repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
 
     user_a_session = LearningSession(
         journey_id="journey-001",

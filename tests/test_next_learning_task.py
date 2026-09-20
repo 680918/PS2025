@@ -27,6 +27,7 @@ def test_build_next_learning_task_should_return_context_and_prompt():
     assert "听力速度较快" in result["prompt"]
     assert "练习慢速英语听力" in result["prompt"]
 
+
 def test_build_next_learning_task_should_pass_evaluation_to_prompt():
     journey = {
         "domain": "英语",

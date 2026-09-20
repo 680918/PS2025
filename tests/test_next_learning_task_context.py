@@ -82,6 +82,7 @@ def test_uncompleted_session_should_be_treated_as_first_learning():
     assert context["difficulty"] is None
     assert context["recommended_next_step"] is None
 
+
 def test_next_learning_task_context_should_include_journey_evaluation():
     journey = {
         "domain": "英语",
