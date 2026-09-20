@@ -273,6 +273,9 @@ def create_app(
                 "goal": journey.goal,
             },
             learning_continuity_context=continuity,
+            journey_id=journey.journey_id,
+            user_id=user_id,
+            learning_session_repository=session_repository,
         )
 
         get_or_create_learning_session(

@@ -334,3 +334,66 @@ def test_web_continue_should_create_new_session_after_previous_completed(
     assert second_session.understanding_score == 90
     assert second_session.difficulty == "个别句子仍听不清"
     assert second_session.next_step == "练习正常语速英语"
+
+
+def test_web_continue_should_pass_evaluation_dependencies_to_agent(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "测试用户",
+            "email": "evaluation-web@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "英语",
+            "goal": "6个月达到日常交流",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    captured = {}
+
+    def fake_run_agent(user_message, **kwargs):
+        captured.update(kwargs)
+        return "今天练习英语听力"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert captured["journey_id"] == journey["journey_id"]
+    assert captured["user_id"] == user["user_id"]
+
+    repository = captured["learning_session_repository"]
+
+    assert isinstance(
+        repository,
+        SQLiteLearningSessionRepository,
+    )
+
+    assert captured["learning_journey"]["domain"] == "英语"
+
+    assert captured["learning_journey"]["goal"] == "6个月达到日常交流"
+
+    assert captured["learning_continuity_context"] is not None

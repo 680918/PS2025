@@ -1,4 +1,8 @@
-def build_next_learning_task_context(journey, continuity):
+def build_next_learning_task_context(
+    journey,
+    continuity,
+    evaluation=None,
+):
     has_previous_learning = (
         continuity.get("has_previous_session", False)
         and continuity.get("completed") is not False
@@ -16,6 +20,7 @@ def build_next_learning_task_context(journey, continuity):
         "recommended_next_step": (
             continuity.get("next_step") if has_previous_learning else None
         ),
+        "evaluation": evaluation,
     }
 
 
@@ -38,6 +43,28 @@ def build_next_learning_task_prompt(
 
 请根据学习领域和学习目标，
 为用户生成第一节具体、可执行的学习任务。
+"""
+
+    evaluation_text = ""
+
+    evaluation = context.get("evaluation")
+
+    if evaluation:
+        evaluation_text = f"""
+长期学习趋势：
+
+已完成学习：{evaluation.get("completed_sessions")}
+
+首次理解程度：{evaluation.get("first_understanding")}
+
+最新理解程度：{evaluation.get("latest_understanding")}
+
+理解程度变化：{evaluation.get("understanding_change")}
+
+趋势：{evaluation.get("trend")}
+
+以上理解程度为用户自评数据，
+请结合趋势辅助制定下一节学习任务。
 """
 
     return f"""
@@ -63,6 +90,8 @@ def build_next_learning_task_prompt(
 建议下一步：
 {context["recommended_next_step"]}
 
+{evaluation_text}
+
 请根据以上学习历史，
 为用户生成下一节具体、可执行的学习任务。
 
@@ -71,13 +100,11 @@ def build_next_learning_task_prompt(
 """
 
 
-def build_next_learning_task(
-    journey,
-    continuity,
-):
+def build_next_learning_task(journey, continuity, evaluation=None):
     context = build_next_learning_task_context(
         journey=journey,
         continuity=continuity,
+        evaluation=evaluation,
     )
 
     prompt = build_next_learning_task_prompt(context)

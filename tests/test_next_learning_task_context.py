@@ -81,3 +81,40 @@ def test_uncompleted_session_should_be_treated_as_first_learning():
     assert context["understanding_score"] is None
     assert context["difficulty"] is None
     assert context["recommended_next_step"] is None
+
+
+def test_next_learning_task_context_should_include_journey_evaluation():
+    journey = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+    }
+
+    continuity = {
+        "has_previous_session": True,
+        "completed": True,
+        "topic": "英语听力",
+        "understanding_score": 80,
+        "difficulty": "听力速度较快",
+        "next_step": "练习慢速英语听力",
+    }
+
+    evaluation = {
+        "completed_sessions": 3,
+        "first_understanding": 60,
+        "latest_understanding": 80,
+        "understanding_change": 20,
+        "trend": "improving",
+    }
+
+    context = build_next_learning_task_context(
+        journey=journey,
+        continuity=continuity,
+        evaluation=evaluation,
+    )
+
+    assert context["domain"] == "英语"
+    assert context["recommended_next_step"] == "练习慢速英语听力"
+
+    assert context["evaluation"]["completed_sessions"] == 3
+    assert context["evaluation"]["understanding_change"] == 20
+    assert context["evaluation"]["trend"] == "improving"
