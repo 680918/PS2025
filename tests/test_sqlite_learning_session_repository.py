@@ -148,3 +148,37 @@ def test_list_by_journey_should_return_all_sessions_in_creation_order(
 
     assert sessions[1].completed is False
     assert sessions[1].difficulty is None
+
+def test_list_by_journey_for_user_should_isolate_users(tmp_path):
+    repository = SQLiteLearningSessionRepository(
+        tmp_path / "sessions.db"
+    )
+
+    user_a_session = LearningSession(
+        journey_id="journey-001",
+        user_id="user-a",
+        topic="英语听力",
+        completed=True,
+        understanding_score=60,
+    )
+
+    user_b_session = LearningSession(
+        journey_id="journey-001",
+        user_id="user-b",
+        topic="英语听力",
+        completed=True,
+        understanding_score=90,
+    )
+
+    repository.save(user_a_session)
+    repository.save(user_b_session)
+
+    sessions = repository.list_by_journey_for_user(
+        journey_id="journey-001",
+        user_id="user-a",
+    )
+
+    assert len(sessions) == 1
+    assert sessions[0].session_id == user_a_session.session_id
+    assert sessions[0].user_id == "user-a"
+    assert sessions[0].understanding_score == 60
