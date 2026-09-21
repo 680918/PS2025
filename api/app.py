@@ -1,4 +1,4 @@
-from fastapi import FastAPI, status, HTTPException, Form
+from fastapi import FastAPI, status, HTTPException, Form, Request
 
 from user.service import register_user
 from user.sqlite_repository import SQLiteUserRepository
@@ -25,6 +25,9 @@ from learning.session_service import (
 )
 from agent.controller import run_agent
 from html import escape
+from learning.evidence_submission_service import (
+    submit_learning_evidence,
+)
 
 
 def create_app(
@@ -199,6 +202,58 @@ def create_app(
         """
 
     @app.post(
+        "/journeys/{journey_id}/evidence",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def submit_evidence(
+        journey_id: str,
+        payload: dict,
+    ):
+        required_fields = (
+            "user_id",
+            "session_id",
+            "task",
+            "result",
+            "assessment",
+        )
+
+        for field in required_fields:
+            if field not in payload:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{field} is required",
+                )
+
+        try:
+            evidence = submit_learning_evidence(
+                session_repository=session_repository,
+                evidence_repository=evidence_repository,
+                journey_id=journey_id,
+                user_id=payload["user_id"],
+                session_id=payload["session_id"],
+                task=payload["task"],
+                result=payload["result"],
+                assessment=payload["assessment"],
+                tests_passed=payload.get("tests_passed"),
+                tests_total=payload.get("tests_total"),
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+
+        return {
+            "evidence_id": evidence.evidence_id,
+            "session_id": evidence.session_id,
+            "task": evidence.task,
+            "result": evidence.result,
+            "assessment": evidence.assessment,
+            "tests_passed": evidence.tests_passed,
+            "tests_total": evidence.tests_total,
+        }
+
+    @app.post(
         "/web/journeys/{journey_id}/start",
         response_class=HTMLResponse,
     )
@@ -328,6 +383,78 @@ def create_app(
                 {continuity.get("next_step", "暂无")}
             </p>
 
+            <h2>提交练习证据</h2>
+
+            <form
+                method="post"
+                action="/web/journeys/{journey.journey_id}/evidence"
+            >
+                <input
+                    type="hidden"
+                    name="user_id"
+                    value="{user_id}"
+                >
+
+                <label>
+                    练习任务：
+                    <input
+                        type="text"
+                        name="task"
+                        required
+                    >
+                </label>
+
+                <br>
+
+                <label>
+                    练习结果：
+                    <input
+                        type="text"
+                        name="result"
+                        required
+                    >
+                </label>
+
+                <br>
+
+                <label>
+                    自我评估：
+                    <input
+                        type="text"
+                        name="assessment"
+                        required
+                    >
+                </label>
+
+                <br>
+
+                <label>
+                    通过测试数：
+                    <input
+                        type="number"
+                        name="tests_passed"
+                        min="0"
+                    >
+                </label>
+
+                <br>
+
+                <label>
+                    测试总数：
+                    <input
+                        type="number"
+                        name="tests_total"
+                        min="1"
+                    >
+                </label>
+
+                <br>
+
+                <button type="submit">
+                    提交练习证据
+                </button>
+            </form>
+
             <h2>提交学习反馈</h2>
 
             <form
@@ -379,6 +506,51 @@ def create_app(
                     提交学习反馈
                 </button>
             </form>
+        </body>
+        </html>
+        """
+
+    @app.post(
+        "/web/journeys/{journey_id}/evidence",
+        response_class=HTMLResponse,
+    )
+    async def web_submit_evidence(
+        journey_id: str,
+        request: Request,
+    ):
+        form = await request.form()
+
+        try:
+            submit_learning_evidence(
+                evidence_repository=evidence_repository,
+                session_repository=session_repository,
+                journey_id=journey_id,
+                user_id=form["user_id"],
+                session_id=form["session_id"],
+                task=form["task"],
+                result=form["result"],
+                assessment=form["assessment"],
+                tests_passed=(
+                    int(form["tests_passed"]) if form.get("tests_passed") else None
+                ),
+                tests_total=(
+                    int(form["tests_total"]) if form.get("tests_total") else None
+                ),
+            )
+
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+        return """
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <body>
+            <h1>练习证据已保存</h1>
+            <a href="javascript:history.back()">
+                返回学习页面
+            </a>
         </body>
         </html>
         """
