@@ -12,6 +12,9 @@ from learning.sqlite_journey_repository import (
 from learning.sqlite_session_repository import (
     SQLiteLearningSessionRepository,
 )
+from learning.sqlite_evidence_repository import (
+    SQLiteLearningEvidenceRepository,
+)
 from learning.continuity import (
     build_learning_continuity_context,
 )
@@ -34,6 +37,8 @@ def create_app(
     journey_repository = SQLiteLearningJourneyRepository(database_dir / "journeys.db")
 
     session_repository = SQLiteLearningSessionRepository(database_dir / "sessions.db")
+
+    evidence_repository = SQLiteLearningEvidenceRepository(database_dir / "sessions.db")
 
     @app.get(
         "/",
@@ -276,6 +281,7 @@ def create_app(
             journey_id=journey.journey_id,
             user_id=user_id,
             learning_session_repository=session_repository,
+            learning_evidence_repository=evidence_repository,
         )
 
         get_or_create_learning_session(

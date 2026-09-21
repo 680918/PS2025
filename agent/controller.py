@@ -35,6 +35,9 @@ from evaluation.journey_evaluation_service import (
 from planning.journey_planning_adapter import (
     build_journey_planning_decision,
 )
+from evaluation.journey_evidence_service import (
+    evaluate_journey_evidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +167,7 @@ def run_agent_runtime(
     learning_session=None,
     user_id=None,
     learning_journey=None,
+    learning_evidence_repository=None,
 ):
     state = AgentState(
         user_message,
@@ -197,6 +201,22 @@ def run_agent_runtime(
             user_id=user_id,
         )
 
+    evidence_summary = None
+
+    if (
+        learning_journey is not None
+        and journey_id is not None
+        and user_id is not None
+        and learning_session_repository is not None
+        and learning_evidence_repository is not None
+    ):
+        evidence_summary = evaluate_journey_evidence(
+            session_repository=learning_session_repository,
+            evidence_repository=learning_evidence_repository,
+            journey_id=journey_id,
+            user_id=user_id,
+        )
+
     planning_decision = None
 
     if (
@@ -207,6 +227,7 @@ def run_agent_runtime(
         planning_decision = build_journey_planning_decision(
             continuity=state.learning_continuity_context,
             evaluation=journey_evaluation,
+            evidence_summary=evidence_summary,
         )
 
     if learning_journey is not None:
@@ -306,6 +327,7 @@ def run_agent(
     learning_session=None,
     user_id=None,
     learning_journey=None,
+    learning_evidence_repository=None,
 ):
     _, response = run_agent_runtime(
         user_message=user_message,
@@ -318,6 +340,7 @@ def run_agent(
         learning_session_repository=learning_session_repository,
         learning_session=learning_session,
         learning_journey=learning_journey,
+        learning_evidence_repository=learning_evidence_repository,
     )
 
     return response
