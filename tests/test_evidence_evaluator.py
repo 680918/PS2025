@@ -1,3 +1,5 @@
+import pytest
+
 from learning.evidence import LearningEvidence
 from evaluation.evidence_evaluator import evaluate_evidence
 
@@ -56,4 +58,169 @@ def test_mixed_evidence_should_not_return_positive():
 
     assert result["evidence_count"] == 2
     assert result["completed_tasks"] == 1
+    assert result["learning_signal"] == "insufficient_data"
+
+
+def test_incomplete_tests_should_not_return_positive():
+    evidences = [
+        LearningEvidence(
+            session_id="session_001",
+            task="Python 函数练习",
+            result="4 项测试通过 3 项",
+            assessment="掌握",
+            tests_passed=3,
+            tests_total=4,
+        ),
+    ]
+
+    result = evaluate_evidence(evidences)
+
+    assert result["evidence_count"] == 1
+    assert result["completed_tasks"] == 0
+    assert result["learning_signal"] == "insufficient_data"
+
+
+def test_all_passed_tests_should_count_as_completed():
+    evidences = [
+        LearningEvidence(
+            session_id="session_001",
+            task="Python 函数练习",
+            result="4 项测试全部通过",
+            assessment="需要补强",
+            tests_passed=4,
+            tests_total=4,
+        ),
+    ]
+
+    result = evaluate_evidence(evidences)
+
+    assert result["evidence_count"] == 1
+    assert result["completed_tasks"] == 1
+    assert result["learning_signal"] == "positive"
+
+
+def test_zero_total_tests_should_not_count_as_completed():
+    evidences = [
+        LearningEvidence(
+            session_id="session_001",
+            task="Python 函数练习",
+            result="尚未运行测试",
+            assessment="掌握",
+            tests_passed=0,
+            tests_total=0,
+        ),
+    ]
+
+    result = evaluate_evidence(evidences)
+
+    assert result["evidence_count"] == 1
+    assert result["completed_tasks"] == 0
+    assert result["learning_signal"] == "insufficient_data"
+
+
+@pytest.mark.parametrize(
+    ("tests_passed", "tests_total"),
+    [
+        (3, None),
+        (None, 4),
+    ],
+)
+def test_partial_test_results_should_not_count_as_completed(
+    tests_passed,
+    tests_total,
+):
+    evidence = LearningEvidence(
+        session_id="session_001",
+        task="Python 函数练习",
+        result="测试结果记录不完整",
+        assessment="掌握",
+        tests_passed=tests_passed,
+        tests_total=tests_total,
+    )
+
+    result = evaluate_evidence([evidence])
+
+    assert result["evidence_count"] == 1
+    assert result["completed_tasks"] == 0
+    assert result["learning_signal"] == "insufficient_data"
+
+
+@pytest.mark.parametrize(
+    ("tests_passed", "tests_total"),
+    [
+        (5, 4),
+        (-1, 4),
+        (0, -1),
+    ],
+)
+def test_invalid_test_counts_should_not_count_as_completed(
+    tests_passed,
+    tests_total,
+):
+    evidence = LearningEvidence(
+        session_id="session_001",
+        task="Python 函数练习",
+        result="测试数量异常",
+        assessment="掌握",
+        tests_passed=tests_passed,
+        tests_total=tests_total,
+    )
+
+    result = evaluate_evidence([evidence])
+
+    assert result["completed_tasks"] == 0
+    assert result["learning_signal"] == "insufficient_data"
+
+
+@pytest.mark.parametrize(
+    ("tests_passed", "tests_total"),
+    [
+        (1.5, 1.5),
+        ("4", "4"),
+    ],
+)
+def test_non_integer_test_counts_should_not_count_as_completed(
+    tests_passed,
+    tests_total,
+):
+    evidence = LearningEvidence(
+        session_id="session_001",
+        task="Python 函数练习",
+        result="测试数量类型异常",
+        assessment="掌握",
+        tests_passed=tests_passed,
+        tests_total=tests_total,
+    )
+
+    result = evaluate_evidence([evidence])
+
+    assert result["completed_tasks"] == 0
+    assert result["learning_signal"] == "insufficient_data"
+
+
+@pytest.mark.parametrize(
+    ("tests_passed", "tests_total"),
+    [
+        (True, 1),
+        (1, True),
+        (True, True),
+        (False, False),
+    ],
+)
+def test_boolean_test_counts_should_not_count_as_completed(
+    tests_passed,
+    tests_total,
+):
+    evidence = LearningEvidence(
+        session_id="session_001",
+        task="Python 函数练习",
+        result="测试数量类型异常",
+        assessment="掌握",
+        tests_passed=tests_passed,
+        tests_total=tests_total,
+    )
+
+    result = evaluate_evidence([evidence])
+
+    assert result["completed_tasks"] == 0
     assert result["learning_signal"] == "insufficient_data"
