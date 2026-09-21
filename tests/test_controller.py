@@ -6102,3 +6102,119 @@ def test_run_agent_runtime_should_include_adaptive_planning_decision(
     assert "适当减小单次任务量" in state.next_learning_task["prompt"]
 
     assert response == "今天的学习任务"
+
+
+def test_run_agent_runtime_should_include_evidence_in_planning(
+    monkeypatch,
+):
+    def fake_call_llm(system_prompt, user_message):
+        return {
+            "status": "success",
+            "content": "今天的学习任务",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    class FakeSession:
+        completed = True
+
+        def __init__(self, session_id, score):
+            self.session_id = session_id
+            self.understanding_score = score
+
+    class FakeSessionRepository:
+        def list_by_journey_for_user(self, journey_id, user_id):
+            assert journey_id == "journey-001"
+            assert user_id == "user-a"
+
+            return [
+                FakeSession("session-001", 60),
+                FakeSession("session-002", 80),
+            ]
+
+    class FakeEvidenceRepository:
+        def list_by_session(self, session_id):
+            assert session_id in {"session-001", "session-002"}
+
+            from learning.evidence import LearningEvidence
+
+            if session_id == "session-001":
+                return [
+                    LearningEvidence(
+                        session_id=session_id,
+                        task="慢速英语听力",
+                        result="4 项测试全部通过",
+                        assessment="已完成",
+                        tests_passed=4,
+                        tests_total=4,
+                    )
+                ]
+
+            return [
+                LearningEvidence(
+                    session_id=session_id,
+                    task="正常语速英语听力",
+                    result="4 项测试通过 3 项",
+                    assessment="掌握",
+                    tests_passed=3,
+                    tests_total=4,
+                )
+            ]
+
+    continuity = {
+        "has_previous_session": True,
+        "completed": True,
+        "topic": "英语听力",
+        "understanding_score": 80,
+        "difficulty": "正常语速仍然较快",
+        "next_step": "继续练习正常语速听力",
+    }
+
+    state, response = run_agent_runtime(
+        user_message="今天学习什么？",
+        journey_id="journey-001",
+        user_id="user-a",
+        learning_session_repository=FakeSessionRepository(),
+        learning_evidence_repository=FakeEvidenceRepository(),
+        learning_journey={
+            "domain": "英语",
+            "goal": "6个月达到日常交流",
+        },
+        learning_continuity_context=continuity,
+    )
+
+    decision = state.next_learning_task["context"]["planning_decision"]
+
+    assert decision["action"] == "continue"
+    assert decision["next_topic"] is None
+    assert "1/2" in decision["reason"]
+    assert "1/2" in state.next_learning_task["prompt"]
+    assert response == "今天的学习任务"
+
+
+def test_run_agent_should_forward_evidence_repository_to_runtime(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_run_agent_runtime(**kwargs):
+        captured.update(kwargs)
+        return None, "教练任务"
+
+    monkeypatch.setattr(
+        "agent.controller.run_agent_runtime",
+        fake_run_agent_runtime,
+    )
+
+    evidence_repository = object()
+
+    response = run_agent(
+        user_message="今天学习什么？",
+        learning_evidence_repository=evidence_repository,
+    )
+
+    assert response == "教练任务"
+    assert captured["learning_evidence_repository"] is evidence_repository
