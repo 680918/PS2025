@@ -224,3 +224,112 @@ def test_boolean_test_counts_should_not_count_as_completed(
 
     assert result["completed_tasks"] == 0
     assert result["learning_signal"] == "insufficient_data"
+
+def test_all_passed_structured_tests_should_have_strong_evidence_quality():
+    evidence = LearningEvidence(
+        session_id="session_001",
+        task="实现 Evidence Submission",
+        result="全部测试通过",
+        assessment="已完成",
+        tests_passed=10,
+        tests_total=10,
+    )
+
+    result = evaluate_evidence([evidence])
+
+    assert result["quality_summary"] == {
+        "strong": 1,
+        "weak": 0,
+        "insufficient": 0,
+    }
+
+def test_completed_assessment_without_structured_tests_should_have_weak_quality():
+    evidence = LearningEvidence(
+        session_id="session_001",
+        task="理解 Evidence Submission",
+        result="能够说明基本概念",
+        assessment="掌握",
+    )
+
+    result = evaluate_evidence([evidence])
+
+    assert result["completed_tasks"] == 1
+    assert result["quality_summary"] == {
+        "strong": 0,
+        "weak": 1,
+        "insufficient": 0,
+    }
+
+def test_mixed_evidence_should_preserve_quality_distribution():
+    evidences = [
+        LearningEvidence(
+            session_id="session_001",
+            task="实现 Evidence Submission",
+            result="全部测试通过",
+            assessment="已完成",
+            tests_passed=10,
+            tests_total=10,
+        ),
+        LearningEvidence(
+            session_id="session_001",
+            task="理解 Evidence Submission 原理",
+            result="能够说明基本概念",
+            assessment="掌握",
+        ),
+    ]
+
+    result = evaluate_evidence(evidences)
+
+    assert result["quality_summary"] == {
+        "strong": 1,
+        "weak": 1,
+        "insufficient": 0,
+    }
+
+def test_incomplete_structured_tests_should_be_counted_as_insufficient_quality():
+    evidence = LearningEvidence(
+        session_id="session_001",
+        task="实现 Evidence Quality",
+        result="4 项测试通过 3 项",
+        assessment="掌握",
+        tests_passed=3,
+        tests_total=4,
+    )
+
+    result = evaluate_evidence([evidence])
+
+    assert result["quality_summary"] == {
+        "strong": 0,
+        "weak": 0,
+        "insufficient": 1,
+    }
+
+def test_quality_summary_should_account_for_every_evidence():
+    evidences = [
+        LearningEvidence(
+            session_id="session_001",
+            task="任务 A",
+            result="全部测试通过",
+            assessment="已完成",
+            tests_passed=5,
+            tests_total=5,
+        ),
+        LearningEvidence(
+            session_id="session_001",
+            task="任务 B",
+            result="能够说明概念",
+            assessment="掌握",
+        ),
+        LearningEvidence(
+            session_id="session_001",
+            task="任务 C",
+            result="部分测试通过",
+            assessment="掌握",
+            tests_passed=3,
+            tests_total=4,
+        ),
+    ]
+
+    result = evaluate_evidence(evidences)
+
+    assert sum(result["quality_summary"].values()) == result["evidence_count"]
