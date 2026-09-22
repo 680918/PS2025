@@ -225,6 +225,7 @@ def test_boolean_test_counts_should_not_count_as_completed(
     assert result["completed_tasks"] == 0
     assert result["learning_signal"] == "insufficient_data"
 
+
 def test_all_passed_structured_tests_should_have_strong_evidence_quality():
     evidence = LearningEvidence(
         session_id="session_001",
@@ -243,6 +244,7 @@ def test_all_passed_structured_tests_should_have_strong_evidence_quality():
         "insufficient": 0,
     }
 
+
 def test_completed_assessment_without_structured_tests_should_have_weak_quality():
     evidence = LearningEvidence(
         session_id="session_001",
@@ -259,6 +261,7 @@ def test_completed_assessment_without_structured_tests_should_have_weak_quality(
         "weak": 1,
         "insufficient": 0,
     }
+
 
 def test_mixed_evidence_should_preserve_quality_distribution():
     evidences = [
@@ -286,6 +289,7 @@ def test_mixed_evidence_should_preserve_quality_distribution():
         "insufficient": 0,
     }
 
+
 def test_incomplete_structured_tests_should_be_counted_as_insufficient_quality():
     evidence = LearningEvidence(
         session_id="session_001",
@@ -303,6 +307,7 @@ def test_incomplete_structured_tests_should_be_counted_as_insufficient_quality()
         "weak": 0,
         "insufficient": 1,
     }
+
 
 def test_quality_summary_should_account_for_every_evidence():
     evidences = [

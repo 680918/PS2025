@@ -115,21 +115,20 @@ def test_journey_evidence_should_isolate_users_with_real_sqlite(tmp_path):
         "completed_tasks": 1,
         "learning_signal": "positive",
         "quality_summary": {
-        "strong": 1,
-        "weak": 0,
-        "insufficient": 0,
-        },       
-    }   
-    
+            "strong": 1,
+            "weak": 0,
+            "insufficient": 0,
+        },
+    }
 
     assert result_b == {
         "evidence_count": 1,
         "completed_tasks": 0,
         "learning_signal": "insufficient_data",
         "quality_summary": {
-        "strong": 0,
-        "weak": 0,
-        "insufficient": 1,
+            "strong": 0,
+            "weak": 0,
+            "insufficient": 1,
         },
     }
 
@@ -152,10 +151,10 @@ def test_journey_evidence_should_handle_no_sessions():
         "completed_tasks": 0,
         "learning_signal": "insufficient_data",
         "quality_summary": {
-        "strong": 0,
-        "weak": 0,
-        "insufficient": 0,
-    },
+            "strong": 0,
+            "weak": 0,
+            "insufficient": 0,
+        },
     }
 
     evidence_repository.list_by_session.assert_not_called()
@@ -206,10 +205,10 @@ def test_journey_evidence_should_aggregate_multiple_sessions():
         "completed_tasks": 1,
         "learning_signal": "insufficient_data",
         "quality_summary": {
-        "strong": 1,
-        "weak": 0,
-        "insufficient": 1,
-    },
+            "strong": 1,
+            "weak": 0,
+            "insufficient": 1,
+        },
     }
 
     assert evidence_repository.list_by_session.call_count == 2
@@ -276,8 +275,8 @@ def test_journey_evidence_should_aggregate_multiple_sessions_with_real_sqlite(
         "completed_tasks": 1,
         "learning_signal": "insufficient_data",
         "quality_summary": {
-        "strong": 1,
-        "weak": 0,
-        "insufficient": 1,
-    },
+            "strong": 1,
+            "weak": 0,
+            "insufficient": 1,
+        },
     }

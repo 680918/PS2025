@@ -21,6 +21,7 @@ def _evaluate_single_evidence_quality(evidence):
 
     return "insufficient"
 
+
 def evaluate_evidence(evidences):
     evidence_count = len(evidences)
 
@@ -59,13 +60,12 @@ def evaluate_evidence(evidences):
         "strong": 0,
         "weak": 0,
         "insufficient": 0,
-        }
+    }
 
     if evidence_count > 0:
         evidence_qualities = [
-            _evaluate_single_evidence_quality(evidence)
-            for evidence in evidences
-            ]
+            _evaluate_single_evidence_quality(evidence) for evidence in evidences
+        ]
         for quality in evidence_qualities:
             quality_summary[quality] += 1
 
@@ -74,4 +74,4 @@ def evaluate_evidence(evidences):
         "completed_tasks": completed_tasks,
         "learning_signal": learning_signal,
         "quality_summary": quality_summary,
-}
+    }
