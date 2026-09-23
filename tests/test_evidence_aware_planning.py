@@ -89,3 +89,50 @@ def test_empty_evidence_should_not_claim_completed_practice():
     assert decision.next_topic is None
     assert "0/0" not in decision.reason
     assert "全部完成" not in decision.reason
+
+
+def test_previous_session_insufficient_evidence_should_inform_planning():
+    continuity = {
+        "session_id": "session_latest",
+        "topic": "Python 函数",
+        "difficulty": "参数边界处理",
+        "next_step": "继续完成边界测试",
+    }
+
+    evaluation = {
+        "trend": "improving",
+    }
+
+    journey_evidence_summary = {
+        "evidence_count": 10,
+        "completed_tasks": 9,
+        "learning_signal": "insufficient_data",
+        "quality_summary": {
+            "strong": 9,
+            "weak": 0,
+            "insufficient": 1,
+        },
+    }
+
+    previous_session_evidence_summary = {
+        "evidence_count": 1,
+        "completed_tasks": 0,
+        "learning_signal": "insufficient_data",
+        "quality_summary": {
+            "strong": 0,
+            "weak": 0,
+            "insufficient": 1,
+        },
+    }
+
+    decision = build_journey_planning_decision(
+        continuity=continuity,
+        evaluation=evaluation,
+        evidence_summary=journey_evidence_summary,
+        previous_session_evidence_summary=previous_session_evidence_summary,
+    )
+
+    assert decision.action == "continue"
+    assert decision.next_topic is None
+    assert "上一节" in decision.reason
+    assert "证据不足" in decision.reason

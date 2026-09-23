@@ -5,6 +5,7 @@ def build_journey_planning_decision(
     continuity,
     evaluation,
     evidence_summary=None,
+    previous_session_evidence_summary=None,
 ):
     if evaluation["trend"] == "insufficient_data":
         reason = "学习记录不足，继续当前主题并收集反馈。"
@@ -38,6 +39,18 @@ def build_journey_planning_decision(
 
     else:
         reason = "继续当前主题并收集学习反馈。"
+
+    if previous_session_evidence_summary is not None:
+        previous_quality = previous_session_evidence_summary.get(
+            "quality_summary",
+            {},
+        )
+
+        if previous_quality.get("insufficient", 0) > 0:
+            reason += (
+                " 上一节学习存在证据不足的练习，"
+                "请优先围绕上一节未充分验证的内容继续练习。"
+            )
 
     if evidence_summary is not None:
         evidence_count = evidence_summary["evidence_count"]

@@ -106,5 +106,6 @@ def test_web_continue_should_use_real_evidence_in_planning(
     assert "1/2" in system_prompt
     assert "教学动作：continue" in system_prompt
     assert "继续围绕未完成练习安排任务" in system_prompt
+    assert "上一节学习存在证据不足的练习" in system_prompt
 
     assert "今天继续练习 Python 函数" in response.text
