@@ -37,6 +37,7 @@ from planning.journey_planning_adapter import (
 )
 from evaluation.journey_evidence_service import (
     evaluate_journey_evidence,
+    evaluate_session_evidence,
 )
 
 logger = logging.getLogger(__name__)
@@ -217,6 +218,16 @@ def run_agent_runtime(
             user_id=user_id,
         )
 
+    previous_session_evidence_summary = None
+
+    previous_session_id = state.learning_continuity_context.get("session_id")
+
+    if previous_session_id is not None and learning_evidence_repository is not None:
+        previous_session_evidence_summary = evaluate_session_evidence(
+            evidence_repository=learning_evidence_repository,
+            session_id=previous_session_id,
+        )
+
     planning_decision = None
 
     if (
@@ -228,6 +239,7 @@ def run_agent_runtime(
             continuity=state.learning_continuity_context,
             evaluation=journey_evaluation,
             evidence_summary=evidence_summary,
+            previous_session_evidence_summary=(previous_session_evidence_summary),
         )
 
     if learning_journey is not None:
