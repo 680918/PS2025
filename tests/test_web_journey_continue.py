@@ -137,6 +137,60 @@ def test_web_continue_page_should_render_coach_next_task(
     assert "今天学习英语" in response.text
 
 
+def test_web_continue_should_forward_curriculum_repository_to_agent(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "掌握 Python 编程",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    captured = {}
+
+    def fake_run_agent(
+        user_message,
+        **kwargs,
+    ):
+        captured.update(kwargs)
+        return "今天学习 Python"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    curriculum_repository = captured.get("learning_curriculum_repository")
+
+    assert curriculum_repository is not None
+
+
 def test_web_learning_loop_should_use_previous_feedback_for_next_coach_task(
     tmp_path,
     monkeypatch,

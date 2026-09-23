@@ -2,6 +2,7 @@ from planning.journey_planning_adapter import (
     build_journey_planning_decision,
 )
 from planning.learning_planner import LearningPlanDecision
+from learning.curriculum import CurriculumItem, LearningCurriculum
 
 
 def test_insufficient_journey_data_should_continue_current_topic():
@@ -290,3 +291,103 @@ def test_insufficient_previous_evidence_should_trigger_remediation():
     assert decision.action == "remediate"
     assert "补强" in decision.reason
     assert "测试" in decision.reason
+
+
+def test_advance_should_prefer_journey_curriculum_over_global_path():
+    continuity = {
+        "has_previous_session": True,
+        "session_id": "session_001",
+        "completed": True,
+        "topic": "Python函数",
+        "understanding_score": 85,
+        "difficulty": "长句偶尔漏听",
+        "next_step": "进入下一节听力训练",
+    }
+
+    evaluation = {
+        "completed_sessions": 3,
+        "first_understanding": 70,
+        "latest_understanding": 85,
+        "understanding_change": 15,
+        "trend": "improving",
+    }
+
+    previous_session_evidence_summary = {
+        "evidence_count": 2,
+        "completed_tasks": 2,
+        "learning_signal": "positive",
+        "quality_summary": {
+            "strong": 2,
+            "weak": 0,
+            "insufficient": 0,
+        },
+    }
+
+    curriculum = LearningCurriculum(
+        journey_id="journey_001",
+        items=[
+            CurriculumItem(position=1, topic="Python函数"),
+            CurriculumItem(position=2, topic="Python装饰器"),
+        ],
+    )
+
+    decision = build_journey_planning_decision(
+        continuity=continuity,
+        evaluation=evaluation,
+        previous_session_evidence_summary=previous_session_evidence_summary,
+        curriculum=curriculum,
+    )
+
+    assert decision.action == "advance"
+    assert decision.topic == "Python函数"
+    assert decision.next_topic == "Python装饰器"
+
+
+def test_advance_should_not_fallback_when_curriculum_has_no_next_topic():
+    continuity = {
+        "has_previous_session": True,
+        "session_id": "session_001",
+        "completed": True,
+        "topic": "Python函数",
+        "understanding_score": 85,
+        "difficulty": "长句偶尔漏听",
+        "next_step": "进入下一节听力训练",
+    }
+
+    evaluation = {
+        "completed_sessions": 3,
+        "first_understanding": 70,
+        "latest_understanding": 85,
+        "understanding_change": 15,
+        "trend": "improving",
+    }
+
+    previous_session_evidence_summary = {
+        "evidence_count": 2,
+        "completed_tasks": 2,
+        "learning_signal": "positive",
+        "quality_summary": {
+            "strong": 2,
+            "weak": 0,
+            "insufficient": 0,
+        },
+    }
+
+    curriculum = LearningCurriculum(
+        journey_id="journey_001",
+        items=[
+            CurriculumItem(position=1, topic="Python变量"),
+            CurriculumItem(position=2, topic="Python函数"),
+        ],
+    )
+
+    decision = build_journey_planning_decision(
+        continuity=continuity,
+        evaluation=evaluation,
+        previous_session_evidence_summary=previous_session_evidence_summary,
+        curriculum=curriculum,
+    )
+
+    assert decision.action == "advance"
+    assert decision.topic == "Python函数"
+    assert decision.next_topic is None

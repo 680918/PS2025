@@ -10,6 +10,7 @@ def build_journey_planning_decision(
     evaluation,
     evidence_summary=None,
     previous_session_evidence_summary=None,
+    curriculum=None,
 ):
 
     action = "continue"
@@ -112,7 +113,10 @@ def build_journey_planning_decision(
     next_topic = None
 
     if action == "advance":
-        next_topic = get_next_topic(continuity["topic"])
+        if curriculum is not None:
+            next_topic = curriculum.get_next_topic(continuity["topic"])
+        else:
+            next_topic = get_next_topic(continuity["topic"])
 
     return LearningPlanDecision(
         topic=continuity["topic"],
