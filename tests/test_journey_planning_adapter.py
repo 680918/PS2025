@@ -125,3 +125,124 @@ def test_stable_journey_should_not_assume_learning_stagnation():
     assert "自评" in decision.reason
     assert "长句容易漏听" in decision.reason
     assert "练习长句分段听力" in decision.reason
+
+
+def test_improving_journey_with_strong_previous_evidence_should_advance():
+    continuity = {
+        "has_previous_session": True,
+        "session_id": "session_001",
+        "completed": True,
+        "topic": "英语听力",
+        "understanding_score": 85,
+        "difficulty": "长句偶尔漏听",
+        "next_step": "进入下一节听力训练",
+    }
+
+    evaluation = {
+        "completed_sessions": 3,
+        "first_understanding": 70,
+        "latest_understanding": 85,
+        "understanding_change": 15,
+        "trend": "improving",
+    }
+
+    previous_session_evidence_summary = {
+        "evidence_count": 2,
+        "completed_tasks": 2,
+        "learning_signal": "positive",
+        "quality_summary": {
+            "strong": 2,
+            "weak": 0,
+            "insufficient": 0,
+        },
+    }
+
+    decision = build_journey_planning_decision(
+        continuity=continuity,
+        evaluation=evaluation,
+        previous_session_evidence_summary=previous_session_evidence_summary,
+    )
+
+    assert decision.action == "advance"
+
+
+def test_weak_previous_evidence_should_trigger_review():
+    continuity = {
+        "has_previous_session": True,
+        "session_id": "session_001",
+        "completed": True,
+        "topic": "英语听力",
+        "understanding_score": 85,
+        "difficulty": "长句偶尔漏听",
+        "next_step": "进行拓展听力练习",
+    }
+
+    evaluation = {
+        "completed_sessions": 3,
+        "first_understanding": 75,
+        "latest_understanding": 85,
+        "understanding_change": 10,
+        "trend": "improving",
+    }
+
+    previous_session_evidence_summary = {
+        "evidence_count": 2,
+        "completed_tasks": 2,
+        "learning_signal": "positive",
+        "quality_summary": {
+            "strong": 0,
+            "weak": 2,
+            "insufficient": 0,
+        },
+    }
+
+    decision = build_journey_planning_decision(
+        continuity=continuity,
+        evaluation=evaluation,
+        previous_session_evidence_summary=previous_session_evidence_summary,
+    )
+
+    assert decision.action == "review"
+    assert "拓展" in decision.reason
+    assert "验证" in decision.reason
+
+
+def test_insufficient_previous_evidence_should_trigger_remediation():
+    continuity = {
+        "has_previous_session": True,
+        "session_id": "session_001",
+        "completed": True,
+        "topic": "英语听力",
+        "understanding_score": 78,
+        "difficulty": "长句容易漏听",
+        "next_step": "继续练习长句分段听力",
+    }
+
+    evaluation = {
+        "completed_sessions": 3,
+        "first_understanding": 70,
+        "latest_understanding": 78,
+        "understanding_change": 8,
+        "trend": "improving",
+    }
+
+    previous_session_evidence_summary = {
+        "evidence_count": 2,
+        "completed_tasks": 1,
+        "learning_signal": "insufficient_data",
+        "quality_summary": {
+            "strong": 1,
+            "weak": 0,
+            "insufficient": 1,
+        },
+    }
+
+    decision = build_journey_planning_decision(
+        continuity=continuity,
+        evaluation=evaluation,
+        previous_session_evidence_summary=previous_session_evidence_summary,
+    )
+
+    assert decision.action == "remediate"
+    assert "补强" in decision.reason
+    assert "测试" in decision.reason
