@@ -77,6 +77,12 @@ def build_next_learning_task_prompt(
     planning_decision = context.get("planning_decision")
 
     if planning_decision:
+        next_topic = planning_decision.get("next_topic")
+
+        next_topic_text = (
+            next_topic if next_topic is not None else "尚未确定具体的下一主题"
+        )
+
         planning_text = f"""
 教学调整建议：
 
@@ -84,8 +90,36 @@ def build_next_learning_task_prompt(
 
 调整理由：{planning_decision.get("reason")}
 
-下一主题：{planning_decision.get("next_topic")}
+下一主题：{next_topic_text}
 """
+
+    task_instruction = (
+        "请根据以上学习历史，"
+        "为用户生成下一节具体、可执行的学习任务。\n\n"
+        "优先围绕上一节的难点和建议下一步安排任务，"
+        "不要把历史学习状态描述成这一次已经完成的内容。"
+    )
+
+    if planning_decision and planning_decision.get("action") == "advance":
+        next_topic = planning_decision.get("next_topic")
+
+        if next_topic is not None:
+            task_instruction = (
+                f"请围绕已确定的下一主题“{next_topic}”，"
+                "为用户生成具体、可执行的进阶学习任务。\n\n"
+                "上一节的难点仅作为历史背景，"
+                "不要继续把上一节的补强练习作为本次任务的优先方向。"
+            )
+        else:
+            task_instruction = (
+                "上一节学习证据支持进阶，"
+                "但尚未确定具体的下一主题。\n\n"
+                "请根据学习领域和长期学习目标，"
+                "先提出下一阶段的学习主题建议，"
+                "再围绕该建议生成具体、可执行的进阶学习任务。\n\n"
+                "不要声称该主题已经存在于原学习计划中，"
+                "也不要把上一节的补强练习作为本次任务的优先方向。"
+            )
 
     return f"""
 你是一名长期学习教练。
@@ -114,11 +148,7 @@ def build_next_learning_task_prompt(
 
 {planning_text}
 
-请根据以上学习历史，
-为用户生成下一节具体、可执行的学习任务。
-
-优先围绕上一节的难点和建议下一步安排任务，
-不要把历史学习状态描述成这一次已经完成的内容。
+{task_instruction}
 """
 
 

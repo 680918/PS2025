@@ -112,3 +112,53 @@ def test_next_learning_task_prompt_should_include_planning_decision():
     assert "语速太快，跟不上" in prompt
     assert "先练习慢速英语听力" in prompt
     assert "declining" in prompt
+
+
+def test_advance_should_generate_progression_instruction():
+    context = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+        "has_previous_session": True,
+        "previous_topic": "英语听力",
+        "understanding_score": 85,
+        "difficulty": "长句偶尔漏听",
+        "recommended_next_step": "进入下一节听力训练",
+        "planning_decision": {
+            "topic": "英语听力",
+            "action": "advance",
+            "reason": "上一节证据充分且学习趋势改善。",
+            "next_topic": "英语进阶听力",
+        },
+    }
+
+    prompt = build_next_learning_task_prompt(context)
+
+    assert "教学动作：advance" in prompt
+    assert "下一主题：英语进阶听力" in prompt
+    assert "请围绕已确定的下一主题“英语进阶听力”" in prompt
+    assert "优先围绕上一节的难点和建议下一步安排任务" not in prompt
+
+
+def test_advance_without_next_topic_should_not_claim_a_known_learning_path():
+    context = {
+        "domain": "英语",
+        "goal": "6个月达到日常交流",
+        "has_previous_session": True,
+        "previous_topic": "英语听力",
+        "understanding_score": 85,
+        "difficulty": "长句偶尔漏听",
+        "recommended_next_step": "进入下一节听力训练",
+        "planning_decision": {
+            "topic": "英语听力",
+            "action": "advance",
+            "reason": "上一节学习证据充分且学习趋势改善，支持进入下一阶段学习。",
+            "next_topic": None,
+        },
+    }
+
+    prompt = build_next_learning_task_prompt(context)
+
+    assert "教学动作：advance" in prompt
+    assert "尚未确定具体的下一主题" in prompt
+    assert "请按原学习计划进入下一节" not in prompt
+    assert "下一主题：None" not in prompt

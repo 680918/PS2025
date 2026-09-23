@@ -132,6 +132,47 @@ def test_improving_journey_with_strong_previous_evidence_should_advance():
         "has_previous_session": True,
         "session_id": "session_001",
         "completed": True,
+        "topic": "Python函数",
+        "understanding_score": 85,
+        "difficulty": "长句偶尔漏听",
+        "next_step": "进入下一节听力训练",
+    }
+
+    evaluation = {
+        "completed_sessions": 3,
+        "first_understanding": 70,
+        "latest_understanding": 85,
+        "understanding_change": 15,
+        "trend": "improving",
+    }
+
+    previous_session_evidence_summary = {
+        "evidence_count": 2,
+        "completed_tasks": 2,
+        "learning_signal": "positive",
+        "quality_summary": {
+            "strong": 2,
+            "weak": 0,
+            "insufficient": 0,
+        },
+    }
+
+    decision = build_journey_planning_decision(
+        continuity=continuity,
+        evaluation=evaluation,
+        previous_session_evidence_summary=previous_session_evidence_summary,
+    )
+
+    assert decision.action == "advance"
+    assert decision.topic == "Python函数"
+    assert decision.next_topic == "Python异常处理"
+
+
+def test_advance_without_known_next_topic_should_not_claim_planned_next_lesson():
+    continuity = {
+        "has_previous_session": True,
+        "session_id": "session_001",
+        "completed": True,
         "topic": "英语听力",
         "understanding_score": 85,
         "difficulty": "长句偶尔漏听",
@@ -164,6 +205,9 @@ def test_improving_journey_with_strong_previous_evidence_should_advance():
     )
 
     assert decision.action == "advance"
+    assert decision.topic == "英语听力"
+    assert decision.next_topic is None
+    assert "按原学习计划进入下一节" not in decision.reason
 
 
 def test_weak_previous_evidence_should_trigger_review():

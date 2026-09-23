@@ -1,4 +1,5 @@
 from planning.learning_planner import LearningPlanDecision
+from planning.learning_path import get_next_topic
 
 
 action = "continue"
@@ -73,7 +74,7 @@ def build_journey_planning_decision(
 
         if evaluation["trend"] == "improving" and all_previous_evidence_strong:
             action = "advance"
-            reason += " 上一节学习证据充分且学习趋势改善，可以按原学习计划进入下一节。"
+            reason += " 上一节学习证据充分且学习趋势改善，支持进入下一阶段学习。"
 
         elif all_previous_evidence_weak:
             action = "review"
@@ -108,9 +109,14 @@ def build_journey_planning_decision(
                 "请继续结合具体难点安排学习任务。"
             )
 
+    next_topic = None
+
+    if action == "advance":
+        next_topic = get_next_topic(continuity["topic"])
+
     return LearningPlanDecision(
         topic=continuity["topic"],
         action=action,
         reason=reason,
-        next_topic=None,
+        next_topic=next_topic,
     )
