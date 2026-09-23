@@ -18,6 +18,7 @@ def build_learning_continuity_context(
 
     return {
         "has_previous_session": True,
+        "session_id": latest_session.session_id,
         "topic": latest_session.topic,
         "completed": latest_session.completed,
         "understanding_score": (latest_session.understanding_score),

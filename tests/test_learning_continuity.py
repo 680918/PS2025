@@ -28,6 +28,7 @@ def test_build_learning_continuity_context_should_restore_latest_session():
     )
 
     assert context["has_previous_session"] is True
+    assert context["session_id"] == session.session_id
     assert context["topic"] == "Tool Calling"
     assert context["completed"] is True
     assert context["understanding_score"] == 80
@@ -59,6 +60,7 @@ def test_build_learning_continuity_context_should_use_user_ownership():
             assert user_id == "user_001"
 
             class Session:
+                session_id = "session_user_001"
                 topic = "Tool Calling"
                 completed = True
                 understanding_score = 85
@@ -76,3 +78,4 @@ def test_build_learning_continuity_context_should_use_user_ownership():
     assert context["has_previous_session"] is True
     assert context["topic"] == "Tool Calling"
     assert context["next_step"] == "继续练习 Tool Schema"
+    assert context["session_id"] == "session_user_001"
