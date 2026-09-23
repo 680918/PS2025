@@ -1,6 +1,17 @@
 from evaluation.evidence_evaluator import evaluate_evidence
 
 
+def evaluate_session_evidence(
+    evidence_repository,
+    session_id,
+):
+    evidences = evidence_repository.list_by_session(
+        session_id,
+    )
+
+    return evaluate_evidence(evidences)
+
+
 def evaluate_journey_evidence(
     session_repository,
     evidence_repository,
