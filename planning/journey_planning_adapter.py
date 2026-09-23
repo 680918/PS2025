@@ -1,12 +1,18 @@
 from planning.learning_planner import LearningPlanDecision
 
 
+action = "continue"
+
+
 def build_journey_planning_decision(
     continuity,
     evaluation,
     evidence_summary=None,
     previous_session_evidence_summary=None,
 ):
+
+    action = "continue"
+
     if evaluation["trend"] == "insufficient_data":
         reason = "学习记录不足，继续当前主题并收集反馈。"
 
@@ -46,10 +52,42 @@ def build_journey_planning_decision(
             {},
         )
 
-        if previous_quality.get("insufficient", 0) > 0:
+        previous_evidence_count = previous_session_evidence_summary.get(
+            "evidence_count",
+            0,
+        )
+
+        all_previous_evidence_strong = (
+            previous_evidence_count > 0
+            and previous_quality.get("strong", 0) == previous_evidence_count
+            and previous_quality.get("weak", 0) == 0
+            and previous_quality.get("insufficient", 0) == 0
+        )
+
+        all_previous_evidence_weak = (
+            previous_evidence_count > 0
+            and previous_quality.get("strong", 0) == 0
+            and previous_quality.get("weak", 0) == previous_evidence_count
+            and previous_quality.get("insufficient", 0) == 0
+        )
+
+        if evaluation["trend"] == "improving" and all_previous_evidence_strong:
+            action = "advance"
+            reason += " 上一节学习证据充分且学习趋势改善，可以按原学习计划进入下一节。"
+
+        elif all_previous_evidence_weak:
+            action = "review"
+            reason += (
+                " 上一节学习主要依赖较弱证据，"
+                "请增加拓展练习，并通过新的练习结果验证掌握程度。"
+            )
+
+        elif previous_quality.get("insufficient", 0) > 0:
+            action = "remediate"
             reason += (
                 " 上一节学习存在证据不足的练习，"
-                "请优先围绕上一节未充分验证的内容继续练习。"
+                "请针对未充分掌握的内容进行补强练习，"
+                "并通过新的测试结果再次验证掌握程度。"
             )
 
     if evidence_summary is not None:
@@ -72,7 +110,7 @@ def build_journey_planning_decision(
 
     return LearningPlanDecision(
         topic=continuity["topic"],
-        action="continue",
+        action=action,
         reason=reason,
         next_topic=None,
     )

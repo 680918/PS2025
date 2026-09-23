@@ -132,7 +132,9 @@ def test_previous_session_insufficient_evidence_should_inform_planning():
         previous_session_evidence_summary=previous_session_evidence_summary,
     )
 
-    assert decision.action == "continue"
+    assert decision.action == "remediate"
     assert decision.next_topic is None
     assert "上一节" in decision.reason
     assert "证据不足" in decision.reason
+    assert "补强" in decision.reason
+    assert "测试" in decision.reason
