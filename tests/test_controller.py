@@ -5522,6 +5522,7 @@ def test_run_agent_runtime_should_restore_continuity_from_repository(
             assert journey_id == "journey_001"
 
             class Session:
+                session_id = "session_001"
                 topic = "Tool Calling"
                 completed = True
                 understanding_score = 80
@@ -5560,6 +5561,7 @@ def test_run_agent_runtime_should_restore_continuity_from_repository(
     assert state.learning_continuity_context["next_step"] == "继续练习参数结构"
 
     assert response == "继续练习参数结构。"
+    assert state.learning_continuity_context["session_id"] == "session_001"
 
 
 def test_run_agent_runtime_should_prefer_explicit_continuity_context(
@@ -5684,6 +5686,7 @@ def test_run_agent_runtime_should_restore_continuity_for_user():
             assert user_id == "user_001"
 
             class Session:
+                session_id = "session_user_001"
                 topic = "Tool Calling"
                 completed = True
                 understanding_score = 85
@@ -5702,6 +5705,7 @@ def test_run_agent_runtime_should_restore_continuity_for_user():
     assert state.learning_continuity_context["has_previous_session"] is True
     assert state.learning_continuity_context["topic"] == "Tool Calling"
     assert state.learning_continuity_context["next_step"] == "继续练习 Tool Schema"
+    assert state.learning_continuity_context["session_id"] == "session_user_001"
 
 
 def test_run_agent_runtime_should_build_next_learning_task():
