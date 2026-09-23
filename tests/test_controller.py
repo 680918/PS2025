@@ -6199,6 +6199,115 @@ def test_run_agent_runtime_should_include_evidence_in_planning(
     assert response == "今天的学习任务"
 
 
+def test_run_agent_runtime_should_use_journey_curriculum_for_next_topic(
+    monkeypatch,
+):
+    def fake_call_llm(system_prompt, user_message):
+        return {
+            "status": "success",
+            "content": "今天的学习任务",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    class FakeSession:
+        completed = True
+
+        def __init__(self, session_id, score):
+            self.session_id = session_id
+            self.understanding_score = score
+
+    class FakeSessionRepository:
+        def list_by_journey_for_user(self, journey_id, user_id):
+            assert journey_id == "journey-001"
+            assert user_id == "user-a"
+
+            return [
+                FakeSession("session-001", 70),
+                FakeSession("session-002", 85),
+            ]
+
+    class FakeEvidenceRepository:
+        def list_by_session(self, session_id):
+            assert session_id in {
+                "session-001",
+                "session-002",
+            }
+
+            from learning.evidence import LearningEvidence
+
+            return [
+                LearningEvidence(
+                    session_id=session_id,
+                    task="Python练习",
+                    result="4 项测试全部通过",
+                    assessment="已完成",
+                    tests_passed=4,
+                    tests_total=4,
+                )
+            ]
+
+    class FakeCurriculumRepository:
+        def get_by_journey_id(self, journey_id):
+            assert journey_id == "journey-001"
+
+            from learning.curriculum import (
+                CurriculumItem,
+                LearningCurriculum,
+            )
+
+            return LearningCurriculum(
+                journey_id="journey-001",
+                items=[
+                    CurriculumItem(
+                        position=1,
+                        topic="Python函数",
+                    ),
+                    CurriculumItem(
+                        position=2,
+                        topic="Python装饰器",
+                    ),
+                ],
+            )
+
+    continuity = {
+        "has_previous_session": True,
+        "session_id": "session-002",
+        "completed": True,
+        "topic": "Python函数",
+        "understanding_score": 85,
+        "difficulty": "装饰器概念还不熟悉",
+        "next_step": "进入下一阶段学习",
+    }
+
+    state, response = run_agent_runtime(
+        user_message="今天学习什么？",
+        journey_id="journey-001",
+        user_id="user-a",
+        learning_session_repository=FakeSessionRepository(),
+        learning_evidence_repository=FakeEvidenceRepository(),
+        learning_curriculum_repository=FakeCurriculumRepository(),
+        learning_journey={
+            "domain": "Python",
+            "goal": "掌握 Python 编程",
+        },
+        learning_continuity_context=continuity,
+    )
+
+    decision = state.next_learning_task["context"]["planning_decision"]
+
+    assert decision["action"] == "advance"
+    assert decision["topic"] == "Python函数"
+    assert decision["next_topic"] == "Python装饰器"
+
+    assert "Python装饰器" in state.next_learning_task["prompt"]
+
+    assert response == "今天的学习任务"
+
+
 def test_run_agent_should_forward_evidence_repository_to_runtime(
     monkeypatch,
 ):
@@ -6222,3 +6331,28 @@ def test_run_agent_should_forward_evidence_repository_to_runtime(
 
     assert response == "教练任务"
     assert captured["learning_evidence_repository"] is evidence_repository
+
+
+def test_run_agent_should_forward_curriculum_repository_to_runtime(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_run_agent_runtime(**kwargs):
+        captured.update(kwargs)
+        return None, "教练任务"
+
+    monkeypatch.setattr(
+        "agent.controller.run_agent_runtime",
+        fake_run_agent_runtime,
+    )
+
+    curriculum_repository = object()
+
+    response = run_agent(
+        user_message="今天学习什么？",
+        learning_curriculum_repository=curriculum_repository,
+    )
+
+    assert response == "教练任务"
+    assert captured["learning_curriculum_repository"] is curriculum_repository

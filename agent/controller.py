@@ -169,6 +169,7 @@ def run_agent_runtime(
     user_id=None,
     learning_journey=None,
     learning_evidence_repository=None,
+    learning_curriculum_repository=None,
 ):
     state = AgentState(
         user_message,
@@ -228,6 +229,11 @@ def run_agent_runtime(
             session_id=previous_session_id,
         )
 
+    curriculum = None
+
+    if journey_id is not None and learning_curriculum_repository is not None:
+        curriculum = learning_curriculum_repository.get_by_journey_id(journey_id)
+
     planning_decision = None
 
     if (
@@ -239,7 +245,8 @@ def run_agent_runtime(
             continuity=state.learning_continuity_context,
             evaluation=journey_evaluation,
             evidence_summary=evidence_summary,
-            previous_session_evidence_summary=(previous_session_evidence_summary),
+            previous_session_evidence_summary=previous_session_evidence_summary,
+            curriculum=curriculum,
         )
 
     if learning_journey is not None:
@@ -340,6 +347,7 @@ def run_agent(
     user_id=None,
     learning_journey=None,
     learning_evidence_repository=None,
+    learning_curriculum_repository=None,
 ):
     _, response = run_agent_runtime(
         user_message=user_message,
@@ -353,6 +361,7 @@ def run_agent(
         learning_session=learning_session,
         learning_journey=learning_journey,
         learning_evidence_repository=learning_evidence_repository,
+        learning_curriculum_repository=learning_curriculum_repository,
     )
 
     return response
