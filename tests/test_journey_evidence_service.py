@@ -4,6 +4,7 @@ from unittest.mock import Mock
 from learning.evidence import LearningEvidence
 from evaluation.journey_evidence_service import (
     evaluate_journey_evidence,
+    evaluate_session_evidence,
 )
 from learning.session import LearningSession
 from learning.sqlite_session_repository import SQLiteLearningSessionRepository
@@ -129,6 +130,113 @@ def test_journey_evidence_should_isolate_users_with_real_sqlite(tmp_path):
             "strong": 0,
             "weak": 0,
             "insufficient": 1,
+        },
+    }
+
+
+def test_session_evidence_should_only_evaluate_requested_session(tmp_path):
+    database_path = tmp_path / "sessions.db"
+
+    session_repository = SQLiteLearningSessionRepository(database_path)
+    evidence_repository = SQLiteLearningEvidenceRepository(database_path)
+
+    session_a = LearningSession(
+        journey_id="journey_001",
+        user_id="user_a",
+        topic="Python 函数",
+    )
+
+    session_b = LearningSession(
+        journey_id="journey_001",
+        user_id="user_a",
+        topic="Python 函数",
+    )
+
+    session_repository.save(session_a)
+    session_repository.save(session_b)
+
+    evidence_repository.save(
+        LearningEvidence(
+            session_id=session_a.session_id,
+            task="第一次函数练习",
+            result="4 项测试全部通过",
+            assessment="已完成",
+            tests_passed=4,
+            tests_total=4,
+        )
+    )
+
+    evidence_repository.save(
+        LearningEvidence(
+            session_id=session_b.session_id,
+            task="第二次函数练习",
+            result="4 项测试通过 3 项",
+            assessment="掌握",
+            tests_passed=3,
+            tests_total=4,
+        )
+    )
+
+    result = evaluate_session_evidence(
+        evidence_repository=evidence_repository,
+        session_id=session_a.session_id,
+    )
+
+    assert result == {
+        "evidence_count": 1,
+        "completed_tasks": 1,
+        "learning_signal": "positive",
+        "quality_summary": {
+            "strong": 1,
+            "weak": 0,
+            "insufficient": 0,
+        },
+    }
+
+    result_b = evaluate_session_evidence(
+        evidence_repository=evidence_repository,
+        session_id=session_b.session_id,
+    )
+
+    assert result_b == {
+        "evidence_count": 1,
+        "completed_tasks": 0,
+        "learning_signal": "insufficient_data",
+        "quality_summary": {
+            "strong": 0,
+            "weak": 0,
+            "insufficient": 1,
+        },
+    }
+
+
+def test_session_evidence_should_handle_session_without_evidence(tmp_path):
+    database_path = tmp_path / "sessions.db"
+
+    session_repository = SQLiteLearningSessionRepository(database_path)
+    evidence_repository = SQLiteLearningEvidenceRepository(database_path)
+
+    session = LearningSession(
+        journey_id="journey_001",
+        user_id="user_a",
+        topic="Python 函数",
+    )
+
+    session_repository.save(session)
+
+    result = evaluate_session_evidence(
+        evidence_repository=evidence_repository,
+        session_id=session.session_id,
+    )
+
+    assert result == {
+        "evidence_count": 0,
+        "completed_tasks": 0,
+        "learning_signal": "insufficient_data",
+        "quality_summary": {
+            "strong": 0,
+            "weak": 0,
+            "insufficient": 0,
         },
     }
 
