@@ -34,10 +34,14 @@ from learning.evidence_submission_service import (
 from learning.journey_curriculum_unit_of_work import (
     SQLiteJourneyCurriculumUnitOfWork,
 )
+from learning.curriculum_generation_service import (
+    generate_curriculum_topics,
+)
 
 
 def create_app(
     database_dir,
+    curriculum_generator=None,
 ):
     app = FastAPI()
 
@@ -173,6 +177,30 @@ def create_app(
         </body>
         </html>
         """
+
+    @app.post("/curriculums/preview")
+    def preview_curriculum(payload: dict):
+        if curriculum_generator is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="curriculum generator is not configured",
+            )
+
+        try:
+            topics = generate_curriculum_topics(
+                domain=payload["domain"],
+                goal=payload["goal"],
+                generator=curriculum_generator,
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+
+        return {
+            "curriculum_topics": topics,
+        }
 
     @app.post(
         "/web/journeys",
