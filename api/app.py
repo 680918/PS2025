@@ -666,14 +666,21 @@ def create_app(
         status_code=status.HTTP_201_CREATED,
     )
     def create_journey(payload: dict):
-        journey = create_learning_journey(
-            repository=journey_repository,
-            user_repository=user_repository,
-            user_id=payload["user_id"],
-            domain=payload["domain"],
-            goal=payload["goal"],
-        )
-
+        try:
+            journey = create_learning_journey(
+                repository=journey_repository,
+                user_repository=user_repository,
+                user_id=payload["user_id"],
+                domain=payload["domain"],
+                goal=payload["goal"],
+                curriculum_topics=payload.get("curriculum_topics"),
+                curriculum_repository=curriculum_repository,
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
         return {
             "journey_id": journey.journey_id,
             "user_id": journey.user_id,

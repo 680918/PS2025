@@ -33,6 +33,146 @@ def test_create_learning_journey_should_create_and_save_journey():
     assert repository.saved_journeys[0] is journey
 
 
+def test_create_journey_should_initialize_explicit_curriculum():
+    class FakeJourneyRepository:
+        def __init__(self):
+            self.saved_journeys = []
+
+        def save(self, journey):
+            self.saved_journeys.append(journey)
+
+    class FakeCurriculumRepository:
+        def __init__(self):
+            self.saved_curriculums = []
+
+        def save(self, curriculum):
+            self.saved_curriculums.append(curriculum)
+
+    journey_repository = FakeJourneyRepository()
+    curriculum_repository = FakeCurriculumRepository()
+
+    journey = create_learning_journey(
+        repository=journey_repository,
+        user_id="user_001",
+        domain="Python",
+        goal="掌握 Python 编程",
+        curriculum_topics=[
+            "Python变量",
+            "Python条件判断",
+            "Python循环",
+        ],
+        curriculum_repository=curriculum_repository,
+    )
+
+    assert len(journey_repository.saved_journeys) == 1
+    assert journey_repository.saved_journeys[0] is journey
+
+    assert len(curriculum_repository.saved_curriculums) == 1
+
+    curriculum = curriculum_repository.saved_curriculums[0]
+
+    assert curriculum.journey_id == journey.journey_id
+
+    assert [(item.position, item.topic) for item in curriculum.items] == [
+        (1, "Python变量"),
+        (2, "Python条件判断"),
+        (3, "Python循环"),
+    ]
+
+
+def test_create_journey_should_reject_curriculum_without_repository():
+    class FakeJourneyRepository:
+        def __init__(self):
+            self.saved_journeys = []
+
+        def save(self, journey):
+            self.saved_journeys.append(journey)
+
+    journey_repository = FakeJourneyRepository()
+
+    with pytest.raises(
+        ValueError,
+        match="curriculum repository is required",
+    ):
+        create_learning_journey(
+            repository=journey_repository,
+            user_id="user_001",
+            domain="Python",
+            goal="掌握 Python 编程",
+            curriculum_topics=[
+                "Python变量",
+                "Python函数",
+            ],
+        )
+
+    assert journey_repository.saved_journeys == []
+
+
+def test_create_journey_without_curriculum_topics_should_not_save_curriculum():
+    class FakeJourneyRepository:
+        def __init__(self):
+            self.saved_journeys = []
+
+        def save(self, journey):
+            self.saved_journeys.append(journey)
+
+    class FakeCurriculumRepository:
+        def __init__(self):
+            self.saved_curriculums = []
+
+        def save(self, curriculum):
+            self.saved_curriculums.append(curriculum)
+
+    journey_repository = FakeJourneyRepository()
+    curriculum_repository = FakeCurriculumRepository()
+
+    journey = create_learning_journey(
+        repository=journey_repository,
+        user_id="user_001",
+        domain="英语",
+        goal="6个月达到日常交流",
+        curriculum_repository=curriculum_repository,
+    )
+
+    assert journey_repository.saved_journeys == [journey]
+    assert curriculum_repository.saved_curriculums == []
+
+
+def test_create_journey_should_reject_curriculum_topics_that_are_not_a_list():
+    class FakeJourneyRepository:
+        def __init__(self):
+            self.saved_journeys = []
+
+        def save(self, journey):
+            self.saved_journeys.append(journey)
+
+    class FakeCurriculumRepository:
+        def __init__(self):
+            self.saved_curriculums = []
+
+        def save(self, curriculum):
+            self.saved_curriculums.append(curriculum)
+
+    journey_repository = FakeJourneyRepository()
+    curriculum_repository = FakeCurriculumRepository()
+
+    with pytest.raises(
+        ValueError,
+        match="curriculum_topics must be a list of strings",
+    ):
+        create_learning_journey(
+            repository=journey_repository,
+            user_id="user_001",
+            domain="Python",
+            goal="掌握 Python 编程",
+            curriculum_topics="Python变量",
+            curriculum_repository=curriculum_repository,
+        )
+
+    assert journey_repository.saved_journeys == []
+    assert curriculum_repository.saved_curriculums == []
+
+
 def test_create_learning_journey_should_reject_unknown_user():
     class FakeJourneyRepository:
         def save(self, journey):
@@ -341,3 +481,78 @@ def test_complete_learning_journey_should_reject_completed_status():
             repository=repository,
             journey=journey,
         )
+
+
+def test_create_journey_with_empty_topics_should_save_empty_curriculum():
+    class FakeJourneyRepository:
+        def __init__(self):
+            self.saved_journeys = []
+
+        def save(self, journey):
+            self.saved_journeys.append(journey)
+
+    class FakeCurriculumRepository:
+        def __init__(self):
+            self.saved_curriculums = []
+
+        def save(self, curriculum):
+            self.saved_curriculums.append(curriculum)
+
+    journey_repository = FakeJourneyRepository()
+    curriculum_repository = FakeCurriculumRepository()
+
+    journey = create_learning_journey(
+        repository=journey_repository,
+        user_id="user_001",
+        domain="Python",
+        goal="掌握 Python 编程",
+        curriculum_topics=[],
+        curriculum_repository=curriculum_repository,
+    )
+
+    assert journey_repository.saved_journeys == [journey]
+
+    assert len(curriculum_repository.saved_curriculums) == 1
+
+    curriculum = curriculum_repository.saved_curriculums[0]
+
+    assert curriculum.journey_id == journey.journey_id
+    assert curriculum.items == []
+
+
+def test_create_journey_should_reject_non_string_curriculum_topic():
+    class FakeJourneyRepository:
+        def __init__(self):
+            self.saved_journeys = []
+
+        def save(self, journey):
+            self.saved_journeys.append(journey)
+
+    class FakeCurriculumRepository:
+        def __init__(self):
+            self.saved_curriculums = []
+
+        def save(self, curriculum):
+            self.saved_curriculums.append(curriculum)
+
+    journey_repository = FakeJourneyRepository()
+    curriculum_repository = FakeCurriculumRepository()
+
+    with pytest.raises(
+        ValueError,
+        match="curriculum_topics must be a list of strings",
+    ):
+        create_learning_journey(
+            repository=journey_repository,
+            user_id="user_001",
+            domain="Python",
+            goal="掌握 Python 编程",
+            curriculum_topics=[
+                "Python变量",
+                123,
+            ],
+            curriculum_repository=curriculum_repository,
+        )
+
+    assert journey_repository.saved_journeys == []
+    assert curriculum_repository.saved_curriculums == []
