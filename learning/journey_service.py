@@ -2,6 +2,7 @@ from learning.journey import LearningJourney
 from learning.session_service import (
     create_and_save_learning_session,
 )
+from learning.curriculum import CurriculumItem, LearningCurriculum
 
 
 def create_learning_journey(
@@ -10,6 +11,8 @@ def create_learning_journey(
     domain,
     goal,
     user_repository=None,
+    curriculum_topics=None,
+    curriculum_repository=None,
 ):
     domain = domain.strip()
     goal = goal.strip()
@@ -19,6 +22,15 @@ def create_learning_journey(
 
     if not goal:
         raise ValueError("goal is required")
+
+    if curriculum_topics is not None:
+        if not isinstance(curriculum_topics, list) or not all(
+            isinstance(topic, str) for topic in curriculum_topics
+        ):
+            raise ValueError("curriculum_topics must be a list of strings")
+
+    if curriculum_topics is not None and curriculum_repository is None:
+        raise ValueError("curriculum repository is required")
 
     if user_repository is not None:
         user = user_repository.get_by_id(user_id)
@@ -33,6 +45,20 @@ def create_learning_journey(
     )
 
     repository.save(journey)
+
+    if curriculum_topics is not None:
+        curriculum = LearningCurriculum(
+            journey_id=journey.journey_id,
+            items=[
+                CurriculumItem(
+                    position=index,
+                    topic=topic,
+                )
+                for index, topic in enumerate(curriculum_topics, start=1)
+            ],
+        )
+
+        curriculum_repository.save(curriculum)
 
     return journey
 
