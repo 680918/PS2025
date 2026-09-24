@@ -37,36 +37,39 @@ class SQLiteLearningJourneyRepository:
 
     def save(self, journey):
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO learning_journeys (
-                    journey_id,
-                    user_id,
-                    domain,
-                    goal,
-                    status,
-                    created_at,
-                    updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(journey_id)
-                DO UPDATE SET
-                    user_id = excluded.user_id,
-                    domain = excluded.domain,
-                    goal = excluded.goal,
-                    status = excluded.status,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    journey.journey_id,
-                    journey.user_id,
-                    journey.domain,
-                    journey.goal,
-                    journey.status,
-                    journey.created_at.isoformat(),
-                    journey.updated_at.isoformat(),
-                ),
+            self.save_with_connection(journey, connection)
+
+    def save_with_connection(self, journey, connection):
+        connection.execute(
+            """
+            INSERT INTO learning_journeys (
+                journey_id,
+                user_id,
+                domain,
+                goal,
+                status,
+                created_at,
+                updated_at
             )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(journey_id)
+            DO UPDATE SET
+                user_id = excluded.user_id,
+                domain = excluded.domain,
+                goal = excluded.goal,
+                status = excluded.status,
+                updated_at = excluded.updated_at
+            """,
+            (
+                journey.journey_id,
+                journey.user_id,
+                journey.domain,
+                journey.goal,
+                journey.status,
+                journey.created_at.isoformat(),
+                journey.updated_at.isoformat(),
+            ),
+        )
 
     def get_by_id(
         self,

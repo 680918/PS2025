@@ -3,6 +3,9 @@ from learning.sqlite_curriculum_repository import (
     SQLiteLearningCurriculumRepository,
 )
 from api.app import create_app
+from learning.sqlite_journey_repository import (
+    SQLiteLearningJourneyRepository,
+)
 
 
 def test_post_journeys_should_create_learning_journey(
@@ -166,3 +169,46 @@ def test_post_journeys_should_reject_invalid_curriculum_topics(
 
     assert response.status_code == 400
     assert response.json()["detail"] == ("curriculum_topics must be a list of strings")
+
+
+def test_post_journeys_should_rollback_when_curriculum_write_fails(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    def fail_curriculum_save(self, curriculum, connection):
+        raise RuntimeError("curriculum write failed")
+
+    monkeypatch.setattr(
+        SQLiteLearningCurriculumRepository,
+        "save_with_connection",
+        fail_curriculum_save,
+    )
+
+    response = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "掌握 Python 编程",
+            "curriculum_topics": [
+                "Python变量",
+                "Python函数",
+            ],
+        },
+    )
+
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+
+    assert response.status_code == 500
+    assert journey_repository.list_by_user(user["user_id"]) == []

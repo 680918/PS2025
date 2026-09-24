@@ -31,6 +31,9 @@ from html import escape
 from learning.evidence_submission_service import (
     submit_learning_evidence,
 )
+from learning.journey_curriculum_unit_of_work import (
+    SQLiteJourneyCurriculumUnitOfWork,
+)
 
 
 def create_app(
@@ -48,6 +51,12 @@ def create_app(
 
     curriculum_repository = SQLiteLearningCurriculumRepository(
         database_dir / "curriculums.db"
+    )
+
+    journey_curriculum_unit_of_work = SQLiteJourneyCurriculumUnitOfWork(
+        database_path=database_dir / "journeys.db",
+        journey_repository=journey_repository,
+        curriculum_repository=curriculum_repository,
     )
 
     @app.get(
@@ -675,6 +684,7 @@ def create_app(
                 goal=payload["goal"],
                 curriculum_topics=payload.get("curriculum_topics"),
                 curriculum_repository=curriculum_repository,
+                unit_of_work=journey_curriculum_unit_of_work,
             )
         except ValueError as error:
             raise HTTPException(

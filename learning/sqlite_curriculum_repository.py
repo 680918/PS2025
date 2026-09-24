@@ -41,41 +41,44 @@ class SQLiteLearningCurriculumRepository:
 
     def save(self, curriculum):
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO learning_curriculums (journey_id)
-                VALUES (?)
-                ON CONFLICT(journey_id) DO NOTHING
-                """,
-                (curriculum.journey_id,),
-            )
+            self.save_with_connection(curriculum, connection)
 
-            connection.execute(
-                """
-                DELETE FROM learning_curriculum_items
-                WHERE journey_id = ?
-                """,
-                (curriculum.journey_id,),
-            )
+    def save_with_connection(self, curriculum, connection):
+        connection.execute(
+            """
+            INSERT INTO learning_curriculums (journey_id)
+            VALUES (?)
+            ON CONFLICT(journey_id) DO NOTHING
+            """,
+            (curriculum.journey_id,),
+        )
 
-            connection.executemany(
-                """
-                INSERT INTO learning_curriculum_items (
-                    journey_id,
-                    position,
-                    topic
+        connection.execute(
+            """
+            DELETE FROM learning_curriculum_items
+            WHERE journey_id = ?
+            """,
+            (curriculum.journey_id,),
+        )
+
+        connection.executemany(
+            """
+            INSERT INTO learning_curriculum_items (
+                journey_id,
+                position,
+                topic
+            )
+            VALUES (?, ?, ?)
+            """,
+            [
+                (
+                    curriculum.journey_id,
+                    item.position,
+                    item.topic,
                 )
-                VALUES (?, ?, ?)
-                """,
-                [
-                    (
-                        curriculum.journey_id,
-                        item.position,
-                        item.topic,
-                    )
-                    for item in curriculum.items
-                ],
-            )
+                for item in curriculum.items
+            ],
+        )
 
     def get_by_journey_id(self, journey_id):
         with self._connect() as connection:
