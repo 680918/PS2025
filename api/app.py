@@ -149,7 +149,7 @@ def create_app(
 
             <h2>创建学习目标</h2>
 
-            <form method="post" action="/web/journeys">
+            <form method="post" action="/web/curriculums/preview">
                 <input
                     type="hidden"
                     name="user_id"
@@ -179,7 +179,7 @@ def create_app(
                 <br>
 
                 <button type="submit">
-                    创建学习目标
+                    生成课程计划
                 </button>
             </form>
         </body>
@@ -216,6 +216,95 @@ def create_app(
         }
 
     @app.post(
+        "/web/curriculums/preview",
+        response_class=HTMLResponse,
+    )
+    def web_preview_curriculum(
+        user_id: str = Form(...),
+        domain: str = Form(...),
+        goal: str = Form(...),
+    ):
+        if curriculum_generator is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="curriculum generator is not configured",
+            )
+
+        try:
+            topics = generate_curriculum_topics(
+                domain=domain,
+                goal=goal,
+                generator=curriculum_generator,
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+        except RuntimeError as error:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="curriculum generation is unavailable",
+            ) from error
+
+        topic_items = "\n".join(f"<li>{escape(topic)}</li>" for topic in topics)
+
+        topic_inputs = "\n".join(
+            (
+                '<input type="hidden" '
+                'name="curriculum_topics" '
+                f'value="{escape(topic, quote=True)}">'
+            )
+            for topic in topics
+        )
+
+        return f"""
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <title>课程计划预览</title>
+        </head>
+        <body>
+            <h1>课程计划预览</h1>
+
+            <p>学习领域：{escape(domain)}</p>
+            <p>学习目标：{escape(goal)}</p>
+
+            <ol>
+                {topic_items}
+            </ol>
+
+            <form method="post" action="/web/journeys">
+                <input
+                    type="hidden"
+                    name="user_id"
+                    value="{escape(user_id, quote=True)}"
+                >
+
+                <input
+                    type="hidden"
+                    name="domain"
+                    value="{escape(domain, quote=True)}"
+                >
+
+                <input
+                    type="hidden"
+                    name="goal"
+                    value="{escape(goal, quote=True)}"
+                >
+
+                {topic_inputs}
+
+                <button type="submit">
+                    确认创建学习旅程
+                </button>
+            </form>
+        </body>
+        </html>
+        """
+
+    @app.post(
         "/web/journeys",
         response_class=HTMLResponse,
     )
@@ -223,6 +312,7 @@ def create_app(
         user_id: str = Form(...),
         domain: str = Form(...),
         goal: str = Form(...),
+        curriculum_topics: list[str] | None = Form(None),
     ):
         journey = create_learning_journey(
             repository=journey_repository,
@@ -230,6 +320,9 @@ def create_app(
             user_id=user_id,
             domain=domain,
             goal=goal,
+            curriculum_topics=curriculum_topics,
+            curriculum_repository=curriculum_repository,
+            unit_of_work=journey_curriculum_unit_of_work,
         )
 
         return f"""
