@@ -37,13 +37,21 @@ from learning.journey_curriculum_unit_of_work import (
 from learning.curriculum_generation_service import (
     generate_curriculum_topics,
 )
+from learning.llm_curriculum_generator import (
+    LLMCurriculumGenerator,
+)
+
+_DEFAULT_CURRICULUM_GENERATOR = object()
 
 
 def create_app(
     database_dir,
-    curriculum_generator=None,
+    curriculum_generator=_DEFAULT_CURRICULUM_GENERATOR,
 ):
     app = FastAPI()
+
+    if curriculum_generator is _DEFAULT_CURRICULUM_GENERATOR:
+        curriculum_generator = LLMCurriculumGenerator()
 
     user_repository = SQLiteUserRepository(database_dir / "users.db")
 
@@ -196,6 +204,11 @@ def create_app(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(error),
+            ) from error
+        except RuntimeError as error:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="curriculum generation is unavailable",
             ) from error
 
         return {
