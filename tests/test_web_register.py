@@ -25,7 +25,7 @@ def test_web_register_should_create_user_and_render_success(
     assert "zhangsan@example.com" in response.text
 
 
-def test_web_register_should_render_create_journey_form(
+def test_web_register_should_render_curriculum_preview_form(
     tmp_path,
 ):
     app = create_app(database_dir=tmp_path)
@@ -42,13 +42,13 @@ def test_web_register_should_render_create_journey_form(
 
     assert response.status_code == 200
 
-    assert '<form method="post" action="/web/journeys">' in response.text
+    assert '<form method="post" action="/web/curriculums/preview">' in response.text
 
     assert 'name="user_id"' in response.text
     assert 'name="domain"' in response.text
     assert 'name="goal"' in response.text
 
-    assert "创建学习目标" in response.text
+    assert "生成课程计划" in response.text
 
 
 def test_web_register_should_include_user_id_in_journey_form(
