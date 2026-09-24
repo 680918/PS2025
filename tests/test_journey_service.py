@@ -5,6 +5,13 @@ from learning.journey_service import (
     start_learning_journey,
     complete_learning_journey,
 )
+from learning.sqlite_journey_repository import SQLiteLearningJourneyRepository
+from learning.journey_curriculum_unit_of_work import (
+    SQLiteJourneyCurriculumUnitOfWork,
+)
+from learning.sqlite_curriculum_repository import (
+    SQLiteLearningCurriculumRepository,
+)
 
 
 def test_create_learning_journey_should_create_and_save_journey():
@@ -556,3 +563,38 @@ def test_create_journey_should_reject_non_string_curriculum_topic():
 
     assert journey_repository.saved_journeys == []
     assert curriculum_repository.saved_curriculums == []
+
+
+def test_create_journey_should_not_persist_journey_when_curriculum_save_fails(
+    tmp_path,
+):
+    class FailingCurriculumRepository(SQLiteLearningCurriculumRepository):
+        def save_with_connection(self, curriculum, connection):
+            raise RuntimeError("curriculum write failed")
+
+    database_path = tmp_path / "learning.db"
+
+    journey_repository = SQLiteLearningJourneyRepository(database_path)
+    curriculum_repository = FailingCurriculumRepository(database_path)
+
+    unit_of_work = SQLiteJourneyCurriculumUnitOfWork(
+        database_path=database_path,
+        journey_repository=journey_repository,
+        curriculum_repository=curriculum_repository,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="curriculum write failed",
+    ):
+        create_learning_journey(
+            repository=journey_repository,
+            user_id="user_001",
+            domain="Python",
+            goal="掌握 Python 编程",
+            curriculum_topics=["Python变量", "Python函数"],
+            curriculum_repository=curriculum_repository,
+            unit_of_work=unit_of_work,
+        )
+
+    assert journey_repository.list_by_user("user_001") == []

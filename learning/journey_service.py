@@ -13,6 +13,7 @@ def create_learning_journey(
     user_repository=None,
     curriculum_topics=None,
     curriculum_repository=None,
+    unit_of_work=None,
 ):
     domain = domain.strip()
     goal = goal.strip()
@@ -44,7 +45,7 @@ def create_learning_journey(
         goal=goal,
     )
 
-    repository.save(journey)
+    curriculum = None
 
     if curriculum_topics is not None:
         curriculum = LearningCurriculum(
@@ -58,7 +59,13 @@ def create_learning_journey(
             ],
         )
 
-        curriculum_repository.save(curriculum)
+    if curriculum is not None and unit_of_work is not None:
+        unit_of_work.save(journey, curriculum)
+    else:
+        repository.save(journey)
+
+        if curriculum is not None:
+            curriculum_repository.save(curriculum)
 
     return journey
 
