@@ -46,18 +46,29 @@ from learning.journey_completion_summary import (
     JourneyNotFoundError,
     build_journey_completion_summary_from_repositories,
 )
+from learning.journey_completion_commentary_service import (
+    generate_journey_completion_commentary,
+)
+from learning.llm_journey_completion_commentary import (
+    LLMJourneyCompletionCommentary,
+)
 
 _DEFAULT_CURRICULUM_GENERATOR = object()
+_DEFAULT_COMPLETION_COMMENTARY_GENERATOR = object()
 
 
 def create_app(
     database_dir,
     curriculum_generator=_DEFAULT_CURRICULUM_GENERATOR,
+    completion_commentary_generator=_DEFAULT_COMPLETION_COMMENTARY_GENERATOR,
 ):
     app = FastAPI()
 
     if curriculum_generator is _DEFAULT_CURRICULUM_GENERATOR:
         curriculum_generator = LLMCurriculumGenerator()
+
+    if completion_commentary_generator is _DEFAULT_COMPLETION_COMMENTARY_GENERATOR:
+        completion_commentary_generator = LLMJourneyCompletionCommentary()
 
     user_repository = SQLiteUserRepository(database_dir / "users.db")
 
@@ -89,6 +100,28 @@ def create_app(
             user_id=user_id,
         )
 
+        commentary_html = ""
+
+        if completion_commentary_generator is not None:
+            try:
+                commentary = generate_journey_completion_commentary(
+                    summary=summary,
+                    commentary_generator=completion_commentary_generator,
+                )
+
+                safe_commentary = escape(str(commentary))
+
+                commentary_html = f"""
+                <h2>毕业评语</h2>
+                <p>{safe_commentary}</p>
+                """
+
+            except RuntimeError:
+                commentary_html = """
+                <h2>毕业评语</h2>
+                <p>毕业评语暂时不可用。</p>
+                """
+
         safe_domain = escape(str(summary["domain"]))
         safe_goal = escape(str(summary["goal"]))
 
@@ -114,6 +147,8 @@ def create_app(
             <p>学习趋势：{summary["trend"]}</p>
             <p>学习证据数量：{summary["evidence_count"]}</p>
             <p>已完成任务：{summary["completed_tasks"]}</p>
+
+            {commentary_html}
         </body>
         </html>
         """
