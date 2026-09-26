@@ -348,8 +348,9 @@ def run_agent(
     learning_journey=None,
     learning_evidence_repository=None,
     learning_curriculum_repository=None,
+    return_state=False,
 ):
-    _, response = run_agent_runtime(
+    state, response = run_agent_runtime(
         user_message=user_message,
         memory_service=memory_service,
         knowledge_service=knowledge_service,
@@ -363,6 +364,9 @@ def run_agent(
         learning_evidence_repository=learning_evidence_repository,
         learning_curriculum_repository=learning_curriculum_repository,
     )
+
+    if return_state:
+        return state, response
 
     return response
 

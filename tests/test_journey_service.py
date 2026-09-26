@@ -9,6 +9,7 @@ from learning.sqlite_journey_repository import SQLiteLearningJourneyRepository
 from learning.journey_curriculum_unit_of_work import (
     SQLiteJourneyCurriculumUnitOfWork,
 )
+from learning.curriculum import CurriculumItem, LearningCurriculum
 from learning.sqlite_curriculum_repository import (
     SQLiteLearningCurriculumRepository,
 )
@@ -332,6 +333,54 @@ def test_start_learning_journey_should_create_real_learning_session():
     assert len(session_repository.saved_sessions) == 1
 
     assert session_repository.saved_sessions[0] is session
+
+
+def test_start_learning_journey_should_use_first_curriculum_topic():
+    class FakeJourneyRepository:
+        def save(self, journey):
+            pass
+
+    class FakeSessionRepository:
+        def __init__(self):
+            self.saved_sessions = []
+
+        def save(self, session):
+            self.saved_sessions.append(session)
+
+    class FakeCurriculumRepository:
+        def get_by_journey_id(self, journey_id):
+            return LearningCurriculum(
+                journey_id=journey_id,
+                items=[
+                    CurriculumItem(
+                        position=1,
+                        topic="Python开发环境搭建与第一个程序",
+                    ),
+                    CurriculumItem(
+                        position=2,
+                        topic="变量、数据类型与基本输入输出",
+                    ),
+                ],
+            )
+
+    journey_repository = FakeJourneyRepository()
+    session_repository = FakeSessionRepository()
+
+    journey = create_learning_journey(
+        repository=journey_repository,
+        user_id="user_001",
+        domain="Python",
+        goal="能够独立编写简单程序",
+    )
+
+    session = start_learning_journey(
+        repository=journey_repository,
+        journey=journey,
+        session_repository=session_repository,
+        curriculum_repository=FakeCurriculumRepository(),
+    )
+
+    assert session.topic == "Python开发环境搭建与第一个程序"
 
 
 def test_start_learning_journey_should_not_create_duplicate_first_session():

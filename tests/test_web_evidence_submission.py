@@ -42,6 +42,8 @@ def test_web_continue_should_show_evidence_submission_form(
 
     assert start_response.status_code == 200
 
+    session_id = start_response.json()["session_id"]
+
     response = client.get(
         f"/web/journeys/{journey['journey_id']}/continue",
         params={
@@ -55,11 +57,39 @@ def test_web_continue_should_show_evidence_submission_form(
 
     assert "提交练习证据" in html
     assert f'action="/web/journeys/{journey["journey_id"]}/evidence"' in html
-    assert 'name="task"' in html
-    assert 'name="result"' in html
-    assert 'name="assessment"' in html
-    assert 'name="tests_passed"' in html
-    assert 'name="tests_total"' in html
+
+    evidence_form = html.split(
+        f'action="/web/journeys/{journey["journey_id"]}/evidence"',
+        1,
+    )[1].split(
+        "</form>",
+        1,
+    )[0]
+
+    user_id_input = evidence_form.split(
+        'name="user_id"',
+        1,
+    )[1].split(
+        ">",
+        1,
+    )[0]
+
+    session_id_input = evidence_form.split(
+        'name="session_id"',
+        1,
+    )[1].split(
+        ">",
+        1,
+    )[0]
+
+    assert f'value="{user["user_id"]}"' in user_id_input
+    assert f'value="{session_id}"' in session_id_input
+
+    assert 'name="task"' in evidence_form
+    assert 'name="result"' in evidence_form
+    assert 'name="assessment"' in evidence_form
+    assert 'name="tests_passed"' in evidence_form
+    assert 'name="tests_total"' in evidence_form
 
 
 def test_web_evidence_submission_should_save_to_sqlite(tmp_path):
