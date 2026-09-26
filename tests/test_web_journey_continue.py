@@ -7,6 +7,9 @@ from learning.evidence import LearningEvidence
 from learning.sqlite_evidence_repository import (
     SQLiteLearningEvidenceRepository,
 )
+from learning.sqlite_journey_repository import (
+    SQLiteLearningJourneyRepository,
+)
 
 
 def test_web_continue_journey_should_render_previous_learning_context(
@@ -762,3 +765,202 @@ def test_web_continue_should_advance_to_next_curriculum_topic(
     third_session = sessions[2]
 
     assert third_session.topic == ("变量、数据类型与基本输入输出")
+
+
+def test_web_continue_should_complete_journey_after_last_curriculum_topic(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "能够独立编写简单程序",
+            "curriculum_topics": [
+                "Python开发环境与程序运行",
+            ],
+        },
+    ).json()
+
+    def fake_call_llm(system_prompt, user_message):
+        return {
+            "status": "success",
+            "content": "今天的学习任务",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    journey_url = f"/web/journeys/{journey['journey_id']}"
+
+    start_response = client.post(f"{journey_url}/start")
+
+    assert start_response.status_code == 200
+
+    session_repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
+    evidence_repository = SQLiteLearningEvidenceRepository(tmp_path / "sessions.db")
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+
+    sessions = session_repository.list_by_journey(journey["journey_id"])
+
+    first_session = sessions[0]
+
+    first_feedback = client.post(
+        f"{journey_url}/feedback",
+        data={
+            "user_id": user["user_id"],
+            "understanding_score": "60",
+            "difficulty": "环境操作还不熟练",
+            "next_step": "继续练习程序运行",
+        },
+    )
+
+    assert first_feedback.status_code == 200
+
+    evidence_repository.save(
+        LearningEvidence(
+            session_id=first_session.session_id,
+            task="运行 Python 程序",
+            result="4 项测试全部通过",
+            assessment="已完成",
+            tests_passed=4,
+            tests_total=4,
+        )
+    )
+
+    first_continue = client.get(
+        f"{journey_url}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert first_continue.status_code == 200
+
+    sessions = session_repository.list_by_journey(journey["journey_id"])
+
+    assert len(sessions) == 2
+
+    second_session = sessions[1]
+
+    second_feedback = client.post(
+        f"{journey_url}/feedback",
+        data={
+            "user_id": user["user_id"],
+            "understanding_score": "85",
+            "difficulty": "已经掌握当前课程",
+            "next_step": "完成课程",
+        },
+    )
+
+    assert second_feedback.status_code == 200
+
+    evidence_repository.save(
+        LearningEvidence(
+            session_id=second_session.session_id,
+            task="独立运行 Python 程序",
+            result="4 项测试全部通过",
+            assessment="已完成",
+            tests_passed=4,
+            tests_total=4,
+        )
+    )
+
+    second_continue = client.get(
+        f"{journey_url}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert second_continue.status_code == 200
+
+    assert "学习旅程已完成" in second_continue.text
+    assert "恭喜你完成了当前课程计划。" in second_continue.text
+
+    saved_journey = journey_repository.get_by_id(journey["journey_id"])
+
+    assert saved_journey.status == "completed"
+
+    sessions = session_repository.list_by_journey(journey["journey_id"])
+
+    assert len(sessions) == 2
+
+
+def test_web_continue_completed_journey_should_show_completion_page_without_new_session(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "完成单课学习",
+            "curriculum_topics": [
+                "Python开发环境与第一个程序",
+            ],
+        },
+    ).json()
+
+    journey_url = f"/web/journeys/{journey['journey_id']}"
+
+    start_response = client.post(f"{journey_url}/start")
+    assert start_response.status_code == 200
+
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+    session_repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
+
+    saved_journey = journey_repository.get_by_id(journey["journey_id"])
+
+    saved_journey.status = "completed"
+    journey_repository.save(saved_journey)
+
+    sessions_before = session_repository.list_by_journey(journey["journey_id"])
+
+    def fail_run_agent(**kwargs):
+        raise AssertionError("run_agent should not be called for completed journey")
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fail_run_agent,
+    )
+
+    response = client.get(
+        f"{journey_url}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "学习旅程已完成" in response.text
+
+    sessions_after = session_repository.list_by_journey(journey["journey_id"])
+
+    assert len(sessions_after) == len(sessions_before)
