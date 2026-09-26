@@ -26,3 +26,14 @@ class LearningCurriculum:
                 return None
 
         return None
+
+    def is_last_topic(self, topic):
+        ordered_items = sorted(
+            self.items,
+            key=lambda item: item.position,
+        )
+
+        if not ordered_items:
+            return False
+
+        return ordered_items[-1].topic == topic

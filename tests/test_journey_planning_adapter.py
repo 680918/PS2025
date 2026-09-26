@@ -392,3 +392,54 @@ def test_last_curriculum_topic_should_complete_journey():
     assert decision.topic == "Python函数"
     assert decision.next_topic is None
     assert "课程" in decision.reason
+
+
+def test_unknown_curriculum_topic_should_not_complete_journey():
+    continuity = {
+        "has_previous_session": True,
+        "session_id": "session_001",
+        "completed": True,
+        "topic": "Python旧主题",
+        "understanding_score": 85,
+        "difficulty": "无",
+        "next_step": "进入下一阶段",
+    }
+
+    evaluation = {
+        "completed_sessions": 3,
+        "first_understanding": 70,
+        "latest_understanding": 85,
+        "understanding_change": 15,
+        "trend": "improving",
+    }
+
+    previous_session_evidence_summary = {
+        "evidence_count": 2,
+        "completed_tasks": 2,
+        "learning_signal": "positive",
+        "quality_summary": {
+            "strong": 2,
+            "weak": 0,
+            "insufficient": 0,
+        },
+    }
+
+    curriculum = LearningCurriculum(
+        journey_id="journey_001",
+        items=[
+            CurriculumItem(position=1, topic="Python变量"),
+            CurriculumItem(position=2, topic="Python函数"),
+        ],
+    )
+
+    decision = build_journey_planning_decision(
+        continuity=continuity,
+        evaluation=evaluation,
+        previous_session_evidence_summary=previous_session_evidence_summary,
+        curriculum=curriculum,
+    )
+
+    assert decision.action == "advance"
+    assert decision.topic == "Python旧主题"
+    assert decision.next_topic is None
+    assert "课程计划已完成" not in decision.reason

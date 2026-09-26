@@ -86,3 +86,48 @@ def test_curriculum_should_return_none_for_unknown_topic():
     )
 
     assert curriculum.get_next_topic("英语听力") is None
+
+
+def test_curriculum_should_identify_last_topic():
+    curriculum = LearningCurriculum(
+        journey_id="journey_001",
+        items=[
+            CurriculumItem(position=1, topic="Python变量"),
+            CurriculumItem(position=2, topic="Python条件判断"),
+        ],
+    )
+
+    assert curriculum.is_last_topic("Python条件判断") is True
+
+
+def test_curriculum_should_not_treat_non_last_topic_as_last():
+    curriculum = LearningCurriculum(
+        journey_id="journey_001",
+        items=[
+            CurriculumItem(position=1, topic="Python变量"),
+            CurriculumItem(position=2, topic="Python条件判断"),
+        ],
+    )
+
+    assert curriculum.is_last_topic("Python变量") is False
+
+
+def test_curriculum_should_not_treat_unknown_topic_as_last():
+    curriculum = LearningCurriculum(
+        journey_id="journey_001",
+        items=[
+            CurriculumItem(position=1, topic="Python变量"),
+            CurriculumItem(position=2, topic="Python条件判断"),
+        ],
+    )
+
+    assert curriculum.is_last_topic("英语听力") is False
+
+
+def test_empty_curriculum_should_have_no_last_topic():
+    curriculum = LearningCurriculum(
+        journey_id="journey_001",
+        items=[],
+    )
+
+    assert curriculum.is_last_topic("Python变量") is False
