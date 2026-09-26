@@ -343,7 +343,7 @@ def test_advance_should_prefer_journey_curriculum_over_global_path():
     assert decision.next_topic == "Python装饰器"
 
 
-def test_advance_should_not_fallback_when_curriculum_has_no_next_topic():
+def test_last_curriculum_topic_should_complete_journey():
     continuity = {
         "has_previous_session": True,
         "session_id": "session_001",
@@ -388,6 +388,7 @@ def test_advance_should_not_fallback_when_curriculum_has_no_next_topic():
         curriculum=curriculum,
     )
 
-    assert decision.action == "advance"
+    assert decision.action == "complete"
     assert decision.topic == "Python函数"
     assert decision.next_topic is None
+    assert "课程" in decision.reason

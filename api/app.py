@@ -5,6 +5,7 @@ from user.sqlite_repository import SQLiteUserRepository
 from learning.journey_service import (
     create_learning_journey,
     start_learning_journey,
+    complete_learning_journey,
 )
 from learning.sqlite_journey_repository import (
     SQLiteLearningJourneyRepository,
@@ -40,6 +41,7 @@ from learning.curriculum_generation_service import (
 from learning.llm_curriculum_generator import (
     LLMCurriculumGenerator,
 )
+
 
 _DEFAULT_CURRICULUM_GENERATOR = object()
 
@@ -471,6 +473,21 @@ def create_app(
                 detail="journey not found",
             )
 
+        if journey.status == "completed":
+            return """
+            <!DOCTYPE html>
+            <html lang="zh-CN">
+            <head>
+                <meta charset="UTF-8">
+                <title>学习旅程已完成</title>
+            </head>
+            <body>
+                <h1>学习旅程已完成</h1>
+                <p>恭喜你完成了当前课程计划。</p>
+            </body>
+            </html>
+            """
+
         continuity = build_learning_continuity_context(
             journey_id=journey.journey_id,
             repository=session_repository,
@@ -503,6 +520,8 @@ def create_app(
             journey.domain,
         )
 
+        planning_decision = None
+
         if agent_state is not None and agent_state.next_learning_task is not None:
             planning_decision = agent_state.next_learning_task["context"].get(
                 "planning_decision"
@@ -514,6 +533,29 @@ def create_app(
                 and planning_decision.get("next_topic") is not None
             ):
                 session_topic = planning_decision["next_topic"]
+
+            if (
+                planning_decision is not None
+                and planning_decision.get("action") == "complete"
+            ):
+                complete_learning_journey(
+                    repository=journey_repository,
+                    journey=journey,
+                )
+
+                return """
+                <!DOCTYPE html>
+                <html lang="zh-CN">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>学习旅程已完成</title>
+                </head>
+                <body>
+                    <h1>学习旅程已完成</h1>
+                    <p>恭喜你完成了当前课程计划。</p>
+                </body>
+                </html>
+                """
 
         current_session = get_or_create_learning_session(
             repository=session_repository,
