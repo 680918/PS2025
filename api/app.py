@@ -41,7 +41,11 @@ from learning.curriculum_generation_service import (
 from learning.llm_curriculum_generator import (
     LLMCurriculumGenerator,
 )
-
+from learning.journey_completion_summary import (
+    JourneyNotCompletedError,
+    JourneyNotFoundError,
+    build_journey_completion_summary_from_repositories,
+)
 
 _DEFAULT_CURRICULUM_GENERATOR = object()
 
@@ -72,6 +76,47 @@ def create_app(
         journey_repository=journey_repository,
         curriculum_repository=curriculum_repository,
     )
+
+    def render_journey_completion_page(
+        journey,
+        user_id,
+    ):
+        summary = build_journey_completion_summary_from_repositories(
+            journey_repository=journey_repository,
+            session_repository=session_repository,
+            evidence_repository=evidence_repository,
+            journey_id=journey.journey_id,
+            user_id=user_id,
+        )
+
+        safe_domain = escape(str(summary["domain"]))
+        safe_goal = escape(str(summary["goal"]))
+
+        return f"""
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <title>学习旅程已完成</title>
+        </head>
+        <body>
+            <h1>学习旅程已完成</h1>
+            <p>恭喜你完成了当前课程计划。</p>
+
+            <h2>学习总结</h2>
+
+            <p>学习领域：{safe_domain}</p>
+            <p>学习目标：{safe_goal}</p>
+            <p>已完成学习次数：{summary["completed_sessions"]}</p>
+            <p>最初理解度：{summary["first_understanding"]}</p>
+            <p>最终理解度：{summary["latest_understanding"]}</p>
+            <p>理解度变化：{summary["understanding_change"]}</p>
+            <p>学习趋势：{summary["trend"]}</p>
+            <p>学习证据数量：{summary["evidence_count"]}</p>
+            <p>已完成任务：{summary["completed_tasks"]}</p>
+        </body>
+        </html>
+        """
 
     @app.get(
         "/",
@@ -455,6 +500,33 @@ def create_app(
         """
 
     @app.get(
+        "/journeys/{journey_id}/completion-summary",
+        status_code=status.HTTP_200_OK,
+    )
+    def get_journey_completion_summary(
+        journey_id: str,
+        user_id: str,
+    ):
+        try:
+            return build_journey_completion_summary_from_repositories(
+                journey_repository=journey_repository,
+                session_repository=session_repository,
+                evidence_repository=evidence_repository,
+                journey_id=journey_id,
+                user_id=user_id,
+            )
+        except JourneyNotFoundError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            ) from error
+        except JourneyNotCompletedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+
+    @app.get(
         "/web/journeys/{journey_id}/continue",
         response_class=HTMLResponse,
     )
@@ -474,19 +546,10 @@ def create_app(
             )
 
         if journey.status == "completed":
-            return """
-            <!DOCTYPE html>
-            <html lang="zh-CN">
-            <head>
-                <meta charset="UTF-8">
-                <title>学习旅程已完成</title>
-            </head>
-            <body>
-                <h1>学习旅程已完成</h1>
-                <p>恭喜你完成了当前课程计划。</p>
-            </body>
-            </html>
-            """
+            return render_journey_completion_page(
+                journey=journey,
+                user_id=user_id,
+            )
 
         continuity = build_learning_continuity_context(
             journey_id=journey.journey_id,
@@ -534,28 +597,19 @@ def create_app(
             ):
                 session_topic = planning_decision["next_topic"]
 
-            if (
-                planning_decision is not None
-                and planning_decision.get("action") == "complete"
-            ):
-                complete_learning_journey(
-                    repository=journey_repository,
-                    journey=journey,
-                )
+        if (
+            planning_decision is not None
+            and planning_decision.get("action") == "complete"
+        ):
+            complete_learning_journey(
+                repository=journey_repository,
+                journey=journey,
+            )
 
-                return """
-                <!DOCTYPE html>
-                <html lang="zh-CN">
-                <head>
-                    <meta charset="UTF-8">
-                    <title>学习旅程已完成</title>
-                </head>
-                <body>
-                    <h1>学习旅程已完成</h1>
-                    <p>恭喜你完成了当前课程计划。</p>
-                </body>
-                </html>
-                """
+            return render_journey_completion_page(
+                journey=journey,
+                user_id=user_id,
+            )
 
         current_session = get_or_create_learning_session(
             repository=session_repository,

@@ -892,6 +892,19 @@ def test_web_continue_should_complete_journey_after_last_curriculum_topic(
     assert "学习旅程已完成" in second_continue.text
     assert "恭喜你完成了当前课程计划。" in second_continue.text
 
+    assert "学习总结" in second_continue.text
+    assert "已完成学习次数" in second_continue.text
+    assert "2" in second_continue.text
+
+    assert "最初理解度" in second_continue.text
+    assert "60" in second_continue.text
+
+    assert "最终理解度" in second_continue.text
+    assert "85" in second_continue.text
+
+    assert "理解度变化" in second_continue.text
+    assert "25" in second_continue.text
+
     saved_journey = journey_repository.get_by_id(journey["journey_id"])
 
     assert saved_journey.status == "completed"
@@ -960,6 +973,9 @@ def test_web_continue_completed_journey_should_show_completion_page_without_new_
 
     assert response.status_code == 200
     assert "学习旅程已完成" in response.text
+
+    assert "学习总结" in response.text
+    assert "已完成学习次数" in response.text
 
     sessions_after = session_repository.list_by_journey(journey["journey_id"])
 
