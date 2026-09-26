@@ -1,3 +1,4 @@
+import api.app as app_module
 from fastapi.testclient import TestClient
 from api.app import create_app
 from learning.sqlite_session_repository import (
@@ -771,7 +772,15 @@ def test_web_continue_should_complete_journey_after_last_curriculum_topic(
     tmp_path,
     monkeypatch,
 ):
-    app = create_app(database_dir=tmp_path)
+    class FakeCompletionCommentaryGenerator:
+        def generate(self, summary):
+            return "毕业评语：你的理解度持续提升，并完成了当前课程计划。"
+
+    app = create_app(
+        database_dir=tmp_path,
+        completion_commentary_generator=FakeCompletionCommentaryGenerator(),
+    )
+
     client = TestClient(app)
 
     user = client.post(
@@ -913,6 +922,9 @@ def test_web_continue_should_complete_journey_after_last_curriculum_topic(
 
     assert len(sessions) == 2
 
+    assert "毕业评语" in second_continue.text
+    assert "你的理解度持续提升" in second_continue.text
+
 
 def test_web_continue_completed_journey_should_show_completion_page_without_new_session(
     tmp_path,
@@ -980,3 +992,167 @@ def test_web_continue_completed_journey_should_show_completion_page_without_new_
     sessions_after = session_repository.list_by_journey(journey["journey_id"])
 
     assert len(sessions_after) == len(sessions_before)
+
+
+def test_completed_journey_page_should_survive_commentary_generation_failure(
+    tmp_path,
+):
+    class FailingCompletionCommentaryGenerator:
+        def generate(self, summary):
+            raise RuntimeError("LLM journey completion commentary generation failed")
+
+    app = create_app(
+        database_dir=tmp_path,
+        completion_commentary_generator=FailingCompletionCommentaryGenerator(),
+    )
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "完成 Python 学习",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+    session_repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
+
+    saved_journey = journey_repository.get_by_id(journey["journey_id"])
+    saved_journey.status = "completed"
+    journey_repository.save(saved_journey)
+
+    session = session_repository.get_latest_by_journey_for_user(
+        journey_id=journey["journey_id"],
+        user_id=user["user_id"],
+    )
+    session.completed = True
+    session.understanding_score = 80
+    session_repository.save(session)
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "学习旅程已完成" in response.text
+    assert "学习总结" in response.text
+    assert "最终理解度：80" in response.text
+    assert "毕业评语暂时不可用" in response.text
+
+
+def test_web_completed_journey_should_use_default_commentary_generator(
+    tmp_path,
+    monkeypatch,
+):
+    class FakeDefaultCommentaryGenerator:
+        def generate(self, summary):
+            return "默认毕业评语：你已经完成了当前学习旅程。"
+
+    monkeypatch.setattr(
+        app_module,
+        "LLMJourneyCompletionCommentary",
+        FakeDefaultCommentaryGenerator,
+        raising=False,
+    )
+
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "能够独立编写简单程序",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+
+    saved_journey = journey_repository.get_by_id(journey["journey_id"])
+    saved_journey.status = "completed"
+    journey_repository.save(saved_journey)
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "学习旅程已完成" in response.text
+    assert "毕业评语" in response.text
+    assert "默认毕业评语：你已经完成了当前学习旅程。" in response.text
+
+
+def test_web_completed_journey_should_allow_commentary_to_be_disabled(
+    tmp_path,
+):
+    app = create_app(
+        database_dir=tmp_path,
+        completion_commentary_generator=None,
+    )
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "能够独立编写简单程序",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+
+    saved_journey = journey_repository.get_by_id(journey["journey_id"])
+    saved_journey.status = "completed"
+    journey_repository.save(saved_journey)
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "学习旅程已完成" in response.text
+    assert "学习总结" in response.text
+    assert "毕业评语" not in response.text
