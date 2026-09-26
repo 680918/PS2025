@@ -116,7 +116,7 @@ def build_journey_planning_decision(
         if curriculum is not None:
             next_topic = curriculum.get_next_topic(continuity["topic"])
 
-            if next_topic is None:
+            if next_topic is None and curriculum.is_last_topic(continuity["topic"]):
                 action = "complete"
                 reason += " 当前课程计划已完成，没有下一学习主题。"
 
