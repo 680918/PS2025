@@ -423,6 +423,7 @@ def create_app(
                 repository=journey_repository,
                 journey=journey,
                 session_repository=session_repository,
+                curriculum_repository=curriculum_repository,
             )
         except ValueError as error:
             raise HTTPException(
@@ -476,7 +477,7 @@ def create_app(
             user_id=user_id,
         )
 
-        coach_task = run_agent(
+        agent_result = run_agent(
             user_message="请根据我的学习目标和上一次学习反馈，安排今天的学习任务。",
             learning_journey={
                 "domain": journey.domain,
@@ -488,13 +489,37 @@ def create_app(
             learning_session_repository=session_repository,
             learning_evidence_repository=evidence_repository,
             learning_curriculum_repository=curriculum_repository,
+            return_state=True,
         )
 
-        get_or_create_learning_session(
+        if isinstance(agent_result, tuple):
+            agent_state, coach_task = agent_result
+        else:
+            agent_state = None
+            coach_task = agent_result
+
+        session_topic = continuity.get(
+            "topic",
+            journey.domain,
+        )
+
+        if agent_state is not None and agent_state.next_learning_task is not None:
+            planning_decision = agent_state.next_learning_task["context"].get(
+                "planning_decision"
+            )
+
+            if (
+                planning_decision is not None
+                and planning_decision.get("action") == "advance"
+                and planning_decision.get("next_topic") is not None
+            ):
+                session_topic = planning_decision["next_topic"]
+
+        current_session = get_or_create_learning_session(
             repository=session_repository,
             journey_id=journey.journey_id,
             user_id=user_id,
-            topic=journey.domain,
+            topic=session_topic,
         )
         safe_coach_task = escape(str(coach_task))
 
@@ -543,8 +568,14 @@ def create_app(
                 <input
                     type="hidden"
                     name="user_id"
-                    value="{user_id}"
+                    value="{escape(user_id, quote=True)}"
                 >
+                <input
+                    type="hidden"
+                    name="session_id"
+                    value="{escape(current_session.session_id, quote=True)}"
+                >
+
 
                 <label>
                     练习任务：
@@ -851,6 +882,7 @@ def create_app(
                 repository=journey_repository,
                 journey=journey,
                 session_repository=session_repository,
+                curriculum_repository=curriculum_repository,
             )
         except ValueError as error:
             raise HTTPException(

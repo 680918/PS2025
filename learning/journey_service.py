@@ -74,6 +74,7 @@ def start_learning_journey(
     repository,
     journey,
     session_repository=None,
+    curriculum_repository=None,
 ):
     if journey.status == "active":
         raise ValueError("journey already active")
@@ -86,11 +87,23 @@ def start_learning_journey(
     repository.save(journey)
 
     if session_repository is not None:
+        topic = journey.domain
+
+        if curriculum_repository is not None:
+            curriculum = curriculum_repository.get_by_journey_id(journey.journey_id)
+
+            if curriculum is not None and curriculum.items:
+                first_item = min(
+                    curriculum.items,
+                    key=lambda item: item.position,
+                )
+                topic = first_item.topic
+
         return create_and_save_learning_session(
             repository=session_repository,
             journey_id=journey.journey_id,
             user_id=journey.user_id,
-            topic=journey.domain,
+            topic=topic,
         )
 
     return journey

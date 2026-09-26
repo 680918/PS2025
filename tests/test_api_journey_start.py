@@ -1,6 +1,9 @@
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from learning.sqlite_session_repository import (
+    SQLiteLearningSessionRepository,
+)
 
 
 def test_start_journey_should_activate_and_create_session(
@@ -96,3 +99,45 @@ def test_start_journey_should_return_409_when_already_active(
     assert second_response.status_code == 409
 
     assert second_response.json() == {"detail": "journey already active"}
+
+
+def test_start_journey_should_use_first_curriculum_topic(
+    tmp_path,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "能够独立编写简单程序",
+            "curriculum_topics": [
+                "Python开发环境与第一个程序",
+                "变量、数据类型与输入输出",
+            ],
+        },
+    ).json()
+
+    response = client.post(f"/journeys/{journey['journey_id']}/start")
+
+    assert response.status_code == 200
+
+    repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
+
+    session = repository.get_latest_by_journey_for_user(
+        journey_id=journey["journey_id"],
+        user_id=user["user_id"],
+    )
+
+    assert session is not None
+    assert session.topic == "Python开发环境与第一个程序"

@@ -3,6 +3,10 @@ from api.app import create_app
 from learning.sqlite_session_repository import (
     SQLiteLearningSessionRepository,
 )
+from learning.evidence import LearningEvidence
+from learning.sqlite_evidence_repository import (
+    SQLiteLearningEvidenceRepository,
+)
 
 
 def test_web_continue_journey_should_render_previous_learning_context(
@@ -550,3 +554,211 @@ def test_web_continue_should_include_adaptive_planning_in_coach_prompt(
     assert "适当减小单次任务量" in coach_prompt
 
     assert "今天练习慢速英语听力" in third_continue.text
+
+
+def test_web_continue_should_keep_current_curriculum_topic_when_not_advancing(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "能够独立编写简单程序",
+            "curriculum_topics": [
+                "Python开发环境搭建与程序运行",
+                "变量、数据类型与基本输入输出",
+            ],
+        },
+    ).json()
+
+    start_response = client.post(f"/web/journeys/{journey['journey_id']}/start")
+
+    assert start_response.status_code == 200
+    assert "Python开发环境搭建与程序运行" in start_response.text
+
+    feedback_response = client.post(
+        f"/web/journeys/{journey['journey_id']}/feedback",
+        data={
+            "user_id": user["user_id"],
+            "understanding_score": "70",
+            "difficulty": "环境操作还不熟练",
+            "next_step": "继续练习程序运行",
+        },
+    )
+
+    assert feedback_response.status_code == 200
+
+    def fake_run_agent(user_message, **kwargs):
+        return "继续练习当前主题"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
+
+    sessions = repository.list_by_journey(journey["journey_id"])
+
+    assert len(sessions) == 2
+
+    assert sessions[0].topic == ("Python开发环境搭建与程序运行")
+
+    assert sessions[1].topic == ("Python开发环境搭建与程序运行")
+
+
+def test_web_continue_should_advance_to_next_curriculum_topic(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "能够独立编写简单程序",
+            "curriculum_topics": [
+                "Python开发环境搭建与程序运行",
+                "变量、数据类型与基本输入输出",
+            ],
+        },
+    ).json()
+
+    def fake_call_llm(system_prompt, user_message):
+        return {
+            "status": "success",
+            "content": "今天的学习任务",
+        }
+
+    monkeypatch.setattr(
+        "agent.controller.call_llm",
+        fake_call_llm,
+    )
+
+    journey_url = f"/web/journeys/{journey['journey_id']}"
+
+    start_response = client.post(f"{journey_url}/start")
+
+    assert start_response.status_code == 200
+
+    session_repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
+    evidence_repository = SQLiteLearningEvidenceRepository(tmp_path / "sessions.db")
+
+    sessions = session_repository.list_by_journey(journey["journey_id"])
+
+    first_session = sessions[0]
+
+    assert first_session.topic == ("Python开发环境搭建与程序运行")
+
+    first_feedback = client.post(
+        f"{journey_url}/feedback",
+        data={
+            "user_id": user["user_id"],
+            "understanding_score": "60",
+            "difficulty": "环境操作还不熟练",
+            "next_step": "继续练习程序运行",
+        },
+    )
+
+    assert first_feedback.status_code == 200
+
+    evidence_repository.save(
+        LearningEvidence(
+            session_id=first_session.session_id,
+            task="运行 Python 程序",
+            result="4 项测试全部通过",
+            assessment="已完成",
+            tests_passed=4,
+            tests_total=4,
+        )
+    )
+
+    first_continue = client.get(
+        f"{journey_url}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert first_continue.status_code == 200
+
+    sessions = session_repository.list_by_journey(journey["journey_id"])
+
+    assert len(sessions) == 2
+
+    second_session = sessions[1]
+
+    assert second_session.topic == ("Python开发环境搭建与程序运行")
+
+    second_feedback = client.post(
+        f"{journey_url}/feedback",
+        data={
+            "user_id": user["user_id"],
+            "understanding_score": "85",
+            "difficulty": "已经基本掌握程序运行",
+            "next_step": "进入下一主题",
+        },
+    )
+
+    assert second_feedback.status_code == 200
+
+    evidence_repository.save(
+        LearningEvidence(
+            session_id=second_session.session_id,
+            task="独立运行 Python 程序",
+            result="4 项测试全部通过",
+            assessment="已完成",
+            tests_passed=4,
+            tests_total=4,
+        )
+    )
+
+    second_continue = client.get(
+        f"{journey_url}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert second_continue.status_code == 200
+
+    sessions = session_repository.list_by_journey(journey["journey_id"])
+
+    assert len(sessions) == 3
+
+    third_session = sessions[2]
+
+    assert third_session.topic == ("变量、数据类型与基本输入输出")
