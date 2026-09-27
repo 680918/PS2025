@@ -22,3 +22,5 @@ logs/
 
 # Local runtime data
 data/memory.db
+
+data/*-smoke/
