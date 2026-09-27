@@ -24,3 +24,20 @@ def create_memory_service(db_path=None):
     ensure_skill_map_migrated(service)
 
     return service
+
+
+def create_user_memory_service(
+    database_dir,
+    user_id,
+):
+    database_dir = Path(database_dir)
+
+    memory_dir = database_dir / "memory"
+    memory_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    store = SQLiteMemoryStore(memory_dir / f"{user_id}.db")
+
+    return MemoryService(store)
