@@ -55,6 +55,12 @@ from learning.journey_completion_report_service import (
 from learning.sqlite_journey_completion_report_repository import (
     SQLiteJourneyCompletionReportRepository,
 )
+from memory.runtime import (
+    create_user_memory_service,
+)
+from memory.journey_memory_consolidation_service import (
+    consolidate_journey_completion_summary,
+)
 
 _DEFAULT_CURRICULUM_GENERATOR = object()
 _DEFAULT_COMPLETION_COMMENTARY_GENERATOR = object()
@@ -105,6 +111,16 @@ def create_app(
             evidence_repository=evidence_repository,
             journey_id=journey.journey_id,
             user_id=user_id,
+        )
+
+        memory_service = create_user_memory_service(
+            database_dir=database_dir,
+            user_id=user_id,
+        )
+
+        consolidate_journey_completion_summary(
+            summary=summary,
+            memory_service=memory_service,
         )
 
         commentary_html = ""

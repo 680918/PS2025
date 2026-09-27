@@ -1282,3 +1282,211 @@ def test_completed_journey_should_reuse_report_after_app_restart(
 
     assert second_response.status_code == 200
     assert "这是第一次生成并持久化的毕业评语。" in second_response.text
+
+
+def test_completed_journey_should_write_learning_memory_for_user(
+    tmp_path,
+):
+    import json
+
+    from memory.runtime import create_user_memory_service
+
+    class FakeCommentaryGenerator:
+        def generate(self, summary):
+            return "学习旅程已完成。"
+
+    app = create_app(
+        database_dir=tmp_path,
+        completion_commentary_generator=FakeCommentaryGenerator(),
+    )
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "完成 Python 基础学习",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+
+    saved_journey = journey_repository.get_by_id(journey["journey_id"])
+    saved_journey.status = "completed"
+    journey_repository.save(saved_journey)
+
+    response = client.get(
+        (f"/web/journeys/{journey['journey_id']}/continue?user_id={user['user_id']}")
+    )
+
+    assert response.status_code == 200
+
+    memory_service = create_user_memory_service(
+        database_dir=tmp_path,
+        user_id=user["user_id"],
+    )
+
+    saved_memory = memory_service.get_by_key(
+        "learning",
+        f"journey_completion:{journey['journey_id']}",
+    )
+
+    assert saved_memory is not None
+    assert saved_memory.memory_type == "learning"
+
+    content = json.loads(saved_memory.content)
+
+    assert content["journey_id"] == journey["journey_id"]
+    assert content["domain"] == "Python"
+    assert content["goal"] == "完成 Python 基础学习"
+
+
+def test_completed_journey_memory_should_not_leak_to_another_user(
+    tmp_path,
+):
+    from memory.runtime import create_user_memory_service
+
+    class FakeCommentaryGenerator:
+        def generate(self, summary):
+            return "学习旅程已完成。"
+
+    app = create_app(
+        database_dir=tmp_path,
+        completion_commentary_generator=FakeCommentaryGenerator(),
+    )
+    client = TestClient(app)
+
+    user_a = client.post(
+        "/users",
+        json={
+            "name": "用户 A",
+            "email": "user_a@example.com",
+        },
+    ).json()
+
+    user_b = client.post(
+        "/users",
+        json={
+            "name": "用户 B",
+            "email": "user_b@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user_a["user_id"],
+            "domain": "Python",
+            "goal": "完成 Python 基础学习",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+
+    saved_journey = journey_repository.get_by_id(journey["journey_id"])
+    saved_journey.status = "completed"
+    journey_repository.save(saved_journey)
+
+    response = client.get(
+        (f"/web/journeys/{journey['journey_id']}/continue?user_id={user_a['user_id']}")
+    )
+
+    assert response.status_code == 200
+
+    user_a_memory = create_user_memory_service(
+        database_dir=tmp_path,
+        user_id=user_a["user_id"],
+    )
+
+    user_b_memory = create_user_memory_service(
+        database_dir=tmp_path,
+        user_id=user_b["user_id"],
+    )
+
+    memory_key = f"journey_completion:{journey['journey_id']}"
+
+    assert (
+        user_a_memory.get_by_key(
+            "learning",
+            memory_key,
+        )
+        is not None
+    )
+
+    assert (
+        user_b_memory.get_by_key(
+            "learning",
+            memory_key,
+        )
+        is None
+    )
+
+
+def test_completed_journey_should_write_memory_when_commentary_disabled(
+    tmp_path,
+):
+    from memory.runtime import create_user_memory_service
+
+    app = create_app(
+        database_dir=tmp_path,
+        completion_commentary_generator=None,
+    )
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "完成 Python 基础学习",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+
+    saved_journey = journey_repository.get_by_id(journey["journey_id"])
+    saved_journey.status = "completed"
+    journey_repository.save(saved_journey)
+
+    response = client.get(
+        (f"/web/journeys/{journey['journey_id']}/continue?user_id={user['user_id']}")
+    )
+
+    assert response.status_code == 200
+
+    memory_service = create_user_memory_service(
+        database_dir=tmp_path,
+        user_id=user["user_id"],
+    )
+
+    saved_memory = memory_service.get_by_key(
+        "learning",
+        f"journey_completion:{journey['journey_id']}",
+    )
+
+    assert saved_memory is not None
+
+    assert "毕业评语" not in response.text
