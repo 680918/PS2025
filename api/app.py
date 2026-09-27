@@ -46,11 +46,14 @@ from learning.journey_completion_summary import (
     JourneyNotFoundError,
     build_journey_completion_summary_from_repositories,
 )
-from learning.journey_completion_commentary_service import (
-    generate_journey_completion_commentary,
-)
 from learning.llm_journey_completion_commentary import (
     LLMJourneyCompletionCommentary,
+)
+from learning.journey_completion_report_service import (
+    get_or_create_journey_completion_report,
+)
+from learning.sqlite_journey_completion_report_repository import (
+    SQLiteJourneyCompletionReportRepository,
 )
 
 _DEFAULT_CURRICULUM_GENERATOR = object()
@@ -88,6 +91,10 @@ def create_app(
         curriculum_repository=curriculum_repository,
     )
 
+    completion_report_repository = SQLiteJourneyCompletionReportRepository(
+        database_dir / "completion_reports.db"
+    )
+
     def render_journey_completion_page(
         journey,
         user_id,
@@ -104,12 +111,18 @@ def create_app(
 
         if completion_commentary_generator is not None:
             try:
-                commentary = generate_journey_completion_commentary(
+                report = get_or_create_journey_completion_report(
+                    repository=completion_report_repository,
                     summary=summary,
+                    user_id=user_id,
                     commentary_generator=completion_commentary_generator,
                 )
 
-                safe_commentary = escape(str(commentary))
+                # 页面展示的 Summary 和 Commentary
+                # 都使用已经持久化的同一份 Report。
+                summary = report.summary
+
+                safe_commentary = escape(str(report.commentary))
 
                 commentary_html = f"""
                 <h2>毕业评语</h2>
