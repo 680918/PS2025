@@ -621,8 +621,14 @@ def create_app(
             user_id=user_id,
         )
 
+        memory_service = create_user_memory_service(
+            database_dir=database_dir,
+            user_id=user_id,
+        )
+
         agent_result = run_agent(
             user_message="请根据我的学习目标和上一次学习反馈，安排今天的学习任务。",
+            memory_service=memory_service,
             learning_journey={
                 "domain": journey.domain,
                 "goal": journey.goal,
