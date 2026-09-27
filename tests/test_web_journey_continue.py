@@ -1156,3 +1156,129 @@ def test_web_completed_journey_should_allow_commentary_to_be_disabled(
     assert "学习旅程已完成" in response.text
     assert "学习总结" in response.text
     assert "毕业评语" not in response.text
+
+
+def test_completed_journey_should_reuse_persisted_report_without_regenerating_commentary(
+    tmp_path,
+):
+    class CountingCommentaryGenerator:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, summary):
+            self.calls += 1
+            return "这是持久化后的毕业评语。"
+
+    generator = CountingCommentaryGenerator()
+
+    app = create_app(
+        database_dir=tmp_path,
+        completion_commentary_generator=generator,
+    )
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "完成 Python 基础学习",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+
+    saved_journey = journey_repository.get_by_id(journey["journey_id"])
+    saved_journey.status = "completed"
+    journey_repository.save(saved_journey)
+
+    url = f"/web/journeys/{journey['journey_id']}/continue?user_id={user['user_id']}"
+
+    first_response = client.get(url)
+    second_response = client.get(url)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    assert "这是持久化后的毕业评语。" in first_response.text
+    assert "这是持久化后的毕业评语。" in second_response.text
+
+    assert generator.calls == 1
+
+
+def test_completed_journey_should_reuse_report_after_app_restart(
+    tmp_path,
+):
+    class FirstCommentaryGenerator:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, summary):
+            self.calls += 1
+            return "这是第一次生成并持久化的毕业评语。"
+
+    first_generator = FirstCommentaryGenerator()
+
+    first_app = create_app(
+        database_dir=tmp_path,
+        completion_commentary_generator=first_generator,
+    )
+    first_client = TestClient(first_app)
+
+    user = first_client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = first_client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "完成 Python 基础学习",
+        },
+    ).json()
+
+    first_client.post(f"/journeys/{journey['journey_id']}/start")
+
+    journey_repository = SQLiteLearningJourneyRepository(tmp_path / "journeys.db")
+
+    saved_journey = journey_repository.get_by_id(journey["journey_id"])
+    saved_journey.status = "completed"
+    journey_repository.save(saved_journey)
+
+    url = f"/web/journeys/{journey['journey_id']}/continue?user_id={user['user_id']}"
+
+    first_response = first_client.get(url)
+
+    assert first_response.status_code == 200
+    assert "这是第一次生成并持久化的毕业评语。" in first_response.text
+    assert first_generator.calls == 1
+
+    class FailingCommentaryGenerator:
+        def generate(self, summary):
+            raise AssertionError("LLM should not be called after app restart")
+
+    second_app = create_app(
+        database_dir=tmp_path,
+        completion_commentary_generator=FailingCommentaryGenerator(),
+    )
+    second_client = TestClient(second_app)
+
+    second_response = second_client.get(url)
+
+    assert second_response.status_code == 200
+    assert "这是第一次生成并持久化的毕业评语。" in second_response.text
