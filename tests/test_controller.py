@@ -1,5 +1,6 @@
 import agent.executor as executor_module
 import pytest
+import agent.controller as controller_module
 
 from unittest.mock import Mock
 from memory.service import MemoryService
@@ -6356,3 +6357,121 @@ def test_run_agent_should_forward_curriculum_repository_to_runtime(
 
     assert response == "教练任务"
     assert captured["learning_curriculum_repository"] is curriculum_repository
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_load_memory_context(
+    monkeypatch,
+):
+    expected_memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": "journey_completion:journey_001",
+                "content": ('{"domain": "Python", "latest_understanding": 85}'),
+            }
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def __init__(self):
+            self.calls = 0
+
+        def get_context(self):
+            self.calls += 1
+            return expected_memory_context
+
+    memory_service = FakeMemoryService()
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    state, response = run_agent_runtime(
+        user_message="今天应该学习什么？",
+        memory_service=memory_service,
+    )
+
+    assert response == "测试回答"
+
+    assert memory_service.calls == 1
+
+    assert state.memory_context == expected_memory_context
+
+    assert (
+        state.memory_context["learning"][0]["memory_key"]
+        == "journey_completion:journey_001"
+    )
+
+
+@pytest.mark.unit
+def test_run_simple_runtime_should_include_memory_context_in_system_prompt(
+    monkeypatch,
+):
+    state = AgentState("今天应该学习什么？")
+
+    state.set_memory_context(
+        {
+            "profile": [],
+            "skill": [],
+            "learning": [
+                {
+                    "memory_key": ("journey_completion:journey_001"),
+                    "content": ('{"domain": "Python", "latest_understanding": 85}'),
+                }
+            ],
+            "project": [],
+            "experience": [],
+        }
+    )
+
+    captured = {}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+        captured["user_message"] = user_message
+
+        return {
+            "status": "success",
+            "content": "今天继续学习 Python。",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    returned_state, runtime_status = run_simple_runtime(
+        "今天应该学习什么？",
+        state=state,
+    )
+
+    assert runtime_status == "success"
+    assert returned_state is state
+
+    system_prompt = captured["system_prompt"]
+
+    assert "以下是与当前用户有关的长期记忆" in system_prompt
+
+    assert "journey_completion:journey_001" in system_prompt
+
+    assert "journey_completion:journey_001" in captured["system_prompt"]
+    assert "latest_understanding" in captured["system_prompt"]
+    assert "Python" in captured["system_prompt"]
+    assert "Python" in system_prompt

@@ -1490,3 +1490,81 @@ def test_completed_journey_should_write_memory_when_commentary_disabled(
     assert saved_memory is not None
 
     assert "毕业评语" not in response.text
+
+
+def test_web_continue_should_forward_current_user_memory_to_agent(
+    tmp_path,
+    monkeypatch,
+):
+    from memory.runtime import create_user_memory_service
+
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "继续提升 Python 能力",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    memory_service = create_user_memory_service(
+        database_dir=tmp_path,
+        user_id=user["user_id"],
+    )
+
+    memory_service.remember(
+        memory_type="learning",
+        memory_key="journey_completion:previous_journey",
+        content='{"domain": "Python", "latest_understanding": 85}',
+        importance=0.9,
+        confidence=0.95,
+        source="journey_completion_report",
+    )
+
+    captured = {}
+
+    def fake_run_agent(
+        user_message,
+        **kwargs,
+    ):
+        captured.update(kwargs)
+        return "今天继续学习 Python"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    agent_memory_service = captured.get("memory_service")
+
+    assert agent_memory_service is not None
+
+    saved_memory = agent_memory_service.get_by_key(
+        "learning",
+        "journey_completion:previous_journey",
+    )
+
+    assert saved_memory is not None
+    assert '"latest_understanding": 85' in saved_memory.content
