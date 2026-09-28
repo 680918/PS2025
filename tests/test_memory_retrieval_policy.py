@@ -5,9 +5,7 @@ from memory.retrieval_policy import get_memory_policy
 
 def test_should_get_journey_completion_policy():
 
-    policy = get_memory_policy(
-        "journey_completion:python"
-    )
+    policy = get_memory_policy("journey_completion:python")
 
     assert policy.name == "journey_completion"
 
@@ -23,14 +21,16 @@ def test_journey_completion_policy_should_include_matching_domain():
         ),
     }
 
-    policy = get_memory_policy(
-        memory["memory_key"]
+    policy = get_memory_policy(memory["memory_key"])
+
+    assert (
+        policy.should_include(
+            memory,
+            learning_domain="Python",
+        )
+        is True
     )
 
-    assert policy.should_include(
-        memory,
-        learning_domain="Python",
-    ) is True
 
 def test_journey_completion_policy_should_exclude_mismatched_domain():
     memory = {
@@ -43,14 +43,16 @@ def test_journey_completion_policy_should_exclude_mismatched_domain():
         ),
     }
 
-    policy = get_memory_policy(
-        memory["memory_key"]
+    policy = get_memory_policy(memory["memory_key"])
+
+    assert (
+        policy.should_include(
+            memory,
+            learning_domain="Python",
+        )
+        is False
     )
 
-    assert policy.should_include(
-        memory,
-        learning_domain="Python",
-    ) is False
 
 def test_journey_completion_policy_should_exclude_invalid_json():
     memory = {
@@ -58,14 +60,16 @@ def test_journey_completion_policy_should_exclude_invalid_json():
         "content": "not-valid-json",
     }
 
-    policy = get_memory_policy(
-        memory["memory_key"]
+    policy = get_memory_policy(memory["memory_key"])
+
+    assert (
+        policy.should_include(
+            memory,
+            learning_domain="Python",
+        )
+        is False
     )
 
-    assert policy.should_include(
-        memory,
-        learning_domain="Python",
-    ) is False
 
 def test_journey_completion_policy_should_include_when_learning_domain_is_none():
     memory = {
@@ -73,11 +77,12 @@ def test_journey_completion_policy_should_include_when_learning_domain_is_none()
         "content": "not-valid-json",
     }
 
-    policy = get_memory_policy(
-        memory["memory_key"]
-    )
+    policy = get_memory_policy(memory["memory_key"])
 
-    assert policy.should_include(
-        memory,
-        learning_domain=None,
-    ) is True
+    assert (
+        policy.should_include(
+            memory,
+            learning_domain=None,
+        )
+        is True
+    )

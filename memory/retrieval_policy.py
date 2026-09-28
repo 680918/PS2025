@@ -16,7 +16,6 @@ class MemoryRetrievalPolicy:
 
 @dataclass(frozen=True)
 class JourneyCompletionPolicy(MemoryRetrievalPolicy):
-
     def should_include(
         self,
         memory,

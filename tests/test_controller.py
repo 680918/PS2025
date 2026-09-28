@@ -6476,6 +6476,7 @@ def test_run_simple_runtime_should_include_memory_context_in_system_prompt(
     assert "Python" in captured["system_prompt"]
     assert "Python" in system_prompt
 
+
 @pytest.mark.unit
 def test_run_agent_runtime_should_select_memory_for_current_learning_domain(
     monkeypatch,
@@ -6537,8 +6538,7 @@ def test_run_agent_runtime_should_select_memory_for_current_learning_domain(
     assert response == "测试回答"
 
     learning_keys = [
-        memory["memory_key"]
-        for memory in state.memory_context["learning"]
+        memory["memory_key"] for memory in state.memory_context["learning"]
     ]
 
     assert "journey_completion:python" in learning_keys

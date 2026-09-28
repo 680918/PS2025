@@ -49,12 +49,10 @@ def test_memory_context_selector_should_keep_only_matching_learning_domain():
 
     assert len(selected["learning"]) == 1
 
-    assert (
-        selected["learning"][0]["memory_key"]
-        == "journey_completion:python"
-    )
+    assert selected["learning"][0]["memory_key"] == "journey_completion:python"
 
     assert selected["profile"] == memory_context["profile"]
+
 
 def test_memory_context_selector_should_ignore_invalid_learning_memory():
     memory_context = {
@@ -88,10 +86,8 @@ def test_memory_context_selector_should_ignore_invalid_learning_memory():
 
     assert len(selected["learning"]) == 1
 
-    assert (
-        selected["learning"][0]["memory_key"]
-        == "journey_completion:python"
-    )
+    assert selected["learning"][0]["memory_key"] == "journey_completion:python"
+
 
 def test_memory_context_selector_should_preserve_non_journey_learning_memory():
     memory_context = {
@@ -134,10 +130,7 @@ def test_memory_context_selector_should_preserve_non_journey_learning_memory():
         learning_domain="Python",
     )
 
-    selected_keys = [
-        memory["memory_key"]
-        for memory in selected["learning"]
-    ]
+    selected_keys = [memory["memory_key"] for memory in selected["learning"]]
 
     assert "learning_feedback:001" in selected_keys
     assert "journey_completion:python" in selected_keys
