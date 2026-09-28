@@ -6475,3 +6475,72 @@ def test_run_simple_runtime_should_include_memory_context_in_system_prompt(
     assert "latest_understanding" in captured["system_prompt"]
     assert "Python" in captured["system_prompt"]
     assert "Python" in system_prompt
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_select_memory_for_current_learning_domain(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": "journey_completion:python",
+                "content": (
+                    '{"journey_id": "python", '
+                    '"domain": "Python", '
+                    '"latest_understanding": 85}'
+                ),
+            },
+            {
+                "memory_key": "journey_completion:english",
+                "content": (
+                    '{"journey_id": "english", '
+                    '"domain": "英语", '
+                    '"latest_understanding": 70}'
+                ),
+            },
+            {
+                "memory_key": "learning_feedback:001",
+                "content": "用户需要增加代码实践",
+            },
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    state, response = run_agent_runtime(
+        user_message="今天继续学习 Python",
+        memory_service=FakeMemoryService(),
+        learning_journey={
+            "domain": "Python",
+            "goal": "提升 Python 能力",
+        },
+    )
+
+    assert response == "测试回答"
+
+    learning_keys = [
+        memory["memory_key"] for memory in state.memory_context["learning"]
+    ]
+
+    assert "journey_completion:python" in learning_keys
+    assert "journey_completion:english" not in learning_keys
+    assert "learning_feedback:001" in learning_keys

@@ -39,6 +39,9 @@ from evaluation.journey_evidence_service import (
     evaluate_journey_evidence,
     evaluate_session_evidence,
 )
+from memory.context_selector import (
+    select_relevant_memory_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +262,24 @@ def run_agent_runtime(
 
     if memory_service is not None:
         memory_context = memory_service.get_context()
+
+        learning_domain = None
+
+        if learning_journey is not None:
+            if isinstance(learning_journey, dict):
+                learning_domain = learning_journey.get("domain")
+            else:
+                learning_domain = getattr(
+                    learning_journey,
+                    "domain",
+                    None,
+                )
+
+        memory_context = select_relevant_memory_context(
+            memory_context,
+            learning_domain=learning_domain,
+        )
+
         state.set_memory_context(memory_context)
 
     if knowledge_service is not None:
