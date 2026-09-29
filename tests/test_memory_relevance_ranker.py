@@ -165,3 +165,27 @@ def test_rank_memories_should_limit_results_with_top_k():
         "learning_feedback:python",
         "learning_feedback:python-basics",
     ]
+
+
+def test_score_memory_should_rank_semantic_alias_above_token_distractor():
+    semantic_memory = {
+        "memory_key": "learning_feedback:external-tools",
+        "content": "学习如何让智能体调用外部工具",
+    }
+
+    distractor_memory = {
+        "memory_key": "learning_feedback:agent-planning",
+        "content": "Agent planning notes",
+    }
+
+    semantic_score = score_memory(
+        semantic_memory,
+        query="Agent Tool Calling",
+    )
+
+    distractor_score = score_memory(
+        distractor_memory,
+        query="Agent Tool Calling",
+    )
+
+    assert semantic_score > distractor_score
