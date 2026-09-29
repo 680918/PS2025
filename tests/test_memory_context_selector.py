@@ -135,3 +135,40 @@ def test_memory_context_selector_should_preserve_non_journey_learning_memory():
     assert "learning_feedback:001" in selected_keys
     assert "journey_completion:python" in selected_keys
     assert "journey_completion:english" not in selected_keys
+
+
+def test_memory_context_selector_should_rank_and_limit_learning_memory():
+    memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": "learning_feedback:english",
+                "content": "English vocabulary review",
+            },
+            {
+                "memory_key": "learning_feedback:python",
+                "content": "Python Tool Calling practice",
+            },
+            {
+                "memory_key": "learning_feedback:python-basics",
+                "content": "Python basics",
+            },
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    selected = select_relevant_memory_context(
+        memory_context,
+        learning_domain="Python",
+        query="Python Tool Calling",
+        learning_top_k=2,
+    )
+
+    selected_keys = [memory["memory_key"] for memory in selected["learning"]]
+
+    assert selected_keys == [
+        "learning_feedback:python",
+        "learning_feedback:python-basics",
+    ]
