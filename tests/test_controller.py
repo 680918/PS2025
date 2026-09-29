@@ -6544,3 +6544,141 @@ def test_run_agent_runtime_should_select_memory_for_current_learning_domain(
     assert "journey_completion:python" in learning_keys
     assert "journey_completion:english" not in learning_keys
     assert "learning_feedback:001" in learning_keys
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_rank_memory_for_current_user_message(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": "learning_feedback:english",
+                "content": "English vocabulary review",
+            },
+            {
+                "memory_key": "learning_feedback:python-tool-calling",
+                "content": "Python Tool Calling practice",
+            },
+            {
+                "memory_key": "learning_feedback:python-basics",
+                "content": "Python basics",
+            },
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "LEARNING_MEMORY_TOP_K",
+        3,
+    )
+
+    state, response = run_agent_runtime(
+        user_message="Python Tool Calling",
+        memory_service=FakeMemoryService(),
+        learning_journey={
+            "domain": "Python",
+            "goal": "提升 Python 能力",
+        },
+    )
+
+    learning_keys = [
+        memory["memory_key"] for memory in state.memory_context["learning"]
+    ]
+
+    assert response == "测试回答"
+
+    assert learning_keys == [
+        "learning_feedback:python-tool-calling",
+        "learning_feedback:python-basics",
+        "learning_feedback:english",
+    ]
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_limit_ranked_learning_memory(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": "learning_feedback:english",
+                "content": "English vocabulary review",
+            },
+            {
+                "memory_key": "learning_feedback:python-tool-calling",
+                "content": "Python Tool Calling practice",
+            },
+            {
+                "memory_key": "learning_feedback:python-basics",
+                "content": "Python basics",
+            },
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    monkeypatch.setattr(
+        controller_module,
+        "LEARNING_MEMORY_TOP_K",
+        2,
+        raising=False,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    state, response = run_agent_runtime(
+        user_message="Python Tool Calling",
+        memory_service=FakeMemoryService(),
+        learning_journey={
+            "domain": "Python",
+            "goal": "提升 Python 能力",
+        },
+    )
+
+    learning_keys = [
+        memory["memory_key"] for memory in state.memory_context["learning"]
+    ]
+
+    assert response == "测试回答"
+
+    assert learning_keys == [
+        "learning_feedback:python-tool-calling",
+        "learning_feedback:python-basics",
+    ]
