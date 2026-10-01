@@ -7,6 +7,19 @@ def format_benchmark_report(
 
     lines.append("")
 
+    cases = report.get(
+        "cases",
+        {},
+    )
+
+    for case_name, case_data in cases.items():
+        lines.append(f"Case: {case_name}")
+
+        for k, metrics in case_data["metrics"].items():
+            lines.append(f"K={k} F1: {metrics['f1_at_k']:.2f}")
+
+        lines.append("")
+
     lines.append("Average F1")
 
     for k, f1 in report.get(

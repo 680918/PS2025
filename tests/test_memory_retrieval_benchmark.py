@@ -47,3 +47,17 @@ def test_retrieval_benchmark_result_should_include_metrics():
 
     assert 1 in first_case["metrics"]
     assert 2 in first_case["metrics"]
+
+
+def test_retrieval_benchmark_should_include_multiple_domains():
+
+    cases = get_retrieval_benchmark_cases()
+
+    names = [case["name"] for case in cases]
+
+    assert len(cases) >= 4
+
+    assert "python_tool_calling" in names
+    assert "agent_memory" in names
+    assert "stock_strategy" in names
+    assert "reading_system" in names

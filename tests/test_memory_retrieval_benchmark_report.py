@@ -34,3 +34,33 @@ def test_benchmark_report_should_calculate_average_f1():
 
     assert report["average_f1_by_k"][1] == 0.75
     assert report["average_f1_by_k"][2] == 0.75
+
+
+def test_benchmark_report_should_include_case_names():
+
+    results = [
+        {
+            "name": "python_tool_calling",
+            "metrics": {
+                1: {
+                    "f1_at_k": 0.5,
+                }
+            },
+        },
+        {
+            "name": "agent_memory",
+            "metrics": {
+                1: {
+                    "f1_at_k": 1.0,
+                }
+            },
+        },
+    ]
+
+    report = summarize_benchmark_results(results)
+
+    assert "cases" in report
+
+    assert "python_tool_calling" in report["cases"]
+
+    assert "agent_memory" in report["cases"]
