@@ -119,4 +119,29 @@ def get_retrieval_benchmark_cases():
                 "learning_feedback:tool-calling",
             },
         },
+        {
+            "name": "tool_calling_keyword_distractor",
+            "query": "继续学习 Tool Calling",
+            "memories": [
+                {
+                    "memory_key": "learning_feedback:tool-calling",
+                    "content": ("Agent 工具调用设计，包括 Tool Calling 接口和实践"),
+                },
+                {
+                    "memory_key": "learning_feedback:english-tool",
+                    "content": ("英语学习中的 tool 单词和 vocabulary 表达"),
+                },
+                {
+                    "memory_key": "learning_feedback:python",
+                    "content": ("Python 基础语法和编程练习"),
+                },
+                {
+                    "memory_key": "learning_feedback:reading",
+                    "content": ("阅读习惯培养和书籍总结"),
+                },
+            ],
+            "relevant_keys": {
+                "learning_feedback:tool-calling",
+            },
+        },
     ]

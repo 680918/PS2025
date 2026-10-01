@@ -70,3 +70,12 @@ def test_retrieval_benchmark_should_include_hard_cases():
     names = [case["name"] for case in cases]
 
     assert "agent_memory_semantic_hard" in names
+
+
+def test_retrieval_benchmark_should_include_keyword_distractor_cases():
+
+    cases = get_retrieval_benchmark_cases()
+
+    names = [case["name"] for case in cases]
+
+    assert "tool_calling_keyword_distractor" in names
