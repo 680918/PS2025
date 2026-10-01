@@ -2,12 +2,23 @@ def summarize_benchmark_results(
     results,
 ):
     if not results:
-        return {"average_f1_by_k": {}}
+        return {
+            "cases": {},
+            "average_f1_by_k": {},
+        }
 
     totals = {}
     counts = {}
 
+    cases = {}
+
     for result in results:
+        case_name = result["name"]
+
+        cases[case_name] = {
+            "metrics": result["metrics"],
+        }
+
         for k, metrics in result["metrics"].items():
             if k not in totals:
                 totals[k] = 0.0
@@ -18,4 +29,7 @@ def summarize_benchmark_results(
 
     average_f1_by_k = {k: totals[k] / counts[k] for k in totals}
 
-    return {"average_f1_by_k": average_f1_by_k}
+    return {
+        "cases": cases,
+        "average_f1_by_k": average_f1_by_k,
+    }
