@@ -16,6 +16,7 @@ def calculate_recall_at_k(
 
     return hits / len(relevant_keys)
 
+
 def calculate_precision_at_k(
     retrieved_keys,
     relevant_keys,
@@ -27,9 +28,7 @@ def calculate_precision_at_k(
 
     relevant_keys = set(relevant_keys)
 
-    hits = len(
-        retrieved_keys & relevant_keys
-    )
+    hits = len(retrieved_keys & relevant_keys)
 
     return hits / len(retrieved_keys)
 
@@ -53,6 +52,7 @@ def evaluate_retrieval_recall(
         relevant_keys,
     )
 
+
 def evaluate_retrieval_quality(
     memories,
     query,
@@ -65,10 +65,7 @@ def evaluate_retrieval_quality(
         top_k=top_k,
     )
 
-    retrieved_keys = [
-        memory.get("memory_key")
-        for memory in ranked_memories
-    ]
+    retrieved_keys = [memory.get("memory_key") for memory in ranked_memories]
 
     recall = calculate_recall_at_k(
         retrieved_keys,
@@ -91,6 +88,7 @@ def evaluate_retrieval_quality(
         "f1_at_k": f1,
     }
 
+
 def evaluate_retrieval_quality_by_k(
     memories,
     query,
@@ -109,6 +107,7 @@ def evaluate_retrieval_quality_by_k(
 
     return results
 
+
 def calculate_f1(
     precision,
     recall,
@@ -116,9 +115,4 @@ def calculate_f1(
     if precision + recall == 0:
         return 0.0
 
-    return (
-        2
-        * precision
-        * recall
-        / (precision + recall)
-    )
+    return 2 * precision * recall / (precision + recall)
