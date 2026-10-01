@@ -93,4 +93,30 @@ def get_retrieval_benchmark_cases():
                 "learning_feedback:book-notes",
             },
         },
+        {
+            "name": "agent_memory_semantic_hard",
+            "query": "继续设计 AI Agent Memory",
+            "memories": [
+                {
+                    "memory_key": "learning_feedback:agent-memory",
+                    "content": "智能体长期记忆架构设计与 Memory 系统优化",
+                },
+                {
+                    "memory_key": "learning_feedback:tool-calling",
+                    "content": "Tool Calling 接口设计与 Agent 工具调用",
+                },
+                {
+                    "memory_key": "learning_feedback:python",
+                    "content": "Python 基础语法和编程练习",
+                },
+                {
+                    "memory_key": "learning_feedback:english",
+                    "content": "English vocabulary learning",
+                },
+            ],
+            "relevant_keys": {
+                "learning_feedback:agent-memory",
+                "learning_feedback:tool-calling",
+            },
+        },
     ]
