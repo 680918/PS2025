@@ -54,7 +54,14 @@ def score_memory(
 
     overlap = len(query_tokens & content_tokens)
 
-    lexical_score = overlap / len(query_tokens)
+    if overlap == len(query_tokens):
+        lexical_score = 1.0
+
+    elif overlap > 0:
+        lexical_score = (overlap / len(query_tokens)) * 0.5
+
+    else:
+        lexical_score = 0.0
 
     return max(
         lexical_score,
@@ -66,15 +73,34 @@ def rank_memories(
     memories,
     query=None,
     top_k=None,
+    threshold=None,
 ):
-    ranked = sorted(
-        memories,
-        key=lambda memory: score_memory(
+    scored_memories = []
+
+    for memory in memories:
+        score = score_memory(
             memory,
-            query=query,
-        ),
-        reverse=True,
-    )
+            query,
+        )
+
+        if threshold is not None and score <= threshold:
+            continue
+
+        scored_memories.append(
+            (
+                memory,
+                score,
+            )
+        )
+
+    ranked = [
+        memory
+        for memory, _ in sorted(
+            scored_memories,
+            key=lambda item: item[1],
+            reverse=True,
+        )
+    ]
 
     if top_k is None:
         return ranked

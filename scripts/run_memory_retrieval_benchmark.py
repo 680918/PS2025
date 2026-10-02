@@ -15,6 +15,7 @@ def build_benchmark_output():
 
     results = run_retrieval_benchmark(
         k_values=[1, 2, 3],
+        threshold=0.5,
     )
 
     report = summarize_benchmark_results(results)

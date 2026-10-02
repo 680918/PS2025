@@ -189,3 +189,119 @@ def test_score_memory_should_rank_semantic_alias_above_token_distractor():
     )
 
     assert semantic_score > distractor_score
+
+
+def test_score_memory_should_penalize_semantic_distractor():
+
+    relevant = {
+        "memory_key": "learning_feedback:tool-calling",
+        "content": "Agent Tool Calling design",
+    }
+
+    distractor = {
+        "memory_key": "learning_feedback:english-tool",
+        "content": "English tool vocabulary",
+    }
+
+    query = "Tool Calling"
+
+    assert score_memory(
+        relevant,
+        query,
+    ) > score_memory(
+        distractor,
+        query,
+    )
+
+
+def test_rank_memories_should_filter_low_score_results():
+
+    memories = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Agent Tool Calling design",
+        },
+        {
+            "memory_key": "learning_feedback:english-tool",
+            "content": "English tool vocabulary",
+        },
+        {
+            "memory_key": "learning_feedback:reading",
+            "content": "Reading habit",
+        },
+    ]
+
+    results = rank_memories(
+        memories,
+        "Tool Calling",
+        threshold=0.5,
+    )
+
+    keys = [item["memory_key"] for item in results]
+
+    assert "learning_feedback:tool-calling" in keys
+
+    assert "learning_feedback:english-tool" not in keys
+
+
+def test_score_memory_should_penalize_keyword_only_distractor():
+
+    relevant = {
+        "memory_key": "learning_feedback:tool-calling",
+        "content": ("Agent Tool Calling interface design"),
+    }
+
+    distractor = {
+        "memory_key": "learning_feedback:english-tool",
+        "content": ("English vocabulary tool word"),
+    }
+
+    query = "Tool Calling"
+
+    assert score_memory(
+        relevant,
+        query,
+    ) > score_memory(
+        distractor,
+        query,
+    )
+
+
+def test_score_memory_should_penalize_domain_mismatch():
+
+    query = "Tool Calling"
+
+    relevant = {
+        "memory_key": "learning_feedback:tool-calling",
+        "content": ("Agent Tool Calling interface design"),
+    }
+
+    distractor = {
+        "memory_key": "learning_feedback:english-tool",
+        "content": ("English vocabulary word learning"),
+    }
+
+    assert score_memory(
+        relevant,
+        query,
+    ) >= score_memory(
+        distractor,
+        query,
+    )
+
+
+def test_score_memory_should_penalize_unrelated_domain_terms():
+
+    query = "Tool Calling"
+
+    distractor = {
+        "memory_key": "learning_feedback:english-tool",
+        "content": ("English vocabulary tool word learning"),
+    }
+
+    score = score_memory(
+        distractor,
+        query,
+    )
+
+    assert score < 0.5
