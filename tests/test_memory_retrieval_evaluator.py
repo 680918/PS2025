@@ -301,3 +301,29 @@ def test_calculate_f1_should_return_zero_when_precision_and_recall_are_zero():
     )
 
     assert f1 == 0.0
+
+
+def test_evaluate_retrieval_quality_should_support_threshold():
+
+    memories = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Agent Tool Calling design",
+        },
+        {
+            "memory_key": "learning_feedback:english-tool",
+            "content": "English vocabulary tool word",
+        },
+    ]
+
+    result = evaluate_retrieval_quality(
+        memories,
+        query="Tool Calling",
+        relevant_keys={
+            "learning_feedback:tool-calling",
+        },
+        top_k=2,
+        threshold=0.5,
+    )
+
+    assert result["precision_at_k"] == 1.0

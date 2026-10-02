@@ -88,3 +88,18 @@ def test_retrieval_benchmark_should_include_memory_overload_case():
     names = [case["name"] for case in cases]
 
     assert "memory_overload" in names
+
+
+def test_benchmark_should_support_retrieval_threshold():
+
+    from memory.retrieval_benchmark_runner import (
+        run_retrieval_benchmark,
+    )
+
+    results = run_retrieval_benchmark(
+        k_values=[1, 2, 3],
+        threshold=0.5,
+    )
+
+    assert results
+    assert "metrics" in results[0]

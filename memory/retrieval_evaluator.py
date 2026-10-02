@@ -38,11 +38,13 @@ def evaluate_retrieval_recall(
     query,
     relevant_keys,
     top_k,
+    threshold=None,
 ):
     ranked_memories = rank_memories(
         memories,
         query=query,
         top_k=top_k,
+        threshold=threshold,
     )
 
     retrieved_keys = [memory.get("memory_key") for memory in ranked_memories]
@@ -58,11 +60,13 @@ def evaluate_retrieval_quality(
     query,
     relevant_keys,
     top_k,
+    threshold=None,
 ):
     ranked_memories = rank_memories(
         memories,
         query=query,
         top_k=top_k,
+        threshold=threshold,
     )
 
     retrieved_keys = [memory.get("memory_key") for memory in ranked_memories]
@@ -94,6 +98,7 @@ def evaluate_retrieval_quality_by_k(
     query,
     relevant_keys,
     k_values,
+    threshold=None,
 ):
     results = {}
 
@@ -103,6 +108,7 @@ def evaluate_retrieval_quality_by_k(
             query=query,
             relevant_keys=relevant_keys,
             top_k=k,
+            threshold=threshold,
         )
 
     return results
