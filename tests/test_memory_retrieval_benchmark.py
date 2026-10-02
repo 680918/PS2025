@@ -79,3 +79,12 @@ def test_retrieval_benchmark_should_include_keyword_distractor_cases():
     names = [case["name"] for case in cases]
 
     assert "tool_calling_keyword_distractor" in names
+
+
+def test_retrieval_benchmark_should_include_memory_overload_case():
+
+    cases = get_retrieval_benchmark_cases()
+
+    names = [case["name"] for case in cases]
+
+    assert "memory_overload" in names

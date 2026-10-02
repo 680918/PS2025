@@ -144,4 +144,29 @@ def get_retrieval_benchmark_cases():
                 "learning_feedback:tool-calling",
             },
         },
+        {
+            "name": "memory_overload",
+            "query": "继续优化 AI Agent Memory",
+            "memories": [
+                {
+                    "memory_key": "learning_feedback:agent-memory",
+                    "content": ("AI Agent 长期记忆架构设计，Memory Retrieval 优化"),
+                },
+                {
+                    "memory_key": "learning_feedback:tool-calling",
+                    "content": ("Tool Calling 接口设计，Agent 工具调用实践"),
+                },
+            ]
+            + [
+                {
+                    "memory_key": f"learning_feedback:noise-{index}",
+                    "content": (f"无关学习记录 {index}"),
+                }
+                for index in range(48)
+            ],
+            "relevant_keys": {
+                "learning_feedback:agent-memory",
+                "learning_feedback:tool-calling",
+            },
+        },
     ]
