@@ -74,6 +74,7 @@ def rank_memories(
     query=None,
     top_k=None,
     threshold=None,
+    score_gap_threshold=None,
 ):
     scored_memories = []
 
@@ -106,6 +107,20 @@ def rank_memories(
 
     else:
         ranked = [memory for memory, _ in sorted_memories]
+
+        if score_gap_threshold is not None and len(ranked) >= 2:
+            top_score = score_memory(
+                ranked[0],
+                query,
+            )
+
+            second_score = score_memory(
+                ranked[1],
+                query,
+            )
+
+            if top_score - second_score >= score_gap_threshold:
+                ranked = [ranked[0]]
 
     if top_k is None:
         return ranked

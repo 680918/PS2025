@@ -329,3 +329,30 @@ def test_rank_memories_should_fallback_to_best_candidate_when_threshold_filters_
     keys = [item["memory_key"] for item in results]
 
     assert len(keys) == 1
+
+
+def test_rank_memories_should_limit_to_top_one_when_score_gap_is_large():
+
+    memories = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Agent Tool Calling design",
+        },
+        {
+            "memory_key": "learning_feedback:english-tool",
+            "content": "English vocabulary tool",
+        },
+        {
+            "memory_key": "learning_feedback:reading",
+            "content": "Reading habit",
+        },
+    ]
+
+    results = rank_memories(
+        memories,
+        "Tool Calling",
+        score_gap_threshold=0.4,
+    )
+
+    assert len(results) == 1
+    assert results[0]["memory_key"] == "learning_feedback:tool-calling"

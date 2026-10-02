@@ -11,11 +11,15 @@ from memory.retrieval_benchmark_cli import (
 )
 
 
-def build_benchmark_output():
+def build_benchmark_output(
+    threshold=None,
+    score_gap_threshold=None,
+):
 
     results = run_retrieval_benchmark(
         k_values=[1, 2, 3],
-        threshold=0.5,
+        threshold=threshold,
+        score_gap_threshold=score_gap_threshold,
     )
 
     report = summarize_benchmark_results(results)
@@ -25,7 +29,10 @@ def build_benchmark_output():
 
 def main():
 
-    output = build_benchmark_output()
+    output = build_benchmark_output(
+        threshold=0.5,
+        score_gap_threshold=0.4,
+    )
 
     print(output)
 

@@ -61,12 +61,14 @@ def evaluate_retrieval_quality(
     relevant_keys,
     top_k,
     threshold=None,
+    score_gap_threshold=None,
 ):
     ranked_memories = rank_memories(
         memories,
         query=query,
         top_k=top_k,
         threshold=threshold,
+        score_gap_threshold=score_gap_threshold,
     )
 
     retrieved_keys = [memory.get("memory_key") for memory in ranked_memories]
@@ -86,10 +88,27 @@ def evaluate_retrieval_quality(
         recall,
     )
 
+    precision = calculate_precision_at_k(
+        retrieved_keys,
+        relevant_keys,
+    )
+
+    f1 = calculate_f1(
+        precision,
+        recall,
+    )
+
+    if top_k:
+        compression_ratio = 1 - len(retrieved_keys) / top_k
+    else:
+        compression_ratio = 0.0
+
     return {
         "recall_at_k": recall,
         "precision_at_k": precision,
         "f1_at_k": f1,
+        "retrieved_count": len(retrieved_keys),
+        "compression_ratio": compression_ratio,
     }
 
 
@@ -99,6 +118,7 @@ def evaluate_retrieval_quality_by_k(
     relevant_keys,
     k_values,
     threshold=None,
+    score_gap_threshold=None,
 ):
     results = {}
 
@@ -109,6 +129,7 @@ def evaluate_retrieval_quality_by_k(
             relevant_keys=relevant_keys,
             top_k=k,
             threshold=threshold,
+            score_gap_threshold=score_gap_threshold,
         )
 
     return results

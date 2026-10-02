@@ -64,3 +64,32 @@ def test_benchmark_report_should_include_case_names():
     assert "python_tool_calling" in report["cases"]
 
     assert "agent_memory" in report["cases"]
+
+
+def test_benchmark_report_should_include_retrieval_efficiency_metrics():
+
+    results = [
+        {
+            "name": "test_case",
+            "metrics": {
+                1: {
+                    "f1_at_k": 1.0,
+                    "retrieved_count": 1,
+                    "compression_ratio": 0.0,
+                },
+                3: {
+                    "f1_at_k": 1.0,
+                    "retrieved_count": 1,
+                    "compression_ratio": 2 / 3,
+                },
+            },
+        }
+    ]
+
+    report = summarize_benchmark_results(
+        results,
+    )
+
+    assert "average_retrieved_count_by_k" in report
+
+    assert "average_compression_ratio_by_k" in report
