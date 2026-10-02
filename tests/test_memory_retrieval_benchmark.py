@@ -61,3 +61,30 @@ def test_retrieval_benchmark_should_include_multiple_domains():
     assert "agent_memory" in names
     assert "stock_strategy" in names
     assert "reading_system" in names
+
+
+def test_retrieval_benchmark_should_include_hard_cases():
+
+    cases = get_retrieval_benchmark_cases()
+
+    names = [case["name"] for case in cases]
+
+    assert "agent_memory_semantic_hard" in names
+
+
+def test_retrieval_benchmark_should_include_keyword_distractor_cases():
+
+    cases = get_retrieval_benchmark_cases()
+
+    names = [case["name"] for case in cases]
+
+    assert "tool_calling_keyword_distractor" in names
+
+
+def test_retrieval_benchmark_should_include_memory_overload_case():
+
+    cases = get_retrieval_benchmark_cases()
+
+    names = [case["name"] for case in cases]
+
+    assert "memory_overload" in names

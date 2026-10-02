@@ -93,4 +93,80 @@ def get_retrieval_benchmark_cases():
                 "learning_feedback:book-notes",
             },
         },
+        {
+            "name": "agent_memory_semantic_hard",
+            "query": "继续设计 AI Agent Memory",
+            "memories": [
+                {
+                    "memory_key": "learning_feedback:agent-memory",
+                    "content": "智能体长期记忆架构设计与 Memory 系统优化",
+                },
+                {
+                    "memory_key": "learning_feedback:tool-calling",
+                    "content": "Tool Calling 接口设计与 Agent 工具调用",
+                },
+                {
+                    "memory_key": "learning_feedback:python",
+                    "content": "Python 基础语法和编程练习",
+                },
+                {
+                    "memory_key": "learning_feedback:english",
+                    "content": "English vocabulary learning",
+                },
+            ],
+            "relevant_keys": {
+                "learning_feedback:agent-memory",
+                "learning_feedback:tool-calling",
+            },
+        },
+        {
+            "name": "tool_calling_keyword_distractor",
+            "query": "继续学习 Tool Calling",
+            "memories": [
+                {
+                    "memory_key": "learning_feedback:tool-calling",
+                    "content": ("Agent 工具调用设计，包括 Tool Calling 接口和实践"),
+                },
+                {
+                    "memory_key": "learning_feedback:english-tool",
+                    "content": ("英语学习中的 tool 单词和 vocabulary 表达"),
+                },
+                {
+                    "memory_key": "learning_feedback:python",
+                    "content": ("Python 基础语法和编程练习"),
+                },
+                {
+                    "memory_key": "learning_feedback:reading",
+                    "content": ("阅读习惯培养和书籍总结"),
+                },
+            ],
+            "relevant_keys": {
+                "learning_feedback:tool-calling",
+            },
+        },
+        {
+            "name": "memory_overload",
+            "query": "继续优化 AI Agent Memory",
+            "memories": [
+                {
+                    "memory_key": "learning_feedback:agent-memory",
+                    "content": ("AI Agent 长期记忆架构设计，Memory Retrieval 优化"),
+                },
+                {
+                    "memory_key": "learning_feedback:tool-calling",
+                    "content": ("Tool Calling 接口设计，Agent 工具调用实践"),
+                },
+            ]
+            + [
+                {
+                    "memory_key": f"learning_feedback:noise-{index}",
+                    "content": (f"无关学习记录 {index}"),
+                }
+                for index in range(48)
+            ],
+            "relevant_keys": {
+                "learning_feedback:agent-memory",
+                "learning_feedback:tool-calling",
+            },
+        },
     ]
