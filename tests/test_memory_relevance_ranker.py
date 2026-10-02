@@ -305,3 +305,27 @@ def test_score_memory_should_penalize_unrelated_domain_terms():
     )
 
     assert score < 0.5
+
+
+def test_rank_memories_should_fallback_to_best_candidate_when_threshold_filters_all():
+
+    memories = [
+        {
+            "memory_key": "learning_feedback:stock",
+            "content": "Stock strategy research",
+        },
+        {
+            "memory_key": "learning_feedback:reading",
+            "content": "Reading habit",
+        },
+    ]
+
+    results = rank_memories(
+        memories,
+        "A股投资策略",
+        threshold=0.9,
+    )
+
+    keys = [item["memory_key"] for item in results]
+
+    assert len(keys) == 1

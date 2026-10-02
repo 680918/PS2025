@@ -83,9 +83,6 @@ def rank_memories(
             query,
         )
 
-        if threshold is not None and score <= threshold:
-            continue
-
         scored_memories.append(
             (
                 memory,
@@ -93,14 +90,22 @@ def rank_memories(
             )
         )
 
-    ranked = [
-        memory
-        for memory, _ in sorted(
-            scored_memories,
-            key=lambda item: item[1],
-            reverse=True,
-        )
-    ]
+    sorted_memories = sorted(
+        scored_memories,
+        key=lambda item: item[1],
+        reverse=True,
+    )
+
+    if threshold is not None:
+        filtered = [memory for memory, score in sorted_memories if score > threshold]
+
+        if filtered:
+            ranked = filtered
+        else:
+            ranked = [sorted_memories[0][0]]
+
+    else:
+        ranked = [memory for memory, _ in sorted_memories]
 
     if top_k is None:
         return ranked
