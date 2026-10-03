@@ -1,3 +1,4 @@
+import pytest
 from memory.retrieval_evaluator import (
     calculate_f1,
     calculate_precision_at_k,
@@ -327,3 +328,117 @@ def test_evaluate_retrieval_quality_should_support_threshold():
     )
 
     assert result["precision_at_k"] == 1.0
+
+
+def test_evaluate_retrieval_quality_should_report_retrieved_count():
+
+    memories = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Agent Tool Calling design",
+        },
+        {
+            "memory_key": "learning_feedback:python-basics",
+            "content": "Python basics",
+        },
+        {
+            "memory_key": "learning_feedback:english",
+            "content": "English vocabulary",
+        },
+    ]
+
+    result = evaluate_retrieval_quality(
+        memories,
+        query="Tool Calling",
+        relevant_keys={"learning_feedback:tool-calling"},
+        top_k=3,
+    )
+
+    assert result["retrieved_count"] == 3
+
+
+def test_evaluate_retrieval_quality_should_report_compression_ratio():
+
+    memories = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Agent Tool Calling design",
+        },
+        {
+            "memory_key": "learning_feedback:english-tool",
+            "content": "English vocabulary tool",
+        },
+        {
+            "memory_key": "learning_feedback:reading",
+            "content": "Reading habit",
+        },
+    ]
+
+    result = evaluate_retrieval_quality(
+        memories,
+        query="Tool Calling",
+        relevant_keys={"learning_feedback:tool-calling"},
+        top_k=3,
+        score_gap_threshold=0.4,
+    )
+
+    assert result["compression_ratio"] == pytest.approx(2 / 3)
+
+
+def test_evaluate_retrieval_quality_should_report_score_gap():
+    memories = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Agent Tool Calling design",
+        },
+        {
+            "memory_key": "learning_feedback:english-tool",
+            "content": "English vocabulary tool",
+        },
+        {
+            "memory_key": "learning_feedback:reading",
+            "content": "Reading habit",
+        },
+    ]
+
+    result = evaluate_retrieval_quality(
+        memories,
+        query="Tool Calling",
+        relevant_keys={
+            "learning_feedback:tool-calling",
+        },
+        top_k=3,
+    )
+
+    assert "score_gap" in result
+    assert result["score_gap"] > 0
+
+
+def test_evaluate_retrieval_quality_should_report_top_score_diagnostics():
+    memories = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Agent Tool Calling design",
+        },
+        {
+            "memory_key": "learning_feedback:english-tool",
+            "content": "English vocabulary tool",
+        },
+        {
+            "memory_key": "learning_feedback:reading",
+            "content": "Reading habit",
+        },
+    ]
+
+    result = evaluate_retrieval_quality(
+        memories,
+        query="Tool Calling",
+        relevant_keys={
+            "learning_feedback:tool-calling",
+        },
+        top_k=3,
+    )
+
+    assert result["top_memory_key"] == "learning_feedback:tool-calling"
+    assert result["top_score"] > result["second_score"]
+    assert result["second_memory_key"] is not None

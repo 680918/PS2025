@@ -36,8 +36,8 @@ def get_retrieval_benchmark_cases():
                     "content": "AI Agent memory architecture",
                 },
                 {
-                    "memory_key": "learning_feedback:tool-calling",
-                    "content": "Tool Calling design",
+                    "memory_key": "learning_feedback:memory-retrieval",
+                    "content": "Agent Memory retrieval design",
                 },
                 {
                     "memory_key": "learning_feedback:english",
@@ -46,7 +46,7 @@ def get_retrieval_benchmark_cases():
             ],
             "relevant_keys": {
                 "learning_feedback:agent-memory",
-                "learning_feedback:tool-calling",
+                "learning_feedback:memory-retrieval",
             },
         },
         {

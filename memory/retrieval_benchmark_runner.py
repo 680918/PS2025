@@ -10,6 +10,7 @@ from memory.retrieval_evaluator import (
 def run_retrieval_benchmark(
     k_values,
     threshold=None,
+    score_gap_threshold=None,
 ):
     cases = get_retrieval_benchmark_cases()
 
@@ -22,6 +23,7 @@ def run_retrieval_benchmark(
             relevant_keys=case["relevant_keys"],
             k_values=k_values,
             threshold=threshold,
+            score_gap_threshold=score_gap_threshold,
         )
 
         results.append(

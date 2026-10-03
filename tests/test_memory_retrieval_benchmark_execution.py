@@ -35,3 +35,18 @@ def test_run_retrieval_benchmark_should_support_threshold():
 
     assert results
     assert "metrics" in results[0]
+
+
+def test_run_retrieval_benchmark_should_support_score_gap_threshold():
+
+    from memory.retrieval_benchmark_runner import (
+        run_retrieval_benchmark,
+    )
+
+    results = run_retrieval_benchmark(
+        k_values=[1, 2, 3],
+        score_gap_threshold=0.4,
+    )
+
+    assert results
+    assert "metrics" in results[0]
