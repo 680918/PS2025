@@ -1,4 +1,8 @@
-from memory.relevance_ranker import rank_memories
+from memory.relevance_ranker import (
+    calculate_score_gap,
+    rank_memories,
+    get_top_score_diagnostics,
+)
 
 
 def calculate_recall_at_k(
@@ -98,6 +102,16 @@ def evaluate_retrieval_quality(
         recall,
     )
 
+    score_gap = calculate_score_gap(
+        memories,
+        query=query,
+    )
+
+    diagnostics = get_top_score_diagnostics(
+        memories,
+        query=query,
+    )
+
     if top_k:
         compression_ratio = 1 - len(retrieved_keys) / top_k
     else:
@@ -107,8 +121,13 @@ def evaluate_retrieval_quality(
         "recall_at_k": recall,
         "precision_at_k": precision,
         "f1_at_k": f1,
+        "score_gap": score_gap,
         "retrieved_count": len(retrieved_keys),
         "compression_ratio": compression_ratio,
+        "top_memory_key": diagnostics["top_memory_key"],
+        "top_score": diagnostics["top_score"],
+        "second_memory_key": diagnostics["second_memory_key"],
+        "second_score": diagnostics["second_score"],
     }
 
 

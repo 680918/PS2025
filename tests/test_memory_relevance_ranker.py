@@ -1,6 +1,8 @@
 from memory.relevance_ranker import (
     rank_memories,
     score_memory,
+    calculate_score_gap,
+    get_top_score_diagnostics,
 )
 
 
@@ -356,3 +358,209 @@ def test_rank_memories_should_limit_to_top_one_when_score_gap_is_large():
 
     assert len(results) == 1
     assert results[0]["memory_key"] == "learning_feedback:tool-calling"
+
+
+def test_calculate_score_gap_should_return_gap_between_top_two_memories():
+    memories = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Agent Tool Calling design",
+        },
+        {
+            "memory_key": "learning_feedback:english-tool",
+            "content": "English vocabulary tool",
+        },
+        {
+            "memory_key": "learning_feedback:reading",
+            "content": "Reading habit",
+        },
+    ]
+
+    gap = calculate_score_gap(
+        memories,
+        query="Tool Calling",
+    )
+
+    assert gap > 0
+
+
+def test_get_top_score_diagnostics_should_report_top_two_memories():
+    memories = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Agent Tool Calling design",
+        },
+        {
+            "memory_key": "learning_feedback:english-tool",
+            "content": "English vocabulary tool",
+        },
+        {
+            "memory_key": "learning_feedback:reading",
+            "content": "Reading habit",
+        },
+    ]
+
+    diagnostics = get_top_score_diagnostics(
+        memories,
+        query="Tool Calling",
+    )
+
+    assert diagnostics["top_memory_key"] == ("learning_feedback:tool-calling")
+    assert diagnostics["top_score"] > diagnostics["second_score"]
+    assert diagnostics["score_gap"] > 0
+
+
+def test_rank_memories_should_not_depend_on_input_order_for_stock_strategy():
+    memories = [
+        {
+            "memory_key": "learning_feedback:stock-strategy",
+            "content": "A股 strategy optimization",
+        },
+        {
+            "memory_key": "learning_feedback:factor-model",
+            "content": "Factor model research",
+        },
+        {
+            "memory_key": "learning_feedback:reading",
+            "content": "Reading notes",
+        },
+    ]
+
+    query = "继续优化股票策略系统"
+
+    forward = rank_memories(
+        memories,
+        query=query,
+        top_k=2,
+    )
+
+    reversed_result = rank_memories(
+        list(reversed(memories)),
+        query=query,
+        top_k=2,
+    )
+
+    forward_keys = {memory["memory_key"] for memory in forward}
+
+    reversed_keys = {memory["memory_key"] for memory in reversed_result}
+
+    expected_keys = {
+        "learning_feedback:stock-strategy",
+        "learning_feedback:factor-model",
+    }
+
+    assert forward_keys == expected_keys
+    assert reversed_keys == expected_keys
+
+
+def test_rank_memories_should_apply_score_gap_after_threshold_filtering():
+    memories = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Agent Tool Calling design",
+        },
+        {
+            "memory_key": "learning_feedback:english-tool",
+            "content": "English vocabulary tool",
+        },
+        {
+            "memory_key": "learning_feedback:reading",
+            "content": "Reading habit",
+        },
+    ]
+
+    results = rank_memories(
+        memories,
+        query="Tool Calling",
+        threshold=0.1,
+        score_gap_threshold=0.4,
+    )
+
+    assert len(results) == 1
+    assert results[0]["memory_key"] == "learning_feedback:tool-calling"
+
+
+def test_rank_memories_should_not_depend_on_input_order_for_reading_system():
+    memories = [
+        {
+            "memory_key": "learning_feedback:reading-system",
+            "content": "Build long term reading habit",
+        },
+        {
+            "memory_key": "learning_feedback:book-notes",
+            "content": "Book notes and reflection",
+        },
+        {
+            "memory_key": "learning_feedback:stock",
+            "content": "Stock analysis",
+        },
+    ]
+
+    query = "继续培养阅读习惯"
+
+    forward = rank_memories(
+        memories,
+        query=query,
+        top_k=2,
+    )
+
+    reversed_result = rank_memories(
+        list(reversed(memories)),
+        query=query,
+        top_k=2,
+    )
+
+    expected_keys = {
+        "learning_feedback:reading-system",
+        "learning_feedback:book-notes",
+    }
+
+    forward_keys = {memory["memory_key"] for memory in forward}
+
+    reversed_keys = {memory["memory_key"] for memory in reversed_result}
+
+    assert forward_keys == expected_keys
+    assert reversed_keys == expected_keys
+
+
+def test_rank_memories_should_not_depend_on_input_order_for_agent_memory():
+    memories = [
+        {
+            "memory_key": "learning_feedback:agent-memory",
+            "content": "AI Agent memory architecture",
+        },
+        {
+            "memory_key": "learning_feedback:memory-retrieval",
+            "content": "Agent Memory retrieval design",
+        },
+        {
+            "memory_key": "learning_feedback:english",
+            "content": "English practice",
+        },
+    ]
+
+    query = "继续优化 AI Agent Memory"
+
+    forward = rank_memories(
+        memories,
+        query=query,
+        top_k=2,
+    )
+
+    reversed_result = rank_memories(
+        list(reversed(memories)),
+        query=query,
+        top_k=2,
+    )
+
+    expected_keys = {
+        "learning_feedback:agent-memory",
+        "learning_feedback:memory-retrieval",
+    }
+
+    forward_keys = {memory["memory_key"] for memory in forward}
+
+    reversed_keys = {memory["memory_key"] for memory in reversed_result}
+
+    assert forward_keys == expected_keys
+    assert reversed_keys == expected_keys
