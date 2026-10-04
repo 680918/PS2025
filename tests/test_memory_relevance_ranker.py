@@ -564,3 +564,120 @@ def test_rank_memories_should_not_depend_on_input_order_for_agent_memory():
 
     assert forward_keys == expected_keys
     assert reversed_keys == expected_keys
+
+
+def test_score_memory_should_give_related_python_basics_meaningful_score():
+    memory = {
+        "memory_key": "learning_feedback:python-basics",
+        "content": "Python basics",
+    }
+
+    score = score_memory(
+        memory,
+        query="继续学习 Python Tool Calling",
+    )
+
+    assert score >= 0.3
+
+
+def test_score_memory_should_separate_related_python_memory_from_distractor():
+    related_memory = {
+        "memory_key": "learning_feedback:python-basics",
+        "content": "Python basics",
+    }
+
+    distractor_memory = {
+        "memory_key": "learning_feedback:english",
+        "content": "English vocabulary review",
+    }
+
+    query = "继续学习 Python Tool Calling"
+
+    related_score = score_memory(
+        related_memory,
+        query=query,
+    )
+
+    distractor_score = score_memory(
+        distractor_memory,
+        query=query,
+    )
+
+    assert related_score > distractor_score
+    assert related_score >= 0.3
+    assert distractor_score <= 0.1
+
+
+def test_score_memory_should_order_strong_partial_and_irrelevant_relevance():
+    query = "继续学习 Python Tool Calling"
+
+    strong_memory = {
+        "memory_key": "learning_feedback:python-tool-calling",
+        "content": "Python Tool Calling practice",
+    }
+
+    partial_memory = {
+        "memory_key": "learning_feedback:python-basics",
+        "content": "Python basics",
+    }
+
+    irrelevant_memory = {
+        "memory_key": "learning_feedback:english",
+        "content": "English vocabulary review",
+    }
+
+    strong_score = score_memory(
+        strong_memory,
+        query=query,
+    )
+
+    partial_score = score_memory(
+        partial_memory,
+        query=query,
+    )
+
+    irrelevant_score = score_memory(
+        irrelevant_memory,
+        query=query,
+    )
+
+    assert strong_score > partial_score
+    assert partial_score > irrelevant_score
+
+
+def test_score_memory_should_recognize_semantic_partial_relevance():
+    query = "继续学习 Python Tool Calling"
+
+    strong_memory = {
+        "memory_key": "learning_feedback:python-tool-calling",
+        "content": "Python Tool Calling practice",
+    }
+
+    semantic_partial_memory = {
+        "memory_key": "learning_feedback:tool-calling-basics",
+        "content": "工具调用基础",
+    }
+
+    irrelevant_memory = {
+        "memory_key": "learning_feedback:english",
+        "content": "English vocabulary review",
+    }
+
+    strong_score = score_memory(
+        strong_memory,
+        query=query,
+    )
+
+    semantic_partial_score = score_memory(
+        semantic_partial_memory,
+        query=query,
+    )
+
+    irrelevant_score = score_memory(
+        irrelevant_memory,
+        query=query,
+    )
+
+    assert strong_score > semantic_partial_score
+    assert semantic_partial_score > irrelevant_score
+    assert semantic_partial_score >= 0.3

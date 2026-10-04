@@ -21,8 +21,27 @@ _SEMANTIC_ALIAS_GROUPS = (
         "阅读",
         "reading habit",
         "reading system",
-        "book notes",
-        "reflection",
+    ),
+    (
+        "python",
+        "python basics",
+        "python 基础",
+    ),
+)
+
+_SEMANTIC_RELATIONS = (
+    (
+        (
+            "阅读习惯",
+            "阅读",
+            "reading habit",
+            "reading system",
+        ),
+        (
+            "book notes",
+            "reflection",
+        ),
+        0.5,
     ),
 )
 
@@ -54,9 +73,15 @@ def score_memory(
     if normalized_query in normalized_content:
         return 1.0
 
-    semantic_score = _semantic_alias_score(
-        normalized_query,
-        normalized_content,
+    semantic_score = max(
+        _semantic_alias_score(
+            normalized_query,
+            normalized_content,
+        ),
+        _semantic_related_score(
+            normalized_query,
+            normalized_content,
+        ),
     )
 
     query_tokens = _tokenize(normalized_query)
@@ -232,3 +257,44 @@ def _semantic_alias_score(
     matched_groups = query_groups & content_groups
 
     return len(matched_groups) / len(query_groups)
+
+
+def _semantic_related_score(
+    query,
+    content,
+):
+    normalized_query = _normalize_text(query)
+    normalized_content = _normalize_text(content)
+
+    best_score = 0.0
+
+    for (
+        source_aliases,
+        related_aliases,
+        relation_score,
+    ) in _SEMANTIC_RELATIONS:
+        query_matches_source = any(
+            alias in normalized_query for alias in source_aliases
+        )
+
+        content_matches_related = any(
+            alias in normalized_content for alias in related_aliases
+        )
+
+        query_matches_related = any(
+            alias in normalized_query for alias in related_aliases
+        )
+
+        content_matches_source = any(
+            alias in normalized_content for alias in source_aliases
+        )
+
+        if (query_matches_source and content_matches_related) or (
+            query_matches_related and content_matches_source
+        ):
+            best_score = max(
+                best_score,
+                relation_score,
+            )
+
+    return best_score
