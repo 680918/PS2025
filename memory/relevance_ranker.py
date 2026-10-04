@@ -14,7 +14,6 @@ _SEMANTIC_ALIAS_GROUPS = (
         "股票策略",
         "a股 strategy",
         "stock strategy",
-        "factor model",
     ),
     (
         "阅读习惯",
@@ -41,6 +40,15 @@ _SEMANTIC_RELATIONS = (
             "book notes",
             "reflection",
         ),
+        0.5,
+    ),
+    (
+        (
+            "股票策略",
+            "a股 strategy",
+            "stock strategy",
+        ),
+        ("factor model",),
         0.5,
     ),
 )

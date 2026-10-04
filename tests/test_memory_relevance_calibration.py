@@ -175,3 +175,36 @@ def test_reading_calibration_should_distinguish_strong_from_partial_relevance():
         > scores["learning_feedback:book-notes"]
         > scores["learning_feedback:stock"]
     )
+
+
+def test_stock_calibration_should_distinguish_strong_from_partial_relevance():
+    items = [
+        {
+            "memory_key": "learning_feedback:stock-strategy",
+            "content": "A股 strategy optimization",
+            "relevance": 2,
+        },
+        {
+            "memory_key": "learning_feedback:factor-model",
+            "content": "Factor model research",
+            "relevance": 1,
+        },
+        {
+            "memory_key": "learning_feedback:english",
+            "content": "English vocabulary review",
+            "relevance": 0,
+        },
+    ]
+
+    result = evaluate_calibration_case(
+        query="继续优化股票策略系统",
+        items=items,
+    )
+
+    scores = {item["memory_key"]: item["score"] for item in result["scored_items"]}
+
+    assert (
+        scores["learning_feedback:stock-strategy"]
+        > scores["learning_feedback:factor-model"]
+        > scores["learning_feedback:english"]
+    )
