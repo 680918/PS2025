@@ -51,6 +51,18 @@ _SEMANTIC_RELATIONS = (
         ("factor model",),
         0.5,
     ),
+    (
+        (
+            "tool calling",
+            "工具调用",
+            "调用外部工具",
+        ),
+        (
+            "agent tool integration",
+            "ai agent tool integration",
+        ),
+        0.5,
+    ),
 )
 
 

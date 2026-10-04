@@ -208,3 +208,36 @@ def test_stock_calibration_should_distinguish_strong_from_partial_relevance():
         > scores["learning_feedback:factor-model"]
         > scores["learning_feedback:english"]
     )
+
+
+def test_tool_calling_calibration_should_recognize_agent_tool_integration_as_partial():
+    items = [
+        {
+            "memory_key": "learning_feedback:tool-calling",
+            "content": "Tool Calling design and practice",
+            "relevance": 2,
+        },
+        {
+            "memory_key": "learning_feedback:agent-tools",
+            "content": "AI Agent tool integration",
+            "relevance": 1,
+        },
+        {
+            "memory_key": "learning_feedback:english-tool",
+            "content": "English vocabulary lesson about the word tool",
+            "relevance": 0,
+        },
+    ]
+
+    result = evaluate_calibration_case(
+        query="继续学习工具调用",
+        items=items,
+    )
+
+    scores = {item["memory_key"]: item["score"] for item in result["scored_items"]}
+
+    assert (
+        scores["learning_feedback:tool-calling"]
+        > scores["learning_feedback:agent-tools"]
+        > scores["learning_feedback:english-tool"]
+    )
