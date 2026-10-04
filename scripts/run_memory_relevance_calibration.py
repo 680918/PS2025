@@ -3,9 +3,7 @@ from memory.relevance_calibration_runner import (
 )
 
 
-def format_calibration_report(
-    report,
-):
+def format_calibration_report(report):
     lines = []
 
     lines.append("Memory Relevance Calibration")
@@ -20,6 +18,36 @@ def format_calibration_report(
 
         lines.append(f"Accuracy: {case['pairwise_order_accuracy']:.2f}")
 
+        for item in case.get(
+            "scored_items",
+            [],
+        ):
+            lines.append(
+                f"{item['memory_key']} "
+                f"relevance={item['relevance']} "
+                f"score={item['score']:.2f}"
+            )
+
+        for violation in case.get(
+            "pairwise_violations",
+            [],
+        ):
+            lines.append("Violation:")
+
+            lines.append(
+                f"{violation['higher_relevance_key']} "
+                f"relevance={violation['higher_relevance']} "
+                f"score={violation['higher_score']:.2f}"
+            )
+
+            lines.append("should rank above")
+
+            lines.append(
+                f"{violation['lower_relevance_key']} "
+                f"relevance={violation['lower_relevance']} "
+                f"score={violation['lower_score']:.2f}"
+            )
+
         lines.append("")
 
     lines.append("Average Pairwise Order Accuracy")
@@ -30,7 +58,6 @@ def format_calibration_report(
 
 
 def build_calibration_output():
-
     report = run_relevance_calibration()
 
     return format_calibration_report(
@@ -39,7 +66,6 @@ def build_calibration_output():
 
 
 def main():
-
     output = build_calibration_output()
 
     print(output)

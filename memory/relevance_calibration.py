@@ -33,32 +33,22 @@ def calculate_pairwise_order_accuracy(
     return correct_pairs / comparable_pairs
 
 
-def evaluate_calibration_case(
-    query,
-    items,
-):
-    scored_items = []
-
-    for item in items:
-        score = score_memory(
-            item,
-            query=query,
-        )
-
-        scored_items.append(
-            {
-                **item,
-                "score": score,
-            }
-        )
-
-    pairwise_order_accuracy = calculate_pairwise_order_accuracy(
-        scored_items,
-    )
+def evaluate_calibration_case(query, items):
+    scored_items = [
+        {
+            **item,
+            "score": score_memory(
+                item,
+                query,
+            ),
+        }
+        for item in items
+    ]
 
     return {
         "scored_items": scored_items,
-        "pairwise_order_accuracy": (pairwise_order_accuracy),
+        "pairwise_order_accuracy": calculate_pairwise_order_accuracy(scored_items),
+        "pairwise_violations": calculate_pairwise_violations(scored_items),
     }
 
 
@@ -94,3 +84,33 @@ def evaluate_calibration_dataset(
         "cases": case_results,
         "average_pairwise_order_accuracy": (average_pairwise_order_accuracy),
     }
+
+
+def calculate_pairwise_violations(scored_items):
+    violations = []
+
+    for index, left in enumerate(scored_items):
+        for right in scored_items[index + 1 :]:
+            if left["relevance"] == right["relevance"]:
+                continue
+
+            if left["relevance"] > right["relevance"]:
+                higher = left
+                lower = right
+            else:
+                higher = right
+                lower = left
+
+            if higher["score"] <= lower["score"]:
+                violations.append(
+                    {
+                        "higher_relevance_key": higher["memory_key"],
+                        "higher_relevance": higher["relevance"],
+                        "higher_score": higher["score"],
+                        "lower_relevance_key": lower["memory_key"],
+                        "lower_relevance": lower["relevance"],
+                        "lower_score": lower["score"],
+                    }
+                )
+
+    return violations

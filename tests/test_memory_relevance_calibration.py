@@ -241,3 +241,45 @@ def test_tool_calling_calibration_should_recognize_agent_tool_integration_as_par
         > scores["learning_feedback:agent-tools"]
         > scores["learning_feedback:english-tool"]
     )
+
+
+def test_calibration_case_should_report_pairwise_violations():
+    items = [
+        {
+            "memory_key": "learning_feedback:strong",
+            "content": "Tool Calling practice",
+            "relevance": 2,
+        },
+        {
+            "memory_key": "learning_feedback:partial",
+            "content": "Unrelated content",
+            "relevance": 1,
+        },
+        {
+            "memory_key": "learning_feedback:irrelevant",
+            "content": "Another unrelated memory",
+            "relevance": 0,
+        },
+    ]
+
+    result = evaluate_calibration_case(
+        query="Tool Calling",
+        items=items,
+    )
+
+    assert "pairwise_violations" in result
+    assert len(result["pairwise_violations"]) >= 1
+
+    violations = result["pairwise_violations"]
+
+    assert len(violations) == 1
+
+    violation = violations[0]
+
+    assert violation["higher_relevance_key"] == "learning_feedback:partial"
+    assert violation["higher_relevance"] == 1
+    assert violation["higher_score"] == 0.0
+
+    assert violation["lower_relevance_key"] == "learning_feedback:irrelevant"
+    assert violation["lower_relevance"] == 0
+    assert violation["lower_score"] == 0.0
