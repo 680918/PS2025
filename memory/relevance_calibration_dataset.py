@@ -84,4 +84,82 @@ def get_calibration_cases():
                 },
             ],
         },
+        {
+            "name": "tool_calling_keyword_distractor",
+            "query": "继续学习 Python Tool Calling",
+            "items": [
+                {
+                    "memory_key": "learning_feedback:python-tool-calling",
+                    "content": "Python Tool Calling practice",
+                    "relevance": 2,
+                },
+                {
+                    "memory_key": "learning_feedback:python-basics",
+                    "content": "Python basics",
+                    "relevance": 1,
+                },
+                {
+                    "memory_key": "learning_feedback:english-tool",
+                    "content": "English lesson about the words tool and calling",
+                    "relevance": 0,
+                },
+            ],
+        },
+        {
+            "name": "tool_calling_semantic_hard",
+            "query": "继续学习工具调用",
+            "items": [
+                {
+                    "memory_key": "learning_feedback:tool-calling",
+                    "content": "Tool Calling design and practice",
+                    "relevance": 2,
+                },
+                {
+                    "memory_key": "learning_feedback:agent-tools",
+                    "content": "AI Agent tool integration",
+                    "relevance": 1,
+                },
+                {
+                    "memory_key": "learning_feedback:english-tool",
+                    "content": "English vocabulary lesson about the word tool",
+                    "relevance": 0,
+                },
+            ],
+        },
+        {
+            "name": "memory_overload",
+            "query": "继续优化 Agent Memory 工具调用能力",
+            "items": [
+                {
+                    "memory_key": "learning_feedback:agent-memory",
+                    "content": "Agent Memory architecture and retrieval",
+                    "relevance": 2,
+                },
+                {
+                    "memory_key": "learning_feedback:tool-calling",
+                    "content": "Tool Calling design and practice",
+                    "relevance": 2,
+                },
+                {
+                    "memory_key": "learning_feedback:python-basics",
+                    "content": "Python basics",
+                    "relevance": 0,
+                },
+                {
+                    "memory_key": "learning_feedback:reading-system",
+                    "content": "Build long term reading habit",
+                    "relevance": 0,
+                },
+                {
+                    "memory_key": "learning_feedback:stock-strategy",
+                    "content": "A股 strategy optimization",
+                    "relevance": 0,
+                },
+                {
+                    "memory_key": "learning_feedback:english",
+                    "content": "English vocabulary review",
+                    "relevance": 0,
+                },
+            ],
+        },
     ]
