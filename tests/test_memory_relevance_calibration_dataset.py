@@ -91,3 +91,11 @@ def test_calibration_dataset_should_include_agent_memory_semantic_distractor():
     case_names = {case["name"] for case in cases}
 
     assert "agent_memory_semantic_distractor" in case_names
+
+
+def test_calibration_dataset_should_include_reading_keyword_distractor():
+    cases = get_calibration_cases()
+
+    case_names = {case["name"] for case in cases}
+
+    assert "reading_keyword_distractor" in case_names
