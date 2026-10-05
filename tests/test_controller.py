@@ -6841,3 +6841,53 @@ def test_run_agent_runtime_should_limit_memory_by_type(
 @pytest.mark.unit
 def test_runtime_memory_top_k_config_should_include_learning():
     assert controller_module.MEMORY_TOP_K_BY_TYPE["learning"] == 2
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_use_memory_quality_to_break_relevance_tie(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:low-quality",
+                "content": "AI Agent memory retrieval",
+                "importance": 0.2,
+                "confidence": 0.2,
+            },
+            {
+                "memory_key": "profile:high-quality",
+                "content": "AI Agent memory retrieval",
+                "importance": 0.9,
+                "confidence": 0.9,
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    state, response = run_agent_runtime(
+        user_message="AI Agent memory retrieval",
+        memory_service=FakeMemoryService(),
+    )
+
+    assert response == "测试回答"
+    assert state.memory_context["profile"][0]["memory_key"] == "profile:high-quality"

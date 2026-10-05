@@ -1,5 +1,7 @@
-from memory.relevance_ranker import rank_memories
 from memory.retrieval_policy import get_memory_policy
+from memory.memory_score_fusion import (
+    rank_memories_by_composite_score,
+)
 
 _MEMORY_TYPES = (
     "profile",
@@ -16,11 +18,15 @@ def _rank_memory_type(
     query,
     top_k=None,
 ):
-    return rank_memories(
+    ranked = rank_memories_by_composite_score(
         memory_context.get(memory_type, []),
         query=query,
-        top_k=top_k,
     )
+
+    if top_k is None:
+        return ranked
+
+    return ranked[:top_k]
 
 
 def select_relevant_memory_context(
@@ -61,15 +67,21 @@ def select_relevant_memory_context(
         ):
             learning_candidates.append(memory)
 
-    selected["learning"] = rank_memories(
+    ranked_learning = rank_memories_by_composite_score(
         learning_candidates,
         query=query,
-        top_k=_get_memory_type_top_k(
-            "learning",
-            memory_top_k_by_type,
-            learning_top_k=learning_top_k,
-        ),
     )
+
+    learning_top_k_value = _get_memory_type_top_k(
+        "learning",
+        memory_top_k_by_type,
+        learning_top_k=learning_top_k,
+    )
+
+    if learning_top_k_value is None:
+        selected["learning"] = ranked_learning
+    else:
+        selected["learning"] = ranked_learning[:learning_top_k_value]
 
     return selected
 
