@@ -44,7 +44,14 @@ from memory.context_selector import (
 )
 
 logger = logging.getLogger(__name__)
-LEARNING_MEMORY_TOP_K = 2
+
+MEMORY_TOP_K_BY_TYPE = {
+    "profile": 2,
+    "skill": 3,
+    "learning": 2,
+    "project": 3,
+    "experience": 2,
+}
 
 
 def log_recovery_decision(state, action, error_type):
@@ -280,7 +287,7 @@ def run_agent_runtime(
             memory_context,
             learning_domain=learning_domain,
             query=user_message,
-            learning_top_k=LEARNING_MEMORY_TOP_K,
+            memory_top_k_by_type=MEMORY_TOP_K_BY_TYPE,
         )
 
         state.set_memory_context(memory_context)
