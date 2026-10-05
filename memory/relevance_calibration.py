@@ -49,12 +49,11 @@ def evaluate_calibration_case(query, items):
         "scored_items": scored_items,
         "pairwise_order_accuracy": calculate_pairwise_order_accuracy(scored_items),
         "pairwise_violations": calculate_pairwise_violations(scored_items),
+        "minimum_pairwise_margin": calculate_minimum_pairwise_margin(scored_items),
     }
 
 
-def evaluate_calibration_dataset(
-    cases,
-):
+def evaluate_calibration_dataset(cases):
     case_results = []
 
     for case in cases:
@@ -74,15 +73,21 @@ def evaluate_calibration_dataset(
         return {
             "cases": [],
             "average_pairwise_order_accuracy": 0.0,
+            "minimum_pairwise_margin": 0.0,
+            "average_minimum_pairwise_margin": 0.0,
         }
 
-    average_pairwise_order_accuracy = sum(
+    average_accuracy = sum(
         case["pairwise_order_accuracy"] for case in case_results
     ) / len(case_results)
 
+    margins = [case["minimum_pairwise_margin"] for case in case_results]
+
     return {
         "cases": case_results,
-        "average_pairwise_order_accuracy": (average_pairwise_order_accuracy),
+        "average_pairwise_order_accuracy": average_accuracy,
+        "minimum_pairwise_margin": min(margins),
+        "average_minimum_pairwise_margin": (sum(margins) / len(margins)),
     }
 
 
@@ -114,3 +119,26 @@ def calculate_pairwise_violations(scored_items):
                 )
 
     return violations
+
+
+def calculate_minimum_pairwise_margin(scored_items):
+    margins = []
+
+    for index, left in enumerate(scored_items):
+        for right in scored_items[index + 1 :]:
+            if left["relevance"] == right["relevance"]:
+                continue
+
+            if left["relevance"] > right["relevance"]:
+                higher = left
+                lower = right
+            else:
+                higher = right
+                lower = left
+
+            margins.append(higher["score"] - lower["score"])
+
+    if not margins:
+        return 0.0
+
+    return min(margins)

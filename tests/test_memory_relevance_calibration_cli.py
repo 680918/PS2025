@@ -54,3 +54,16 @@ def test_calibration_output_should_include_pairwise_violations():
     assert "learning_feedback:partial" in output
     assert "should rank above" in output
     assert "learning_feedback:irrelevant" in output
+
+
+def test_calibration_output_should_include_minimum_pairwise_margin():
+    output = build_calibration_output()
+
+    assert "Minimum Pairwise Margin:" in output
+
+
+def test_calibration_output_should_include_dataset_margin_summary():
+    output = build_calibration_output()
+
+    assert "Minimum Pairwise Margin Across Cases:" in output
+    assert "Average Minimum Pairwise Margin:" in output

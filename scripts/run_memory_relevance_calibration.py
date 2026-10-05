@@ -18,6 +18,10 @@ def format_calibration_report(report):
 
         lines.append(f"Accuracy: {case['pairwise_order_accuracy']:.2f}")
 
+        lines.append(
+            f"Minimum Pairwise Margin: {case.get('minimum_pairwise_margin', 0.0):.2f}"
+        )
+
         for item in case.get(
             "scored_items",
             [],
@@ -53,6 +57,18 @@ def format_calibration_report(report):
     lines.append("Average Pairwise Order Accuracy")
 
     lines.append(f"{report['average_pairwise_order_accuracy']:.2f}")
+
+    lines.append("")
+
+    lines.append(
+        "Minimum Pairwise Margin Across Cases: "
+        f"{report.get('minimum_pairwise_margin', 0.0):.2f}"
+    )
+
+    lines.append(
+        "Average Minimum Pairwise Margin: "
+        f"{report.get('average_minimum_pairwise_margin', 0.0):.2f}"
+    )
 
     return "\n".join(lines)
 
