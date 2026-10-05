@@ -70,6 +70,30 @@ def format_calibration_report(report):
         f"{report.get('average_minimum_pairwise_margin', 0.0):.2f}"
     )
 
+    weakest_pair = report.get("weakest_pair")
+
+    if weakest_pair is not None:
+        lines.append("")
+        lines.append("Global Weakest Pair")
+
+        lines.append(f"Case: {weakest_pair['case_name']}")
+
+        lines.append(
+            f"{weakest_pair['higher_relevance_key']} "
+            f"relevance={weakest_pair['higher_relevance']} "
+            f"score={weakest_pair['higher_score']:.2f}"
+        )
+
+        lines.append("vs")
+
+        lines.append(
+            f"{weakest_pair['lower_relevance_key']} "
+            f"relevance={weakest_pair['lower_relevance']} "
+            f"score={weakest_pair['lower_score']:.2f}"
+        )
+
+        lines.append(f"Margin: {weakest_pair['margin']:.2f}")
+
     return "\n".join(lines)
 
 

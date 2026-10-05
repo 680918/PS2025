@@ -50,6 +50,7 @@ def evaluate_calibration_case(query, items):
         "pairwise_order_accuracy": calculate_pairwise_order_accuracy(scored_items),
         "pairwise_violations": calculate_pairwise_violations(scored_items),
         "minimum_pairwise_margin": calculate_minimum_pairwise_margin(scored_items),
+        "weakest_pair": calculate_weakest_pair(scored_items),
     }
 
 
@@ -75,6 +76,7 @@ def evaluate_calibration_dataset(cases):
             "average_pairwise_order_accuracy": 0.0,
             "minimum_pairwise_margin": 0.0,
             "average_minimum_pairwise_margin": 0.0,
+            "weakest_pair": None,
         }
 
     average_accuracy = sum(
@@ -83,11 +85,25 @@ def evaluate_calibration_dataset(cases):
 
     margins = [case["minimum_pairwise_margin"] for case in case_results]
 
+    weakest_case = min(
+        case_results,
+        key=lambda case: case["minimum_pairwise_margin"],
+    )
+
+    weakest_pair = weakest_case["weakest_pair"]
+
+    if weakest_pair is not None:
+        weakest_pair = {
+            "case_name": weakest_case["name"],
+            **weakest_pair,
+        }
+
     return {
         "cases": case_results,
         "average_pairwise_order_accuracy": average_accuracy,
         "minimum_pairwise_margin": min(margins),
         "average_minimum_pairwise_margin": (sum(margins) / len(margins)),
+        "weakest_pair": weakest_pair,
     }
 
 
@@ -142,3 +158,37 @@ def calculate_minimum_pairwise_margin(scored_items):
         return 0.0
 
     return min(margins)
+
+
+def calculate_weakest_pair(scored_items):
+    weakest_pair = None
+    weakest_margin = None
+
+    for index, left in enumerate(scored_items):
+        for right in scored_items[index + 1 :]:
+            if left["relevance"] == right["relevance"]:
+                continue
+
+            if left["relevance"] > right["relevance"]:
+                higher = left
+                lower = right
+            else:
+                higher = right
+                lower = left
+
+            margin = higher["score"] - lower["score"]
+
+            if weakest_margin is None or margin < weakest_margin:
+                weakest_margin = margin
+
+                weakest_pair = {
+                    "higher_relevance_key": higher["memory_key"],
+                    "higher_relevance": higher["relevance"],
+                    "higher_score": higher["score"],
+                    "lower_relevance_key": lower["memory_key"],
+                    "lower_relevance": lower["relevance"],
+                    "lower_score": lower["score"],
+                    "margin": margin,
+                }
+
+    return weakest_pair
