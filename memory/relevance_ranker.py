@@ -63,6 +63,18 @@ _SEMANTIC_RELATIONS = (
         ),
         0.5,
     ),
+    (
+        (
+            "agent memory",
+            "ai agent memory",
+            "智能体记忆",
+        ),
+        (
+            "memory retrieval",
+            "memory retrieval design",
+        ),
+        0.5,
+    ),
 )
 
 

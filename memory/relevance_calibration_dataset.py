@@ -162,4 +162,25 @@ def get_calibration_cases():
                 },
             ],
         },
+        {
+            "name": "agent_memory_semantic_distractor",
+            "query": "继续优化 Agent Memory retrieval",
+            "items": [
+                {
+                    "memory_key": "learning_feedback:agent-memory-retrieval",
+                    "content": "Agent Memory retrieval architecture",
+                    "relevance": 2,
+                },
+                {
+                    "memory_key": "learning_feedback:memory-ranking",
+                    "content": "Memory retrieval ranking and top-k selection",
+                    "relevance": 1,
+                },
+                {
+                    "memory_key": "learning_feedback:knowledge-retrieval",
+                    "content": "Knowledge retrieval search ranking",
+                    "relevance": 0,
+                },
+            ],
+        },
     ]
