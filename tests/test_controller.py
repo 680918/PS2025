@@ -6589,8 +6589,14 @@ def test_run_agent_runtime_should_rank_memory_for_current_user_message(
 
     monkeypatch.setattr(
         controller_module,
-        "LEARNING_MEMORY_TOP_K",
-        3,
+        "MEMORY_TOP_K_BY_TYPE",
+        {
+            "profile": 2,
+            "skill": 3,
+            "learning": 3,
+            "project": 3,
+            "experience": 2,
+        },
     )
 
     state, response = run_agent_runtime(
@@ -6682,3 +6688,156 @@ def test_run_agent_runtime_should_limit_ranked_learning_memory(
         "learning_feedback:python-tool-calling",
         "learning_feedback:python-basics",
     ]
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_limit_profile_memory_by_type(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:cooking",
+                "content": "User likes cooking",
+            },
+            {
+                "memory_key": "profile:python",
+                "content": "User is learning Python and AI Agent development",
+            },
+            {
+                "memory_key": "profile:agent",
+                "content": "User focuses on AI Agent memory retrieval",
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    monkeypatch.setattr(
+        controller_module,
+        "MEMORY_TOP_K_BY_TYPE",
+        {
+            "profile": 2,
+        },
+        raising=False,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    state, response = run_agent_runtime(
+        user_message="AI Agent memory retrieval",
+        memory_service=FakeMemoryService(),
+    )
+
+    profile_keys = [memory["memory_key"] for memory in state.memory_context["profile"]]
+
+    assert response == "测试回答"
+    assert len(profile_keys) == 2
+
+    assert set(profile_keys) == {
+        "profile:agent",
+        "profile:python",
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("memory_type", "relevant_key", "irrelevant_key"),
+    [
+        (
+            "skill",
+            "skill:agent",
+            "skill:cooking",
+        ),
+        (
+            "project",
+            "project:agent",
+            "project:reading",
+        ),
+        (
+            "experience",
+            "experience:agent",
+            "experience:reading",
+        ),
+    ],
+)
+def test_run_agent_runtime_should_limit_memory_by_type(
+    monkeypatch,
+    memory_type,
+    relevant_key,
+    irrelevant_key,
+):
+    raw_memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    raw_memory_context[memory_type] = [
+        {
+            "memory_key": irrelevant_key,
+            "content": "Cooking and reading notes",
+        },
+        {
+            "memory_key": relevant_key,
+            "content": "AI Agent memory retrieval practice",
+        },
+    ]
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    monkeypatch.setattr(
+        controller_module,
+        "MEMORY_TOP_K_BY_TYPE",
+        {
+            memory_type: 1,
+        },
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    state, response = run_agent_runtime(
+        user_message="AI Agent memory retrieval",
+        memory_service=FakeMemoryService(),
+    )
+
+    memories = state.memory_context[memory_type]
+
+    assert response == "测试回答"
+    assert len(memories) == 1
+    assert memories[0]["memory_key"] == relevant_key
+
+
+@pytest.mark.unit
+def test_runtime_memory_top_k_config_should_include_learning():
+    assert controller_module.MEMORY_TOP_K_BY_TYPE["learning"] == 2
