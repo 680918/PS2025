@@ -83,3 +83,11 @@ def test_memory_overload_should_treat_both_query_topics_as_strong():
 
     assert relevance_by_key["learning_feedback:agent-memory"] == 2
     assert relevance_by_key["learning_feedback:tool-calling"] == 2
+
+
+def test_calibration_dataset_should_include_agent_memory_semantic_distractor():
+    cases = get_calibration_cases()
+
+    case_names = {case["name"] for case in cases}
+
+    assert "agent_memory_semantic_distractor" in case_names

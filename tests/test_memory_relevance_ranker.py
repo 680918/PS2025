@@ -681,3 +681,56 @@ def test_score_memory_should_recognize_semantic_partial_relevance():
     assert strong_score > semantic_partial_score
     assert semantic_partial_score > irrelevant_score
     assert semantic_partial_score >= 0.3
+
+
+def test_score_memory_should_treat_memory_retrieval_as_related_to_agent_memory():
+    related_memory = {
+        "memory_key": "learning_feedback:memory-retrieval",
+        "content": "Memory retrieval design",
+    }
+
+    unrelated_memory = {
+        "memory_key": "learning_feedback:english",
+        "content": "English vocabulary review",
+    }
+
+    query = "继续优化 Agent Memory"
+
+    related_score = score_memory(
+        related_memory,
+        query,
+    )
+
+    unrelated_score = score_memory(
+        unrelated_memory,
+        query,
+    )
+
+    assert related_score > unrelated_score
+    assert related_score >= 0.3
+
+
+def test_score_memory_should_not_treat_knowledge_retrieval_as_agent_memory_related():
+    related_memory = {
+        "memory_key": "learning_feedback:memory-retrieval",
+        "content": "Memory retrieval design",
+    }
+
+    distractor_memory = {
+        "memory_key": "learning_feedback:knowledge-retrieval",
+        "content": "Knowledge retrieval search ranking",
+    }
+
+    query = "继续优化 Agent Memory"
+
+    related_score = score_memory(
+        related_memory,
+        query,
+    )
+
+    distractor_score = score_memory(
+        distractor_memory,
+        query,
+    )
+
+    assert related_score > distractor_score
