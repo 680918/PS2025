@@ -1,6 +1,7 @@
 from scripts.run_memory_relevance_calibration import (
     build_calibration_output,
     format_calibration_report,
+    format_regression_report,
 )
 
 
@@ -94,3 +95,35 @@ def test_calibration_output_should_include_global_weakest_pair():
     assert "learning_feedback:memory-retrieval" in output
     assert "learning_feedback:english" in output
     assert "Margin: 0.12" in output
+
+
+def test_calibration_regression_output_should_include_status():
+    report = {
+        "passed": False,
+        "regressions": [
+            "minimum_pairwise_margin",
+        ],
+        "baseline": {
+            "minimum_pairwise_margin": 0.33,
+        },
+        "current": {
+            "minimum_pairwise_margin": 0.20,
+        },
+        "deltas": {
+            "minimum_pairwise_margin": -0.13,
+        },
+    }
+
+    output = format_regression_report(report)
+
+    assert "Calibration Regression" in output
+    assert "FAIL" in output
+    assert "minimum_pairwise_margin" in output
+    assert "-0.13" in output
+
+
+def test_build_calibration_output_should_include_regression_status():
+    output = build_calibration_output()
+
+    assert "Calibration Regression" in output
+    assert "Status: PASS" in output

@@ -1,5 +1,6 @@
 from memory.relevance_calibration_runner import (
     run_relevance_calibration,
+    run_relevance_calibration_regression,
 )
 
 
@@ -97,12 +98,64 @@ def format_calibration_report(report):
     return "\n".join(lines)
 
 
-def build_calibration_output():
-    report = run_relevance_calibration()
+def format_regression_report(report):
+    lines = []
 
-    return format_calibration_report(
-        report,
+    lines.append("Calibration Regression")
+
+    status = "PASS" if report.get("passed") else "FAIL"
+
+    lines.append("")
+    lines.append(f"Status: {status}")
+
+    regressions = report.get(
+        "regressions",
+        [],
     )
+
+    if regressions:
+        lines.append("")
+        lines.append("Regression Metrics:")
+
+        baseline = report.get(
+            "baseline",
+            {},
+        )
+
+        current = report.get(
+            "current",
+            {},
+        )
+
+        deltas = report.get(
+            "deltas",
+            {},
+        )
+
+        for metric in regressions:
+            lines.append("")
+
+            lines.append(metric)
+
+            lines.append(f"Baseline: {baseline.get(metric, 0.0):.2f}")
+
+            lines.append(f"Current:  {current.get(metric, 0.0):.2f}")
+
+            lines.append(f"Delta:    {deltas.get(metric, 0.0):.2f}")
+
+    return "\n".join(lines)
+
+
+def build_calibration_output():
+    calibration_report = run_relevance_calibration()
+
+    regression_report = run_relevance_calibration_regression(calibration_report)
+
+    calibration_output = format_calibration_report(calibration_report)
+
+    regression_output = format_regression_report(regression_report)
+
+    return calibration_output + "\n\n" + regression_output
 
 
 def main():
