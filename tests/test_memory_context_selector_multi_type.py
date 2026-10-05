@@ -319,3 +319,66 @@ def test_selector_should_prefer_type_top_k_over_legacy_learning_top_k():
 
     assert len(result["learning"]) == 1
     assert result["learning"][0]["memory_key"] == "learning:agent"
+
+
+def test_selector_should_use_memory_quality_to_break_profile_relevance_tie():
+    memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:low-quality",
+                "content": "AI Agent memory retrieval",
+                "importance": 0.2,
+                "confidence": 0.2,
+            },
+            {
+                "memory_key": "profile:high-quality",
+                "content": "AI Agent memory retrieval",
+                "importance": 0.9,
+                "confidence": 0.9,
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    result = select_relevant_memory_context(
+        memory_context,
+        query="AI Agent memory retrieval",
+    )
+
+    assert result["profile"][0]["memory_key"] == "profile:high-quality"
+
+
+def test_selector_should_use_memory_quality_to_break_learning_relevance_tie():
+    memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": "learning_feedback:low-quality",
+                "content": "AI Agent memory retrieval",
+                "importance": 0.2,
+                "confidence": 0.2,
+            },
+            {
+                "memory_key": "learning_feedback:high-quality",
+                "content": "AI Agent memory retrieval",
+                "importance": 0.9,
+                "confidence": 0.9,
+            },
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    result = select_relevant_memory_context(
+        memory_context,
+        query="AI Agent memory retrieval",
+        memory_top_k_by_type={
+            "learning": 2,
+        },
+    )
+
+    assert result["learning"][0]["memory_key"] == "learning_feedback:high-quality"
