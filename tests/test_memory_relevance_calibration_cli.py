@@ -67,3 +67,30 @@ def test_calibration_output_should_include_dataset_margin_summary():
 
     assert "Minimum Pairwise Margin Across Cases:" in output
     assert "Average Minimum Pairwise Margin:" in output
+
+
+def test_calibration_output_should_include_global_weakest_pair():
+    report = {
+        "cases": [],
+        "average_pairwise_order_accuracy": 1.0,
+        "minimum_pairwise_margin": 0.12,
+        "average_minimum_pairwise_margin": 0.41,
+        "weakest_pair": {
+            "case_name": "agent_memory",
+            "higher_relevance_key": "learning_feedback:memory-retrieval",
+            "higher_relevance": 1,
+            "higher_score": 0.12,
+            "lower_relevance_key": "learning_feedback:english",
+            "lower_relevance": 0,
+            "lower_score": 0.0,
+            "margin": 0.12,
+        },
+    }
+
+    output = format_calibration_report(report)
+
+    assert "Global Weakest Pair" in output
+    assert "Case: agent_memory" in output
+    assert "learning_feedback:memory-retrieval" in output
+    assert "learning_feedback:english" in output
+    assert "Margin: 0.12" in output

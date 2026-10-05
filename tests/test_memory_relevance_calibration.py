@@ -345,3 +345,83 @@ def test_calibration_dataset_should_report_margin_summary():
 
     assert result["minimum_pairwise_margin"] == 0.5
     assert result["average_minimum_pairwise_margin"] == 0.5
+
+
+def test_calibration_case_should_report_weakest_pair():
+    items = [
+        {
+            "memory_key": "learning_feedback:strong",
+            "content": "Python Tool Calling practice",
+            "relevance": 2,
+        },
+        {
+            "memory_key": "learning_feedback:partial",
+            "content": "Python basics",
+            "relevance": 1,
+        },
+        {
+            "memory_key": "learning_feedback:irrelevant",
+            "content": "English lesson about the words tool and calling",
+            "relevance": 0,
+        },
+    ]
+
+    result = evaluate_calibration_case(
+        query="继续学习 Python Tool Calling",
+        items=items,
+    )
+
+    weakest_pair = result["weakest_pair"]
+
+    assert weakest_pair["higher_relevance_key"] == "learning_feedback:partial"
+    assert weakest_pair["higher_relevance"] == 1
+    assert weakest_pair["higher_score"] == 0.5
+
+    assert weakest_pair["lower_relevance_key"] == "learning_feedback:irrelevant"
+    assert weakest_pair["lower_relevance"] == 0
+    assert weakest_pair["lower_score"] == 0.25
+
+    assert weakest_pair["margin"] == 0.25
+
+
+def test_calibration_dataset_should_report_global_weakest_pair():
+    cases = [
+        {
+            "name": "case_one",
+            "query": "继续学习 Python Tool Calling",
+            "items": [
+                {
+                    "memory_key": "strong",
+                    "content": "Python Tool Calling practice",
+                    "relevance": 2,
+                },
+                {
+                    "memory_key": "partial",
+                    "content": "Python basics",
+                    "relevance": 1,
+                },
+                {
+                    "memory_key": "irrelevant",
+                    "content": "English lesson about the words tool and calling",
+                    "relevance": 0,
+                },
+            ],
+        }
+    ]
+
+    result = evaluate_calibration_dataset(cases)
+
+    assert "weakest_pair" in result
+    weakest_pair = result["weakest_pair"]
+
+    assert weakest_pair["case_name"] == "case_one"
+
+    assert weakest_pair["higher_relevance_key"] == "partial"
+    assert weakest_pair["higher_relevance"] == 1
+    assert weakest_pair["higher_score"] == 0.5
+
+    assert weakest_pair["lower_relevance_key"] == "irrelevant"
+    assert weakest_pair["lower_relevance"] == 0
+    assert weakest_pair["lower_score"] == 0.25
+
+    assert weakest_pair["margin"] == 0.25
