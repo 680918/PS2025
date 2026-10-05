@@ -129,7 +129,7 @@ def score_memory(
         lexical_score = 1.0
 
     elif overlap > 0:
-        lexical_score = (overlap / len(query_tokens)) * 0.5
+        lexical_score = (overlap / len(query_tokens)) * 0.25
 
     else:
         lexical_score = 0.0

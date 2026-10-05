@@ -183,4 +183,25 @@ def get_calibration_cases():
                 },
             ],
         },
+        {
+            "name": "reading_keyword_distractor",
+            "query": "继续培养 reading habit",
+            "items": [
+                {
+                    "memory_key": "learning_feedback:reading-system",
+                    "content": "Build long term reading habit",
+                    "relevance": 2,
+                },
+                {
+                    "memory_key": "learning_feedback:book-notes",
+                    "content": "Book notes and reflection",
+                    "relevance": 1,
+                },
+                {
+                    "memory_key": "learning_feedback:english-reading",
+                    "content": "English lesson about the words reading and habit",
+                    "relevance": 0,
+                },
+            ],
+        },
     ]

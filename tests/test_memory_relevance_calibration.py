@@ -1,3 +1,4 @@
+import pytest
 from memory.relevance_calibration import (
     calculate_pairwise_order_accuracy,
     evaluate_calibration_case,
@@ -379,9 +380,9 @@ def test_calibration_case_should_report_weakest_pair():
 
     assert weakest_pair["lower_relevance_key"] == "learning_feedback:irrelevant"
     assert weakest_pair["lower_relevance"] == 0
-    assert weakest_pair["lower_score"] == 0.25
+    assert weakest_pair["lower_score"] == pytest.approx(0.125)
 
-    assert weakest_pair["margin"] == 0.25
+    assert weakest_pair["margin"] == pytest.approx(0.375)
 
 
 def test_calibration_dataset_should_report_global_weakest_pair():
@@ -422,6 +423,6 @@ def test_calibration_dataset_should_report_global_weakest_pair():
 
     assert weakest_pair["lower_relevance_key"] == "irrelevant"
     assert weakest_pair["lower_relevance"] == 0
-    assert weakest_pair["lower_score"] == 0.25
+    assert weakest_pair["lower_score"] == pytest.approx(0.125)
 
-    assert weakest_pair["margin"] == 0.25
+    assert weakest_pair["margin"] == pytest.approx(0.375)

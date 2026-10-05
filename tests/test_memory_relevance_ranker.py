@@ -734,3 +734,30 @@ def test_score_memory_should_not_treat_knowledge_retrieval_as_agent_memory_relat
     )
 
     assert related_score > distractor_score
+
+
+def test_score_memory_should_keep_keyword_only_distractor_below_related_memory():
+    related_memory = {
+        "memory_key": "learning_feedback:book-notes",
+        "content": "Book notes and reflection",
+    }
+
+    keyword_distractor = {
+        "memory_key": "learning_feedback:english-reading",
+        "content": "English lesson about the words reading and habit",
+    }
+
+    query = "继续培养 reading habit"
+
+    related_score = score_memory(
+        related_memory,
+        query,
+    )
+
+    distractor_score = score_memory(
+        keyword_distractor,
+        query,
+    )
+
+    assert related_score >= 0.5
+    assert distractor_score <= 0.2
