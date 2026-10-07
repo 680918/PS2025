@@ -141,3 +141,73 @@ def test_composite_ranking_should_protect_relevance_at_guard_threshold(
 
     assert ranked[0]["memory_key"] == "more-relevant"
     assert ranked[1]["memory_key"] == "higher-quality"
+
+
+def test_composite_ranking_should_use_updated_at_to_break_full_tie(
+    monkeypatch,
+):
+    memories = [
+        {
+            "memory_key": "older-memory",
+            "content": "same topic",
+            "importance": 0.5,
+            "confidence": 0.5,
+            "updated_at": "2026-08-08T00:00:00+00:00",
+        },
+        {
+            "memory_key": "newer-memory",
+            "content": "same topic",
+            "importance": 0.5,
+            "confidence": 0.5,
+            "updated_at": "2026-10-07T00:00:00+00:00",
+        },
+    ]
+
+    monkeypatch.setattr(
+        score_fusion,
+        "score_memory",
+        lambda memory, query: 0.7,
+    )
+
+    ranked = score_fusion.rank_memories_by_composite_score(
+        memories,
+        query="same topic",
+    )
+
+    assert ranked[0]["memory_key"] == "newer-memory"
+    assert ranked[1]["memory_key"] == "older-memory"
+
+
+def test_composite_ranking_should_support_memories_without_updated_at(
+    monkeypatch,
+):
+    memories = [
+        {
+            "memory_key": "first-memory",
+            "content": "same topic",
+            "importance": 0.5,
+            "confidence": 0.5,
+        },
+        {
+            "memory_key": "second-memory",
+            "content": "same topic",
+            "importance": 0.5,
+            "confidence": 0.5,
+        },
+    ]
+
+    monkeypatch.setattr(
+        score_fusion,
+        "score_memory",
+        lambda memory, query: 0.7,
+    )
+
+    ranked = score_fusion.rank_memories_by_composite_score(
+        memories,
+        query="same topic",
+    )
+
+    assert [memory["memory_key"] for memory in ranked] == [
+        "first-memory",
+        "second-memory",
+    ]

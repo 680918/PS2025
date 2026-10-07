@@ -30,6 +30,7 @@ def rank_scored_memories_with_relevance_guard(
             relevance_band,
             -item["composite_score"],
             -item["relevance_score"],
+            -item.get("recency_score", 0.0),
         )
 
     return sorted(

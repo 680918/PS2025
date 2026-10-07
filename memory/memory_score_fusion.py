@@ -2,6 +2,10 @@ from memory.relevance_ranker import score_memory
 from memory.memory_score_policy import (
     rank_scored_memories_with_relevance_guard,
 )
+from datetime import datetime, timezone
+from memory.memory_recency import (
+    calculate_recency_score,
+)
 
 
 RELEVANCE_WEIGHT = 0.60
@@ -27,6 +31,10 @@ def rank_memories_by_composite_score(
     memories,
     query=None,
 ):
+    reference_time = datetime.now(
+        timezone.utc,
+    )
+
     scored_items = []
 
     for memory in memories:
@@ -40,11 +48,17 @@ def rank_memories_by_composite_score(
             relevance_score=relevance_score,
         )
 
+        recency_score = calculate_recency_score(
+            updated_at=memory.get("updated_at"),
+            reference_time=reference_time,
+        )
+
         scored_items.append(
             {
                 "memory": memory,
                 "relevance_score": relevance_score,
                 "composite_score": composite_score,
+                "recency_score": recency_score,
             }
         )
 

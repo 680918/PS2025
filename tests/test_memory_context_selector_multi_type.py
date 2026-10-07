@@ -382,3 +382,38 @@ def test_selector_should_use_memory_quality_to_break_learning_relevance_tie():
     )
 
     assert result["learning"][0]["memory_key"] == "learning_feedback:high-quality"
+
+
+def test_selector_should_use_recency_to_break_full_profile_tie():
+    memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:older",
+                "content": "AI Agent memory retrieval",
+                "importance": 0.5,
+                "confidence": 0.5,
+                "updated_at": "2026-08-08T00:00:00+00:00",
+            },
+            {
+                "memory_key": "profile:newer",
+                "content": "AI Agent memory retrieval",
+                "importance": 0.5,
+                "confidence": 0.5,
+                "updated_at": "2026-10-07T00:00:00+00:00",
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    result = select_relevant_memory_context(
+        memory_context,
+        query="AI Agent memory retrieval",
+    )
+
+    assert [memory["memory_key"] for memory in result["profile"]] == [
+        "profile:newer",
+        "profile:older",
+    ]

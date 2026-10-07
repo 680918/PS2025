@@ -6891,3 +6891,59 @@ def test_run_agent_runtime_should_use_memory_quality_to_break_relevance_tie(
 
     assert response == "测试回答"
     assert state.memory_context["profile"][0]["memory_key"] == "profile:high-quality"
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_use_recency_to_break_profile_tie(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:older",
+                "content": "AI Agent memory retrieval",
+                "importance": 0.5,
+                "confidence": 0.5,
+                "updated_at": "2026-08-08T00:00:00+00:00",
+            },
+            {
+                "memory_key": "profile:newer",
+                "content": "AI Agent memory retrieval",
+                "importance": 0.5,
+                "confidence": 0.5,
+                "updated_at": "2026-10-07T00:00:00+00:00",
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    state, response = run_agent_runtime(
+        user_message="AI Agent memory retrieval",
+        memory_service=FakeMemoryService(),
+    )
+
+    assert response == "测试回答"
+
+    assert [memory["memory_key"] for memory in state.memory_context["profile"]] == [
+        "profile:newer",
+        "profile:older",
+    ]
