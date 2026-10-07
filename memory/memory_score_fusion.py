@@ -1,4 +1,8 @@
 from memory.relevance_ranker import score_memory
+from memory.memory_score_policy import (
+    rank_scored_memories_with_relevance_guard,
+)
+
 
 RELEVANCE_WEIGHT = 0.60
 IMPORTANCE_WEIGHT = 0.25
@@ -23,7 +27,7 @@ def rank_memories_by_composite_score(
     memories,
     query=None,
 ):
-    scored_memories = []
+    scored_items = []
 
     for memory in memories:
         relevance_score = score_memory(
@@ -36,16 +40,16 @@ def rank_memories_by_composite_score(
             relevance_score=relevance_score,
         )
 
-        scored_memories.append(
-            (
-                memory,
-                composite_score,
-            )
+        scored_items.append(
+            {
+                "memory": memory,
+                "relevance_score": relevance_score,
+                "composite_score": composite_score,
+            }
         )
 
-    scored_memories.sort(
-        key=lambda item: item[1],
-        reverse=True,
+    ranked_items = rank_scored_memories_with_relevance_guard(
+        scored_items,
     )
 
-    return [memory for memory, _ in scored_memories]
+    return [item["memory"] for item in ranked_items]
