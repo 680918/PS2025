@@ -1,5 +1,5 @@
 import pytest
-
+import memory.memory_score_fusion as score_fusion
 
 from memory.memory_score_fusion import (
     calculate_memory_score,
@@ -103,3 +103,41 @@ def test_composite_ranking_should_keep_relevance_as_primary_signal():
     )
 
     assert ranked[0]["memory_key"] == "relevant-lower-quality"
+
+
+def test_composite_ranking_should_protect_relevance_at_guard_threshold(
+    monkeypatch,
+):
+    memories = [
+        {
+            "memory_key": "more-relevant",
+            "content": "memory a",
+            "importance": 0.2,
+            "confidence": 0.2,
+        },
+        {
+            "memory_key": "higher-quality",
+            "content": "memory b",
+            "importance": 0.9,
+            "confidence": 0.9,
+        },
+    ]
+
+    relevance_scores = {
+        "more-relevant": 0.70,
+        "higher-quality": 0.62,
+    }
+
+    monkeypatch.setattr(
+        score_fusion,
+        "score_memory",
+        lambda memory, query: relevance_scores[memory["memory_key"]],
+    )
+
+    ranked = score_fusion.rank_memories_by_composite_score(
+        memories,
+        query="test query",
+    )
+
+    assert ranked[0]["memory_key"] == "more-relevant"
+    assert ranked[1]["memory_key"] == "higher-quality"
