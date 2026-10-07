@@ -103,3 +103,27 @@ def test_relevance_guard_ranking_should_be_stable_with_multiple_memories():
         "highest-relevance",
         "lower-band-very-high-quality",
     ]
+
+
+def test_relevance_guard_ranking_should_use_recency_to_break_composite_tie():
+    scored_items = [
+        {
+            "memory_key": "older-memory",
+            "relevance_score": 0.70,
+            "composite_score": 0.70,
+            "recency_score": 0.25,
+        },
+        {
+            "memory_key": "newer-memory",
+            "relevance_score": 0.70,
+            "composite_score": 0.70,
+            "recency_score": 1.0,
+        },
+    ]
+
+    ranked = rank_scored_memories_with_relevance_guard(
+        scored_items,
+    )
+
+    assert ranked[0]["memory_key"] == "newer-memory"
+    assert ranked[1]["memory_key"] == "older-memory"
