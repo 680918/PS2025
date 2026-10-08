@@ -113,3 +113,65 @@ def test_answer_pair_evaluator_should_preserve_answers_for_diagnostics():
     assert result["without_memory_answer"] == "answer-without-memory"
 
     assert result["with_memory_answer"] == "answer-without-memory"
+
+
+def test_answer_pair_evaluator_should_preserve_quality_diagnostics():
+    case = {
+        "case_id": "diagnostic-quality-case",
+        "query": "Continue Tool Calling",
+        "memory_context": [
+            {
+                "memory_key": "learning:tool-calling",
+                "content": ("Continue with practical execution."),
+            },
+        ],
+        "expected_effect": "positive",
+        "evaluation_criteria": [
+            "Move toward practical execution.",
+        ],
+    }
+
+    def answer_provider(
+        *,
+        query,
+        memory_context,
+    ):
+        if memory_context:
+            return "Build a practical tool call."
+
+        return "Tool Calling allows tool use."
+
+    def quality_score_provider(
+        *,
+        query,
+        answer,
+        evaluation_criteria,
+    ):
+        if "practical" in answer:
+            return {
+                "score": 0.90,
+                "reason": ("The answer moves into practice."),
+            }
+
+        return {
+            "score": 0.60,
+            "reason": ("The answer remains conceptual."),
+        }
+
+    result = evaluate_memory_answer_pair(
+        case,
+        answer_provider=answer_provider,
+        quality_score_provider=(quality_score_provider),
+    )
+
+    assert result["without_memory_quality"] == {
+        "score": 0.60,
+        "reason": ("The answer remains conceptual."),
+    }
+
+    assert result["with_memory_quality"] == {
+        "score": 0.90,
+        "reason": ("The answer moves into practice."),
+    }
+
+    assert result["contribution_delta"] == pytest.approx(0.30)

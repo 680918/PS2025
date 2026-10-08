@@ -8,25 +8,31 @@ from memory.memory_answer_quality import (
 
 
 _JUDGE_SYSTEM_PROMPT = """
-You are an answer quality evaluator.
+你是一名回答质量评估器。
 
-Evaluate the answer only against the supplied
-query and evaluation criteria.
+你只能根据提供的：
+1. 用户问题
+2. 待评估回答
+3. 评价标准
 
-Return strict JSON only:
+来评估回答质量。
+
+只能返回严格 JSON：
 
 {
   "score": 0.0,
-  "reason": "brief explanation"
+  "reason": "简短的中文评价理由"
 }
 
-The score must be a number between 0 and 1.
+要求：
 
-0 means the answer fails the criteria.
-1 means the answer fully satisfies the criteria.
-
-Do not include markdown or any text outside
-the JSON object.
+- score 必须是 0 到 1 之间的数字。
+- 0 表示回答完全没有满足评价标准。
+- 1 表示回答完全满足评价标准。
+- reason 必须使用简体中文。
+- reason 应解释为什么得到这个分数。
+- 不要返回 Markdown。
+- 不要返回 JSON 以外的任何文字。
 """.strip()
 
 
@@ -38,7 +44,7 @@ def _build_judge_user_message(
     criteria_text = "\n".join(f"- {criterion}" for criterion in evaluation_criteria)
 
     return (
-        f"Query:\n{query}\n\nAnswer:\n{answer}\n\nEvaluation criteria:\n{criteria_text}"
+        f"用户问题：\n{query}\n\n待评估回答：\n{answer}\n\n评价标准：\n{criteria_text}"
     )
 
 
