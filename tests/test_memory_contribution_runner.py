@@ -308,3 +308,9 @@ def test_llm_evaluation_runner_should_use_semantic_judge_scores():
     assert report["summary"]["accuracy"] == 1.0
 
     assert report["results"][0]["actual_effect"] == "positive"
+
+    result = report["results"][0]
+
+    assert result["without_memory_quality"]["reason"] == "test judge"
+
+    assert result["with_memory_quality"]["reason"] == "test judge"

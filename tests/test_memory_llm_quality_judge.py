@@ -34,11 +34,13 @@ def test_llm_quality_judge_should_return_normalized_score_and_reason():
 
     assert result["reason"] == ("The answer meets the criteria.")
 
-    assert "0 and 1" in captured["system_prompt"]
+    assert "reason 必须使用简体中文" in captured["system_prompt"]
 
-    assert "Continue learning Tool Calling" in (captured["user_message"])
+    assert "0 到 1" in captured["system_prompt"]
 
-    assert "practical tool call" in (captured["user_message"])
+    assert "Continue learning Tool Calling" in captured["user_message"]
+
+    assert "practical tool call" in captured["user_message"]
 
 
 def test_llm_quality_judge_should_reject_invalid_json():

@@ -131,7 +131,7 @@ def run_memory_contribution_llm_evaluation(
                 llm_call=llm_call,
             )
 
-            return judge_result["score"]
+            return judge_result
 
         result = evaluate_memory_answer_pair(
             case,

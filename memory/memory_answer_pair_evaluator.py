@@ -4,6 +4,9 @@ from memory.memory_contribution_dataset import (
 from memory.memory_contribution_evaluator import (
     evaluate_memory_contribution_case,
 )
+from memory.memory_answer_quality import (
+    normalize_answer_quality_evaluation,
+)
 
 
 def evaluate_memory_answer_pair(
@@ -26,26 +29,32 @@ def evaluate_memory_answer_pair(
         memory_context=case["memory_context"],
     )
 
-    without_memory_score = quality_score_provider(
-        query=query,
-        answer=without_memory_answer,
-        evaluation_criteria=(evaluation_criteria),
+    without_memory_quality = normalize_answer_quality_evaluation(
+        quality_score_provider(
+            query=query,
+            answer=without_memory_answer,
+            evaluation_criteria=(evaluation_criteria),
+        )
     )
 
-    with_memory_score = quality_score_provider(
-        query=query,
-        answer=with_memory_answer,
-        evaluation_criteria=(evaluation_criteria),
+    with_memory_quality = normalize_answer_quality_evaluation(
+        quality_score_provider(
+            query=query,
+            answer=with_memory_answer,
+            evaluation_criteria=(evaluation_criteria),
+        )
     )
 
     result = evaluate_memory_contribution_case(
         case,
-        without_memory_score=without_memory_score,
-        with_memory_score=with_memory_score,
+        without_memory_score=(without_memory_quality["score"]),
+        with_memory_score=(with_memory_quality["score"]),
     )
 
     return {
         **result,
         "without_memory_answer": (without_memory_answer),
         "with_memory_answer": (with_memory_answer),
+        "without_memory_quality": (without_memory_quality),
+        "with_memory_quality": (with_memory_quality),
     }
