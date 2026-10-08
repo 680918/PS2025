@@ -2,6 +2,7 @@ import json
 
 from memory.context_selector import (
     select_relevant_memory_context,
+    select_relevant_memory_context_with_budget_diagnostics,
 )
 
 
@@ -172,3 +173,94 @@ def test_memory_context_selector_should_rank_and_limit_learning_memory():
         "learning_feedback:python",
         "learning_feedback:python-basics",
     ]
+
+
+def test_selector_budget_diagnostics_should_expose_before_and_after_context():
+    memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:one",
+                "content": "12345",
+            },
+            {
+                "memory_key": "profile:two",
+                "content": "67890",
+            },
+            {
+                "memory_key": "profile:three",
+                "content": "abcde",
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    result = select_relevant_memory_context_with_budget_diagnostics(
+        memory_context,
+        memory_top_k_by_type={
+            "profile": 3,
+        },
+        memory_budget_by_type={
+            "profile": 10,
+        },
+    )
+
+    assert [memory["memory_key"] for memory in result["before_budget"]["profile"]] == [
+        "profile:one",
+        "profile:two",
+        "profile:three",
+    ]
+
+    assert [memory["memory_key"] for memory in result["after_budget"]["profile"]] == [
+        "profile:one",
+        "profile:two",
+    ]
+
+
+def test_selector_budget_diagnostics_after_budget_should_match_regular_selector():
+    memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:one",
+                "content": "12345",
+            },
+            {
+                "memory_key": "profile:two",
+                "content": "67890",
+            },
+            {
+                "memory_key": "profile:three",
+                "content": "abcde",
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    regular_result = select_relevant_memory_context(
+        memory_context,
+        query="profile",
+        memory_top_k_by_type={
+            "profile": 3,
+        },
+        memory_budget_by_type={
+            "profile": 10,
+        },
+    )
+
+    diagnostics_result = select_relevant_memory_context_with_budget_diagnostics(
+        memory_context,
+        query="profile",
+        memory_top_k_by_type={
+            "profile": 3,
+        },
+        memory_budget_by_type={
+            "profile": 10,
+        },
+    )
+
+    assert diagnostics_result["after_budget"] == regular_result

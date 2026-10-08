@@ -13,6 +13,8 @@ class AgentState:
 
         self.memory_service = memory_service
         self.memory_context = {}
+        self.memory_context_usage = None
+        self.memory_context_budget_impact = None
 
         self.plan = []
 
@@ -63,12 +65,26 @@ class AgentState:
     def set_memory_context(self, memory_context):
         self.memory_context = memory_context
 
+    def set_memory_context_usage(
+        self,
+        memory_context_usage,
+    ):
+        self.memory_context_usage = memory_context_usage
+
+    def set_memory_context_budget_impact(
+        self,
+        memory_context_budget_impact,
+    ):
+        self.memory_context_budget_impact = memory_context_budget_impact
+
     def get_state(self):
 
         return {
             "run_id": self.run_id,
             "user_message": self.user_message,
             "memory_context": self.memory_context,
+            "memory_context_usage": self.memory_context_usage,
+            "memory_context_budget_impact": (self.memory_context_budget_impact),
             "plan": self.plan,
             "current_step": self.current_step,
             "tool_results": self.tool_results,

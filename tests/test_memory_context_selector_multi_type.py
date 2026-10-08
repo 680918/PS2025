@@ -417,3 +417,159 @@ def test_selector_should_use_recency_to_break_full_profile_tie():
         "profile:newer",
         "profile:older",
     ]
+
+
+def test_selector_should_limit_profile_memory_by_character_budget():
+    memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:first",
+                "content": "12345",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+            {
+                "memory_key": "profile:second",
+                "content": "67890",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+            {
+                "memory_key": "profile:third",
+                "content": "abcde",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    result = select_relevant_memory_context(
+        memory_context,
+        query=None,
+        memory_budget_by_type={
+            "profile": 10,
+        },
+    )
+
+    assert [memory["memory_key"] for memory in result["profile"]] == [
+        "profile:first",
+        "profile:second",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("memory_type", "first_key", "second_key", "third_key"),
+    [
+        (
+            "skill",
+            "skill:first",
+            "skill:second",
+            "skill:third",
+        ),
+        (
+            "project",
+            "project:first",
+            "project:second",
+            "project:third",
+        ),
+        (
+            "experience",
+            "experience:first",
+            "experience:second",
+            "experience:third",
+        ),
+    ],
+)
+def test_selector_should_limit_non_learning_memory_by_character_budget(
+    memory_type,
+    first_key,
+    second_key,
+    third_key,
+):
+    memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    memory_context[memory_type] = [
+        {
+            "memory_key": first_key,
+            "content": "12345",
+            "importance": 0.5,
+            "confidence": 0.5,
+        },
+        {
+            "memory_key": second_key,
+            "content": "67890",
+            "importance": 0.5,
+            "confidence": 0.5,
+        },
+        {
+            "memory_key": third_key,
+            "content": "abcde",
+            "importance": 0.5,
+            "confidence": 0.5,
+        },
+    ]
+
+    result = select_relevant_memory_context(
+        memory_context,
+        query=None,
+        memory_budget_by_type={
+            memory_type: 10,
+        },
+    )
+
+    assert [memory["memory_key"] for memory in result[memory_type]] == [
+        first_key,
+        second_key,
+    ]
+
+
+def test_selector_should_limit_learning_memory_by_character_budget():
+    memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": "learning:first",
+                "content": "12345",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+            {
+                "memory_key": "learning:second",
+                "content": "67890",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+            {
+                "memory_key": "learning:third",
+                "content": "abcde",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    result = select_relevant_memory_context(
+        memory_context,
+        query=None,
+        memory_budget_by_type={
+            "learning": 10,
+        },
+    )
+
+    assert [memory["memory_key"] for memory in result["learning"]] == [
+        "learning:first",
+        "learning:second",
+    ]

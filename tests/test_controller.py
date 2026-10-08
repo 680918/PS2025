@@ -6947,3 +6947,353 @@ def test_run_agent_runtime_should_use_recency_to_break_profile_tie(
         "profile:newer",
         "profile:older",
     ]
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_apply_profile_memory_character_budget(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:first",
+                "content": "12345",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+            {
+                "memory_key": "profile:second",
+                "content": "67890",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+            {
+                "memory_key": "profile:third",
+                "content": "abcde",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    monkeypatch.setattr(
+        controller_module,
+        "MEMORY_BUDGET_BY_TYPE",
+        {
+            "profile": 10,
+        },
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    state, response = run_agent_runtime(
+        user_message="profile memory",
+        memory_service=FakeMemoryService(),
+    )
+
+    assert response == "测试回答"
+
+    assert [memory["memory_key"] for memory in state.memory_context["profile"]] == [
+        "profile:first",
+        "profile:second",
+    ]
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_record_memory_context_usage(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:one",
+                "content": "12345",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+        ],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": "learning:one",
+                "content": "abc",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    state, response = run_agent_runtime(
+        user_message="memory usage",
+        memory_service=FakeMemoryService(),
+    )
+
+    assert response == "测试回答"
+
+    assert state.memory_context_usage["total_characters"] == 8
+
+    assert state.memory_context_usage["total_memories"] == 2
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_log_memory_context_usage(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:one",
+                "content": "12345",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+        ],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": "learning:one",
+                "content": "abc",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    logged_calls = []
+
+    class FakeTraceLogger:
+        def info(self, *args):
+            logged_calls.append(args)
+
+    fake_trace_logger = FakeTraceLogger()
+
+    monkeypatch.setattr(
+        controller_module,
+        "get_trace_logger",
+        lambda _logger: fake_trace_logger,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    run_agent_runtime(
+        user_message="memory usage",
+        memory_service=FakeMemoryService(),
+    )
+
+    assert any(call[0].startswith("Memory context usage:") for call in logged_calls)
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_record_memory_context_budget_impact(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:one",
+                "content": "12345",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+            {
+                "memory_key": "profile:two",
+                "content": "67890",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+            {
+                "memory_key": "profile:three",
+                "content": "abcde",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    monkeypatch.setattr(
+        controller_module,
+        "MEMORY_BUDGET_BY_TYPE",
+        {
+            "profile": 10,
+        },
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "MEMORY_TOP_K_BY_TYPE",
+        {
+            "profile": 3,
+        },
+    )
+
+    state, response = run_agent_runtime(
+        user_message="memory budget impact",
+        memory_service=FakeMemoryService(),
+    )
+
+    assert response == "测试回答"
+
+    assert state.memory_context_budget_impact["before_characters"] == 15
+
+    assert state.memory_context_budget_impact["after_characters"] == 10
+
+    assert state.memory_context_budget_impact["reduced_characters"] == 5
+
+
+@pytest.mark.unit
+def test_run_agent_runtime_should_log_memory_context_budget_impact(
+    monkeypatch,
+):
+    raw_memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:one",
+                "content": "12345",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+            {
+                "memory_key": "profile:two",
+                "content": "67890",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+            {
+                "memory_key": "profile:three",
+                "content": "abcde",
+                "importance": 0.5,
+                "confidence": 0.5,
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    class FakeMemoryService:
+        def get_context(self):
+            return raw_memory_context
+
+    logged_calls = []
+
+    class FakeTraceLogger:
+        def info(self, *args):
+            logged_calls.append(args)
+
+    fake_trace_logger = FakeTraceLogger()
+
+    monkeypatch.setattr(
+        controller_module,
+        "get_trace_logger",
+        lambda _logger: fake_trace_logger,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "MEMORY_TOP_K_BY_TYPE",
+        {
+            "profile": 3,
+        },
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "MEMORY_BUDGET_BY_TYPE",
+        {
+            "profile": 10,
+        },
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: "测试回答",
+    )
+
+    run_agent_runtime(
+        user_message="memory budget impact",
+        memory_service=FakeMemoryService(),
+    )
+
+    assert any(
+        call[0].startswith("Memory context budget impact:") for call in logged_calls
+    )
