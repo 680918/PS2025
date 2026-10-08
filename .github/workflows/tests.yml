@@ -207,6 +207,33 @@ jobs:
         run: |
           python -m scripts.check_memory_score_fusion_regression
 
+  memory-contribution-regression:
+    name: Memory Contribution Regression
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run memory contribution regression gate
+        run: |
+          python -m scripts.check_memory_contribution_regression
+
   test:
     name: test
     runs-on: ubuntu-latest
@@ -219,6 +246,7 @@ jobs:
       - lint
       - memory-calibration
       - memory-score-fusion-regression
+      - memory-contribution-regression
 
     steps:
       - name: Quality gate passed
