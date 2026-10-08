@@ -40,10 +40,16 @@ from evaluation.journey_evidence_service import (
     evaluate_session_evidence,
 )
 from memory.context_selector import (
-    select_relevant_memory_context,
+    select_relevant_memory_context_with_budget_diagnostics,
+)
+from memory.context_budget import (
+    calculate_memory_context_budget_impact,
+    calculate_memory_context_usage,
 )
 
 logger = logging.getLogger(__name__)
+
+MEMORY_BUDGET_BY_TYPE = {}
 
 MEMORY_TOP_K_BY_TYPE = {
     "profile": 2,
@@ -283,14 +289,68 @@ def run_agent_runtime(
                     None,
                 )
 
-        memory_context = select_relevant_memory_context(
-            memory_context,
-            learning_domain=learning_domain,
-            query=user_message,
-            memory_top_k_by_type=MEMORY_TOP_K_BY_TYPE,
+        memory_context_diagnostics = (
+            select_relevant_memory_context_with_budget_diagnostics(
+                memory_context,
+                learning_domain=learning_domain,
+                query=user_message,
+                memory_top_k_by_type=MEMORY_TOP_K_BY_TYPE,
+                memory_budget_by_type=MEMORY_BUDGET_BY_TYPE,
+            )
         )
 
-        state.set_memory_context(memory_context)
+        before_budget_context = memory_context_diagnostics["before_budget"]
+
+        selected_memory_context = memory_context_diagnostics["after_budget"]
+
+        state.set_memory_context(selected_memory_context)
+
+        before_budget_usage = calculate_memory_context_usage(
+            before_budget_context,
+        )
+
+        memory_context_usage = calculate_memory_context_usage(
+            selected_memory_context,
+        )
+
+        state.set_memory_context_usage(memory_context_usage)
+
+        memory_context_budget_impact = calculate_memory_context_budget_impact(
+            before_budget_usage,
+            memory_context_usage,
+        )
+
+        state.set_memory_context_budget_impact(memory_context_budget_impact)
+
+        trace_logger = get_trace_logger(logger)
+
+        trace_logger.info(
+            (
+                "Memory context usage: "
+                "total_characters=%s "
+                "total_memories=%s "
+                "by_type=%s "
+                "count_by_type=%s"
+            ),
+            memory_context_usage["total_characters"],
+            memory_context_usage["total_memories"],
+            memory_context_usage["by_type"],
+            memory_context_usage["count_by_type"],
+        )
+
+        trace_logger.info(
+            (
+                "Memory context budget impact: "
+                "before_characters=%s "
+                "after_characters=%s "
+                "reduced_characters=%s "
+                "reduction_ratio=%s"
+            ),
+            memory_context_budget_impact["before_characters"],
+            memory_context_budget_impact["after_characters"],
+            memory_context_budget_impact["reduced_characters"],
+            memory_context_budget_impact["reduction_ratio"],
+        )
 
     if knowledge_service is not None:
         if document_ids is None:

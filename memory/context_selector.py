@@ -2,6 +2,9 @@ from memory.retrieval_policy import get_memory_policy
 from memory.memory_score_fusion import (
     rank_memories_by_composite_score,
 )
+from memory.context_budget import (
+    apply_memory_context_budget,
+)
 
 _MEMORY_TYPES = (
     "profile",
@@ -29,16 +32,30 @@ def _rank_memory_type(
     return ranked[:top_k]
 
 
-def select_relevant_memory_context(
+def _get_memory_type_top_k(
+    memory_type,
+    memory_top_k_by_type,
+    learning_top_k=None,
+):
+    if memory_type in memory_top_k_by_type:
+        return memory_top_k_by_type[memory_type]
+
+    if memory_type == "learning":
+        return learning_top_k
+
+    return None
+
+
+def _select_memory_context_before_budget(
     memory_context,
     learning_domain=None,
     query=None,
     learning_top_k=None,
     memory_top_k_by_type=None,
 ):
-    selected = {memory_type: [] for memory_type in _MEMORY_TYPES}
-
     memory_top_k_by_type = memory_top_k_by_type or {}
+
+    selected = {memory_type: [] for memory_type in _MEMORY_TYPES}
 
     for memory_type in _MEMORY_TYPES:
         if memory_type == "learning":
@@ -54,10 +71,17 @@ def select_relevant_memory_context(
                 learning_top_k=learning_top_k,
             ),
         )
+
     learning_candidates = []
 
-    for memory in memory_context.get("learning", []):
-        memory_key = memory.get("memory_key", "")
+    for memory in memory_context.get(
+        "learning",
+        [],
+    ):
+        memory_key = memory.get(
+            "memory_key",
+            "",
+        )
 
         policy = get_memory_policy(memory_key)
 
@@ -86,15 +110,54 @@ def select_relevant_memory_context(
     return selected
 
 
-def _get_memory_type_top_k(
-    memory_type,
-    memory_top_k_by_type,
+def select_relevant_memory_context(
+    memory_context,
+    learning_domain=None,
+    query=None,
     learning_top_k=None,
+    memory_top_k_by_type=None,
+    memory_budget_by_type=None,
 ):
-    if memory_type in memory_top_k_by_type:
-        return memory_top_k_by_type[memory_type]
+    memory_budget_by_type = memory_budget_by_type or {}
 
-    if memory_type == "learning":
-        return learning_top_k
+    selected = _select_memory_context_before_budget(
+        memory_context,
+        learning_domain=learning_domain,
+        query=query,
+        learning_top_k=learning_top_k,
+        memory_top_k_by_type=memory_top_k_by_type,
+    )
 
-    return None
+    return apply_memory_context_budget(
+        selected,
+        memory_budget_by_type,
+    )
+
+
+def select_relevant_memory_context_with_budget_diagnostics(
+    memory_context,
+    learning_domain=None,
+    query=None,
+    learning_top_k=None,
+    memory_top_k_by_type=None,
+    memory_budget_by_type=None,
+):
+    memory_budget_by_type = memory_budget_by_type or {}
+
+    before_budget = _select_memory_context_before_budget(
+        memory_context,
+        learning_domain=learning_domain,
+        query=query,
+        learning_top_k=learning_top_k,
+        memory_top_k_by_type=memory_top_k_by_type,
+    )
+
+    after_budget = apply_memory_context_budget(
+        before_budget,
+        memory_budget_by_type,
+    )
+
+    return {
+        "before_budget": before_budget,
+        "after_budget": after_budget,
+    }
