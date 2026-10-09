@@ -5,6 +5,9 @@ from memory.memory_score_fusion import (
 from memory.context_budget import (
     apply_memory_context_budget,
 )
+from memory.memory_trust_guard import (
+    should_include_memory_by_trust,
+)
 
 _MEMORY_TYPES = (
     "profile",
@@ -15,14 +18,43 @@ _MEMORY_TYPES = (
 )
 
 
+def _filter_trusted_memories(
+    memories,
+):
+    return [memory for memory in memories if should_include_memory_by_trust(memory)]
+
+
+def _collect_memories_blocked_by_trust(
+    memory_context,
+):
+    blocked = {memory_type: [] for memory_type in _MEMORY_TYPES}
+
+    for memory_type in _MEMORY_TYPES:
+        for memory in memory_context.get(
+            memory_type,
+            [],
+        ):
+            if not should_include_memory_by_trust(memory):
+                blocked[memory_type].append(memory)
+
+    return blocked
+
+
 def _rank_memory_type(
     memory_context,
     memory_type,
     query,
     top_k=None,
 ):
+    trusted_memories = _filter_trusted_memories(
+        memory_context.get(
+            memory_type,
+            [],
+        )
+    )
+
     ranked = rank_memories_by_composite_score(
-        memory_context.get(memory_type, []),
+        trusted_memories,
         query=query,
     )
 
@@ -74,10 +106,14 @@ def _select_memory_context_before_budget(
 
     learning_candidates = []
 
-    for memory in memory_context.get(
-        "learning",
-        [],
-    ):
+    trusted_learning_memories = _filter_trusted_memories(
+        memory_context.get(
+            "learning",
+            [],
+        )
+    )
+
+    for memory in trusted_learning_memories:
         memory_key = memory.get(
             "memory_key",
             "",
@@ -144,6 +180,8 @@ def select_relevant_memory_context_with_budget_diagnostics(
 ):
     memory_budget_by_type = memory_budget_by_type or {}
 
+    blocked_by_trust = _collect_memories_blocked_by_trust(memory_context)
+
     before_budget = _select_memory_context_before_budget(
         memory_context,
         learning_domain=learning_domain,
@@ -158,6 +196,7 @@ def select_relevant_memory_context_with_budget_diagnostics(
     )
 
     return {
+        "blocked_by_trust": blocked_by_trust,
         "before_budget": before_budget,
         "after_budget": after_budget,
     }

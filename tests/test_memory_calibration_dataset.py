@@ -113,3 +113,31 @@ def test_memory_calibration_case_should_reject_invalid_effect():
         match="invalid expected_effect",
     ):
         validate_memory_calibration_case(case)
+
+
+def test_harmful_python_mastery_should_include_reference_context():
+    cases = get_memory_calibration_cases()
+
+    case = next(
+        case for case in cases if case["case_id"] == "harmful-false-python-mastery"
+    )
+
+    assert case["reference_context"] == [
+        (
+            "The learner has not fully mastered "
+            "Python and still needs foundational "
+            "practice."
+        ),
+    ]
+
+
+def test_memory_calibration_case_should_reject_invalid_reference_context():
+    case = dict(get_memory_calibration_cases()[0])
+
+    case["reference_context"] = "This should be a list."
+
+    with pytest.raises(
+        ValueError,
+        match="reference_context",
+    ):
+        validate_memory_calibration_case(case)

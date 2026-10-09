@@ -47,6 +47,22 @@ def validate_memory_calibration_case(
 
     criteria = case["evaluation_criteria"]
 
+    reference_context = case.get("reference_context")
+
+    if reference_context is not None:
+        if (
+            not isinstance(
+                reference_context,
+                list,
+            )
+            or not reference_context
+        ):
+            raise ValueError("reference_context must be a non-empty list")
+
+        for fact in reference_context:
+            if not isinstance(fact, str) or not fact.strip():
+                raise ValueError("reference_context must contain non-empty strings")
+
     if not isinstance(criteria, list) or not criteria:
         raise ValueError("evaluation_criteria must be a non-empty list")
 
@@ -326,6 +342,13 @@ def get_memory_calibration_cases():
             "expected_effect": "negative",
             "evaluation_criteria": [
                 ("Preserve useful practice when learning is incomplete."),
+            ],
+            "reference_context": [
+                (
+                    "The learner has not fully mastered "
+                    "Python and still needs foundational "
+                    "practice."
+                ),
             ],
             "rule_scoring": {
                 "required_phrases": [

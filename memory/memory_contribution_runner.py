@@ -200,6 +200,7 @@ def run_memory_contribution_pairwise_evaluation(
             without_memory_answer=(without_memory_answer),
             with_memory_answer=(with_memory_answer),
             evaluation_criteria=case["evaluation_criteria"],
+            reference_context=case.get("reference_context"),
             llm_call=llm_call,
         )
 

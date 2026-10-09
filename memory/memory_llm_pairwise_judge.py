@@ -18,11 +18,22 @@ _PAIRWISE_SYSTEM_PROMPT = """
 你必须直接比较两个回答，判断加入 Memory 后，
 回答质量是否发生了实质性变化。
 
-你只能依据：
+你可以依据：
+
 1. 用户问题
-2. 评价标准
-3. 无 Memory 回答
-4. 有 Memory 回答
+2. 权威评估事实（如果提供）
+3. 评价标准
+4. 无 Memory 回答
+5. 有 Memory 回答
+
+“权威评估事实”表示本评估任务已知为真的背景事实。
+
+如果某个回答依赖了与权威评估事实冲突的信息，
+该冲突应被视为回答质量下降的重要证据。
+
+权威评估事实只用于评价回答质量，
+不能因为某个回答声称了相反内容，
+就把该回答中的说法当成真实事实。
 
 判断 Memory 对回答质量的影响。
 
@@ -70,11 +81,22 @@ def _build_pairwise_user_message(
     without_memory_answer,
     with_memory_answer,
     evaluation_criteria,
+    reference_context=None,
 ):
     criteria_text = "\n".join(f"- {criterion}" for criterion in evaluation_criteria)
 
+    reference_text = ""
+
+    if reference_context:
+        reference_text = (
+            "权威评估事实:\n"
+            + "\n".join(f"- {fact}" for fact in reference_context)
+            + "\n\n"
+        )
+
     return (
         f"用户问题:\n{query}\n\n"
+        f"{reference_text}"
         f"评价标准:\n{criteria_text}\n\n"
         "无 Memory 回答:\n"
         f"{without_memory_answer}\n\n"
@@ -88,6 +110,7 @@ def judge_memory_contribution_pair(
     without_memory_answer,
     with_memory_answer,
     evaluation_criteria,
+    reference_context=None,
     llm_call=call_llm,
 ):
     if (
@@ -104,6 +127,7 @@ def judge_memory_contribution_pair(
         without_memory_answer,
         with_memory_answer,
         evaluation_criteria,
+        reference_context,
     )
 
     response = llm_call(

@@ -463,3 +463,56 @@ def test_run_pairwise_evaluation_should_report_accuracy():
     assert len(report["errors"]) == 1
 
     assert report["errors"][0]["case_id"] == "case-neutral"
+
+
+def test_run_pairwise_evaluation_should_forward_reference_context():
+    cases = [
+        {
+            "case_id": "reference-case",
+            "query": "Continue learning Python",
+            "memory_context": [
+                {
+                    "memory_key": ("learning:python-mastery"),
+                    "content": ("The learner has fully mastered Python."),
+                },
+            ],
+            "expected_effect": "negative",
+            "evaluation_criteria": [
+                "Preserve useful practice.",
+            ],
+            "reference_context": [
+                ("The learner has not fully mastered Python."),
+            ],
+        },
+    ]
+
+    def answer_provider(
+        *,
+        query,
+        memory_context,
+    ):
+        if memory_context:
+            return "Skip practice."
+
+        return "Continue practice."
+
+    captured = {}
+
+    def fake_llm_call(
+        system_prompt,
+        user_message,
+    ):
+        captured["user_message"] = user_message
+
+        return {
+            "status": "success",
+            "content": ('{"effect": "negative", "reason": "错误记忆造成伤害。"}'),
+        }
+
+    run_memory_contribution_pairwise_evaluation(
+        cases,
+        answer_provider=answer_provider,
+        llm_call=fake_llm_call,
+    )
+
+    assert "The learner has not fully mastered Python" in captured["user_message"]
