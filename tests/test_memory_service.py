@@ -264,3 +264,82 @@ def test_memory_service_get_by_key_returns_none_when_missing():
     )
 
     assert memory is None
+
+
+def test_memory_service_should_report_conflict_when_changed_content_is_kept():
+    store = MemoryStore()
+
+    existing = MemoryRecord(
+        memory_type="skill",
+        memory_key="python_skill",
+        content="用户还需要 Python 基础练习",
+        importance=0.9,
+        confidence=0.95,
+        source="user_confirmed",
+    )
+
+    store.add(existing)
+
+    service = MemoryService(store)
+
+    result = service.remember_with_result(
+        memory_type="skill",
+        memory_key="python_skill",
+        content="用户已经完全掌握 Python",
+        importance=0.8,
+        confidence=0.6,
+        source="agent_inference",
+    )
+
+    assert result.action == "kept"
+    assert result.reason == "new_confidence_lower"
+
+    assert result.has_conflict is True
+    assert result.conflict_reason == "same_slot_content_changed"
+
+
+def test_memory_service_should_not_report_conflict_for_same_content():
+    store = MemoryStore()
+
+    existing = MemoryRecord(
+        memory_type="skill",
+        memory_key="python_skill",
+        content="用户正在学习 Python",
+        importance=0.8,
+        confidence=0.9,
+        source="user_confirmed",
+    )
+
+    store.add(existing)
+
+    service = MemoryService(store)
+
+    result = service.remember_with_result(
+        memory_type="skill",
+        memory_key="python_skill",
+        content="  用户正在学习 Python  ",
+        importance=0.8,
+        confidence=0.9,
+        source="user_confirmed",
+    )
+
+    assert result.has_conflict is False
+    assert result.conflict_reason == "same_content"
+
+
+def test_memory_service_should_report_no_conflict_for_new_memory():
+    store = MemoryStore()
+    service = MemoryService(store)
+
+    result = service.remember_with_result(
+        memory_type="skill",
+        memory_key="python_skill",
+        content="用户开始学习 Python",
+        importance=0.8,
+        confidence=0.9,
+        source="user_confirmed",
+    )
+
+    assert result.action == "added"
+    assert result.has_conflict is False
+    assert result.conflict_reason == "no_existing_memory"

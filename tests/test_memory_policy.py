@@ -256,3 +256,28 @@ def test_memory_policy_explains_lower_confidence_rejection():
 
     assert decision.allowed is False
     assert decision.reason == "new_confidence_lower"
+
+
+def test_memory_policy_rejects_higher_confidence_from_less_reliable_source():
+    existing = MemoryRecord(
+        memory_type="skill",
+        memory_key="python_skill",
+        content="用户确认仍需要 Python 练习",
+        importance=0.8,
+        confidence=0.90,
+        source="user_confirmed",
+        updated_at="2026-09-01T10:00:00",
+    )
+
+    policy = MemoryPolicy()
+
+    decision = policy.evaluate(
+        existing,
+        new_confidence=0.95,
+        new_importance=0.8,
+        new_source="agent_inference",
+        new_updated_at="2026-10-01T10:00:00",
+    )
+
+    assert decision.allowed is False
+    assert decision.reason == "new_source_less_reliable"

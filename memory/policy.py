@@ -24,7 +24,24 @@ class MemoryPolicy:
         new_source,
         new_updated_at,
     ):
+
+        old_source_score = SOURCE_RELIABILITY.get(
+            existing.source,
+            0.5,
+        )
+
+        new_source_score = SOURCE_RELIABILITY.get(
+            new_source,
+            0.5,
+        )
+
         if new_confidence > existing.confidence:
+            if new_source_score < old_source_score:
+                return MemoryDecision(
+                    allowed=False,
+                    reason=("new_source_less_reliable"),
+                )
+
             return MemoryDecision(
                 allowed=True,
                 reason="new_confidence_higher",
@@ -47,16 +64,6 @@ class MemoryPolicy:
                 allowed=False,
                 reason="new_importance_lower",
             )
-
-        old_source_score = SOURCE_RELIABILITY.get(
-            existing.source,
-            0.5,
-        )
-
-        new_source_score = SOURCE_RELIABILITY.get(
-            new_source,
-            0.5,
-        )
 
         if new_source_score > old_source_score:
             return MemoryDecision(
