@@ -38,6 +38,8 @@ class AgentState:
         self.learning_continuity_context = {}
         self.next_learning_task = None
 
+        self.memory_reliability_trace = None
+
     def update_step(self):
 
         self.current_step += 1
@@ -85,6 +87,7 @@ class AgentState:
             "memory_context": self.memory_context,
             "memory_context_usage": self.memory_context_usage,
             "memory_context_budget_impact": (self.memory_context_budget_impact),
+            "memory_reliability_trace": (self.memory_reliability_trace),
             "plan": self.plan,
             "current_step": self.current_step,
             "tool_results": self.tool_results,
@@ -110,3 +113,9 @@ class AgentState:
         learning_continuity_context,
     ):
         self.learning_continuity_context = learning_continuity_context
+
+    def set_memory_reliability_trace(
+        self,
+        memory_reliability_trace,
+    ):
+        self.memory_reliability_trace = memory_reliability_trace
