@@ -4,7 +4,9 @@ from memory.models import MemoryRecord
 from memory.policy import MemoryPolicy
 from datetime import datetime
 from dataclasses import dataclass
-
+from memory.memory_conflict_detector import (
+    detect_memory_conflict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,8 @@ class MemoryOperationResult:
     reason: str
     memory_type: str
     memory_key: str | None
+    has_conflict: bool = False
+    conflict_reason: str | None = None
 
 
 class MemoryService:
@@ -77,7 +81,22 @@ class MemoryService:
                 reason="new_memory",
                 memory_type=memory.memory_type,
                 memory_key=memory.memory_key,
+                has_conflict=False,
+                conflict_reason="no_existing_memory",
             )
+
+        conflict = detect_memory_conflict(
+            {
+                "memory_type": existing.memory_type,
+                "memory_key": existing.memory_key,
+                "content": existing.content,
+            },
+            {
+                "memory_type": memory_type,
+                "memory_key": memory_key,
+                "content": content,
+            },
+        )
 
         new_updated_at = datetime.now().isoformat()
 
@@ -96,6 +115,8 @@ class MemoryService:
                 reason=decision.reason,
                 memory_type=existing.memory_type,
                 memory_key=existing.memory_key,
+                has_conflict=conflict["has_conflict"],
+                conflict_reason=conflict["reason"],
             )
 
         memory = self.store.update(
@@ -112,15 +133,23 @@ class MemoryService:
             reason=decision.reason,
             memory_type=memory.memory_type,
             memory_key=memory.memory_key,
+            has_conflict=conflict["has_conflict"],
+            conflict_reason=conflict["reason"],
         )
 
     def _log_result(self, result):
         logger.info(
-            "memory_decision action=%s reason=%s memory_type=%s memory_key=%s",
+            (
+                "memory_decision action=%s reason=%s "
+                "memory_type=%s memory_key=%s "
+                "has_conflict=%s conflict_reason=%s"
+            ),
             result.action,
             result.reason,
             result.memory_type,
             result.memory_key,
+            result.has_conflict,
+            result.conflict_reason,
         )
 
     def get_context(self):
