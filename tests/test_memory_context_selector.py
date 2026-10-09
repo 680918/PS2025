@@ -1,4 +1,5 @@
 import json
+import memory.context_selector as context_selector
 
 from memory.context_selector import (
     select_relevant_memory_context,
@@ -264,3 +265,138 @@ def test_selector_budget_diagnostics_after_budget_should_match_regular_selector(
     )
 
     assert diagnostics_result["after_budget"] == regular_result
+
+
+def test_memory_context_selector_should_filter_untrusted_memory_before_ranking(
+    monkeypatch,
+):
+    memory_context = {
+        "profile": [
+            {
+                "memory_key": "profile:false-fact",
+                "content": ("False but highly relevant fact."),
+                "confidence": 0.0,
+            },
+            {
+                "memory_key": "profile:trusted-fact",
+                "content": ("Trusted relevant fact."),
+                "confidence": 0.8,
+            },
+        ],
+        "skill": [],
+        "learning": [],
+        "project": [],
+        "experience": [],
+    }
+
+    captured = {
+        "rank_calls": [],
+    }
+
+    def fake_rank(
+        memories,
+        query=None,
+    ):
+        memory_keys = [memory["memory_key"] for memory in memories]
+
+        captured["rank_calls"].append(memory_keys)
+
+        return memories
+
+    monkeypatch.setattr(
+        context_selector,
+        "rank_memories_by_composite_score",
+        fake_rank,
+    )
+
+    selected = select_relevant_memory_context(
+        memory_context,
+        query="relevant fact",
+    )
+
+    assert ["profile:trusted-fact"] in captured["rank_calls"]
+
+    assert all(
+        "profile:false-fact" not in memory_keys
+        for memory_keys in captured["rank_calls"]
+    )
+
+    assert [memory["memory_key"] for memory in selected["profile"]] == [
+        "profile:trusted-fact",
+    ]
+
+
+def test_memory_context_selector_should_filter_untrusted_learning_memory():
+    memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": ("learning:false-python-mastery"),
+                "content": ("The learner has fully mastered Python."),
+                "confidence": 0.0,
+            },
+            {
+                "memory_key": ("learning:python-practice"),
+                "content": ("The learner still needs Python practice."),
+                "confidence": 0.8,
+            },
+            {
+                "memory_key": ("learning:legacy-memory"),
+                "content": ("Legacy Python learning memory."),
+            },
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    selected = select_relevant_memory_context(
+        memory_context,
+        query="Continue learning Python",
+    )
+
+    selected_keys = [memory["memory_key"] for memory in selected["learning"]]
+
+    assert "learning:false-python-mastery" not in selected_keys
+
+    assert "learning:python-practice" in selected_keys
+
+    assert "learning:legacy-memory" in selected_keys
+
+
+def test_selector_diagnostics_should_expose_memories_blocked_by_trust():
+    memory_context = {
+        "profile": [],
+        "skill": [],
+        "learning": [
+            {
+                "memory_key": ("learning:false-python-mastery"),
+                "content": ("The learner has fully mastered Python."),
+                "confidence": 0.0,
+            },
+            {
+                "memory_key": ("learning:python-practice"),
+                "content": ("The learner still needs Python practice."),
+                "confidence": 0.8,
+            },
+        ],
+        "project": [],
+        "experience": [],
+    }
+
+    diagnostics = select_relevant_memory_context_with_budget_diagnostics(
+        memory_context,
+        query="Continue learning Python",
+    )
+
+    assert [
+        memory["memory_key"] for memory in diagnostics["blocked_by_trust"]["learning"]
+    ] == [
+        "learning:false-python-mastery",
+    ]
+
+    assert [
+        memory["memory_key"] for memory in diagnostics["after_budget"]["learning"]
+    ] == [
+        "learning:python-practice",
+    ]

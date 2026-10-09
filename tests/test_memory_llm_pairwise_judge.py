@@ -126,3 +126,48 @@ def test_pairwise_judge_should_surface_llm_error():
             ],
             llm_call=fake_llm_call,
         )
+
+
+def test_pairwise_judge_should_include_reference_context():
+    captured = {}
+
+    def fake_llm_call(
+        system_prompt,
+        user_message,
+    ):
+        captured["system_prompt"] = system_prompt
+        captured["user_message"] = user_message
+
+        return {
+            "status": "success",
+            "content": (
+                '{"effect": "negative", '
+                '"reason": '
+                '"回答依赖了与权威事实冲突的错误记忆。"}'
+            ),
+        }
+
+    result = judge_memory_contribution_pair(
+        query="Continue learning Python",
+        without_memory_answer=("Continue Python practice."),
+        with_memory_answer=(
+            "You fully mastered Python, so skip foundational practice."
+        ),
+        evaluation_criteria=[
+            ("Preserve useful practice when learning is incomplete."),
+        ],
+        reference_context=[
+            (
+                "The learner has not fully "
+                "mastered Python and still "
+                "needs foundational practice."
+            ),
+        ],
+        llm_call=fake_llm_call,
+    )
+
+    assert result["effect"] == "negative"
+
+    assert "权威评估事实" in captured["user_message"]
+
+    assert "The learner has not fully mastered Python" in captured["user_message"]

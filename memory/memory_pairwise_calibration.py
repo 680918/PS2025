@@ -69,6 +69,7 @@ def run_memory_pairwise_calibration(
             without_memory_answer=(answers["without_memory"]),
             with_memory_answer=(answers["with_memory"]),
             evaluation_criteria=(case["evaluation_criteria"]),
+            reference_context=case.get("reference_context"),
             llm_call=llm_call,
         )
 

@@ -138,3 +138,33 @@ def test_pairwise_calibration_should_handle_empty_dataset():
     assert report["results"] == []
 
     assert report["errors"] == []
+
+
+def test_pairwise_calibration_should_forward_reference_context():
+    cases = [
+        case
+        for case in get_memory_calibration_cases()
+        if case["case_id"] == "harmful-false-python-mastery"
+    ]
+
+    captured = {}
+
+    def fake_llm_call(
+        system_prompt,
+        user_message,
+    ):
+        captured["user_message"] = user_message
+
+        return {
+            "status": "success",
+            "content": ('{"effect": "negative", "reason": "错误记忆与真值冲突。"}'),
+        }
+
+    report = run_memory_pairwise_calibration(
+        llm_call=fake_llm_call,
+        cases=cases,
+    )
+
+    assert "The learner has not fully mastered Python" in captured["user_message"]
+
+    assert report["summary"]["accuracy"] == 1.0
