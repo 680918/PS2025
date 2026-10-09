@@ -37,13 +37,16 @@ def evaluate_memory_answer_pair(
         )
     )
 
-    with_memory_quality = normalize_answer_quality_evaluation(
-        quality_score_provider(
-            query=query,
-            answer=with_memory_answer,
-            evaluation_criteria=(evaluation_criteria),
+    if with_memory_answer == without_memory_answer:
+        with_memory_quality = {**without_memory_quality}
+    else:
+        with_memory_quality = normalize_answer_quality_evaluation(
+            quality_score_provider(
+                query=query,
+                answer=with_memory_answer,
+                evaluation_criteria=(evaluation_criteria),
+            )
         )
-    )
 
     result = evaluate_memory_contribution_case(
         case,

@@ -175,3 +175,68 @@ def test_answer_pair_evaluator_should_preserve_quality_diagnostics():
     }
 
     assert result["contribution_delta"] == pytest.approx(0.30)
+
+
+def test_answer_pair_evaluator_should_reuse_quality_when_answers_are_identical():
+    case = {
+        "case_id": "identical-answer-case",
+        "query": "Explain Python dictionaries",
+        "memory_context": [
+            {
+                "memory_key": "profile:study-time",
+                "content": ("The learner prefers afternoon study."),
+            },
+        ],
+        "expected_effect": "neutral",
+        "evaluation_criteria": [
+            "Explain dictionaries accurately.",
+        ],
+    }
+
+    def answer_provider(
+        *,
+        query,
+        memory_context,
+    ):
+        return "A Python dictionary stores key-value pairs."
+
+    quality_calls = []
+
+    def quality_score_provider(
+        *,
+        query,
+        answer,
+        evaluation_criteria,
+    ):
+        quality_calls.append(answer)
+
+        # 故意让第二次调用返回不同结果。
+        # 正确实现应该根本不会发生第二次调用。
+        if len(quality_calls) == 1:
+            return {
+                "score": 0.40,
+                "reason": "第一次评分。",
+            }
+
+        return {
+            "score": 0.90,
+            "reason": "第二次评分。",
+        }
+
+    result = evaluate_memory_answer_pair(
+        case,
+        answer_provider=answer_provider,
+        quality_score_provider=(quality_score_provider),
+    )
+
+    assert len(quality_calls) == 1
+
+    assert result["without_memory_score"] == 0.40
+
+    assert result["with_memory_score"] == 0.40
+
+    assert result["contribution_delta"] == pytest.approx(0.0)
+
+    assert result["actual_effect"] == "neutral"
+
+    assert result["without_memory_quality"] == result["with_memory_quality"]
