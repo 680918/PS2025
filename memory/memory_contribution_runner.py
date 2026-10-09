@@ -12,6 +12,9 @@ from memory.memory_rule_quality_scorer import (
 from memory.memory_llm_quality_judge import (
     score_answer_with_llm,
 )
+from memory.memory_llm_pairwise_judge import (
+    judge_memory_contribution_pair,
+)
 
 
 def run_memory_contribution_evaluation(
@@ -146,4 +149,78 @@ def run_memory_contribution_llm_evaluation(
     return {
         "results": results,
         "summary": summary,
+    }
+
+
+def _summarize_pairwise_results(
+    results,
+):
+    total_cases = len(results)
+
+    if total_cases == 0:
+        return {
+            "total_cases": 0,
+            "correct_cases": 0,
+            "error_cases": 0,
+            "accuracy": 0.0,
+        }
+
+    correct_cases = sum(1 for result in results if result["is_correct"])
+
+    return {
+        "total_cases": total_cases,
+        "correct_cases": correct_cases,
+        "error_cases": (total_cases - correct_cases),
+        "accuracy": (correct_cases / total_cases),
+    }
+
+
+def run_memory_contribution_pairwise_evaluation(
+    cases,
+    answer_provider,
+    llm_call,
+):
+    results = []
+
+    for case in cases:
+        query = case["query"]
+
+        without_memory_answer = answer_provider(
+            query=query,
+            memory_context=[],
+        )
+
+        with_memory_answer = answer_provider(
+            query=query,
+            memory_context=case["memory_context"],
+        )
+
+        judgment = judge_memory_contribution_pair(
+            query=query,
+            without_memory_answer=(without_memory_answer),
+            with_memory_answer=(with_memory_answer),
+            evaluation_criteria=case["evaluation_criteria"],
+            llm_call=llm_call,
+        )
+
+        actual_effect = judgment["effect"]
+
+        result = {
+            "case_id": case["case_id"],
+            "expected_effect": case["expected_effect"],
+            "actual_effect": (actual_effect),
+            "is_correct": (actual_effect == case["expected_effect"]),
+            "without_memory_answer": (without_memory_answer),
+            "with_memory_answer": (with_memory_answer),
+            "pairwise_reason": judgment["reason"],
+        }
+
+        results.append(result)
+
+    errors = [result for result in results if not result["is_correct"]]
+
+    return {
+        "results": results,
+        "summary": (_summarize_pairwise_results(results)),
+        "errors": errors,
     }

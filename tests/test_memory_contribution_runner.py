@@ -8,6 +8,7 @@ from memory.memory_contribution_runner import (
     run_memory_contribution_evaluation,
     run_memory_contribution_rule_evaluation,
     run_memory_contribution_llm_evaluation,
+    run_memory_contribution_pairwise_evaluation,
 )
 
 
@@ -314,3 +315,151 @@ def test_llm_evaluation_runner_should_use_semantic_judge_scores():
     assert result["without_memory_quality"]["reason"] == "test judge"
 
     assert result["with_memory_quality"]["reason"] == "test judge"
+
+
+def test_run_pairwise_evaluation_should_classify_memory_effect():
+    cases = [
+        {
+            "case_id": "pairwise-positive",
+            "query": "Continue learning Tool Calling",
+            "memory_context": [
+                {
+                    "memory_key": "learning:tool-calling",
+                    "content": (
+                        "The learner understands the basics and needs practice."
+                    ),
+                },
+            ],
+            "expected_effect": "positive",
+            "evaluation_criteria": [
+                ("Move from concepts toward practical Tool Calling."),
+            ],
+        },
+    ]
+
+    def answer_provider(
+        *,
+        query,
+        memory_context,
+    ):
+        if memory_context:
+            return "Let's build a practical Tool Calling workflow."
+
+        return "Tool Calling lets models invoke external functions."
+
+    def fake_llm_call(
+        system_prompt,
+        user_message,
+    ):
+        return {
+            "status": "success",
+            "content": (
+                '{"effect": "positive", '
+                '"reason": '
+                '"有 Memory 的回答从概念介绍推进到了实践。"}'
+            ),
+        }
+
+    report = run_memory_contribution_pairwise_evaluation(
+        cases,
+        answer_provider=answer_provider,
+        llm_call=fake_llm_call,
+    )
+
+    assert report["summary"] == {
+        "total_cases": 1,
+        "correct_cases": 1,
+        "error_cases": 0,
+        "accuracy": 1.0,
+    }
+
+    result = report["results"][0]
+
+    assert result["case_id"] == ("pairwise-positive")
+
+    assert result["expected_effect"] == "positive"
+
+    assert result["actual_effect"] == "positive"
+
+    assert result["is_correct"] is True
+
+    assert result["pairwise_reason"] == ("有 Memory 的回答从概念介绍推进到了实践。")
+
+    assert result["without_memory_answer"] == (
+        "Tool Calling lets models invoke external functions."
+    )
+
+    assert result["with_memory_answer"] == (
+        "Let's build a practical Tool Calling workflow."
+    )
+
+
+def test_run_pairwise_evaluation_should_report_accuracy():
+    cases = [
+        {
+            "case_id": "case-positive",
+            "query": "Query A",
+            "memory_context": [
+                {"content": "Memory A"},
+            ],
+            "expected_effect": "positive",
+            "evaluation_criteria": [
+                "Criterion A",
+            ],
+        },
+        {
+            "case_id": "case-neutral",
+            "query": "Query B",
+            "memory_context": [
+                {"content": "Memory B"},
+            ],
+            "expected_effect": "neutral",
+            "evaluation_criteria": [
+                "Criterion B",
+            ],
+        },
+    ]
+
+    def answer_provider(
+        *,
+        query,
+        memory_context,
+    ):
+        suffix = "with memory" if memory_context else "without memory"
+
+        return f"{query} {suffix}"
+
+    effects = iter(
+        [
+            "positive",
+            "negative",
+        ]
+    )
+
+    def fake_llm_call(
+        system_prompt,
+        user_message,
+    ):
+        effect = next(effects)
+
+        return {
+            "status": "success",
+            "content": (f'{{"effect": "{effect}", "reason": "测试判断。"}}'),
+        }
+
+    report = run_memory_contribution_pairwise_evaluation(
+        cases,
+        answer_provider=answer_provider,
+        llm_call=fake_llm_call,
+    )
+
+    assert report["summary"] == {
+        "total_cases": 2,
+        "correct_cases": 1,
+        "error_cases": 1,
+        "accuracy": 0.5,
+    }
+
+    assert len(report["errors"]) == 1
+
+    assert report["errors"][0]["case_id"] == "case-neutral"
