@@ -164,3 +164,30 @@ def test_agent_state_should_default_routing_trace_to_none():
 
     assert state.routing_trace is None
     assert state.get_state()["routing_trace"] is None
+
+
+def test_agent_state_should_store_memory_reliability_trace():
+    state = AgentState("test")
+
+    trace = {
+        "candidates": {
+            "total": 3,
+        },
+        "injected": {
+            "total": 2,
+        },
+    }
+
+    state.set_memory_reliability_trace(trace)
+
+    assert state.memory_reliability_trace == trace
+
+    assert state.get_state()["memory_reliability_trace"] == trace
+
+
+def test_agent_state_should_default_memory_reliability_trace_to_none():
+    state = AgentState("test")
+
+    assert state.memory_reliability_trace is None
+
+    assert state.get_state()["memory_reliability_trace"] is None

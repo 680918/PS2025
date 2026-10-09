@@ -46,6 +46,9 @@ from memory.context_budget import (
     calculate_memory_context_budget_impact,
     calculate_memory_context_usage,
 )
+from memory.memory_reliability_trace import (
+    build_memory_reliability_trace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -299,6 +302,13 @@ def run_agent_runtime(
             )
         )
 
+        memory_reliability_trace = build_memory_reliability_trace(
+            memory_context,
+            memory_context_diagnostics,
+        )
+
+        state.set_memory_reliability_trace(memory_reliability_trace)
+
         before_budget_context = memory_context_diagnostics["before_budget"]
 
         selected_memory_context = memory_context_diagnostics["after_budget"]
@@ -322,7 +332,10 @@ def run_agent_runtime(
 
         state.set_memory_context_budget_impact(memory_context_budget_impact)
 
-        trace_logger = get_trace_logger(logger)
+        trace_logger = get_trace_logger(
+            logger,
+            run_id=state.run_id,
+        )
 
         trace_logger.info(
             (
@@ -350,6 +363,26 @@ def run_agent_runtime(
             memory_context_budget_impact["after_characters"],
             memory_context_budget_impact["reduced_characters"],
             memory_context_budget_impact["reduction_ratio"],
+        )
+
+        trace_logger.info(
+            (
+                "Memory reliability trace: "
+                "candidates=%s "
+                "blocked_by_trust=%s "
+                "trusted_candidates=%s "
+                "not_selected_before_budget=%s "
+                "selected_before_budget=%s "
+                "removed_by_budget=%s "
+                "injected=%s"
+            ),
+            memory_reliability_trace["candidates"]["total"],
+            memory_reliability_trace["blocked_by_trust"]["total"],
+            memory_reliability_trace["trusted_candidates"]["total"],
+            memory_reliability_trace["not_selected_before_budget"]["total"],
+            memory_reliability_trace["selected_before_budget"]["total"],
+            memory_reliability_trace["removed_by_budget"]["total"],
+            memory_reliability_trace["injected"]["total"],
         )
 
     if knowledge_service is not None:

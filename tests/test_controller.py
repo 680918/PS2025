@@ -7112,7 +7112,7 @@ def test_run_agent_runtime_should_log_memory_context_usage(
     monkeypatch.setattr(
         controller_module,
         "get_trace_logger",
-        lambda _logger: fake_trace_logger,
+        lambda _logger, run_id=None: fake_trace_logger,
     )
 
     monkeypatch.setattr(
@@ -7258,7 +7258,7 @@ def test_run_agent_runtime_should_log_memory_context_budget_impact(
     monkeypatch.setattr(
         controller_module,
         "get_trace_logger",
-        lambda _logger: fake_trace_logger,
+        lambda _logger, run_id=None: fake_trace_logger,
     )
 
     monkeypatch.setattr(
