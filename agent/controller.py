@@ -49,6 +49,9 @@ from memory.context_budget import (
 from memory.memory_reliability_trace import (
     build_memory_reliability_trace,
 )
+from memory.memory_reliability_run_record import (
+    build_memory_reliability_run_record,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +193,7 @@ def run_agent_runtime(
     learning_journey=None,
     learning_evidence_repository=None,
     learning_curriculum_repository=None,
+    memory_reliability_run_record_store=None,
 ):
     state = AgentState(
         user_message,
@@ -308,6 +312,14 @@ def run_agent_runtime(
         )
 
         state.set_memory_reliability_trace(memory_reliability_trace)
+
+        if memory_reliability_run_record_store is not None:
+            memory_reliability_run_record = build_memory_reliability_run_record(
+                run_id=state.run_id,
+                trace=(memory_reliability_trace),
+            )
+
+            memory_reliability_run_record_store.save(memory_reliability_run_record)
 
         before_budget_context = memory_context_diagnostics["before_budget"]
 
@@ -472,6 +484,7 @@ def run_agent(
     learning_journey=None,
     learning_evidence_repository=None,
     learning_curriculum_repository=None,
+    memory_reliability_run_record_store=None,
     return_state=False,
 ):
     state, response = run_agent_runtime(
@@ -487,6 +500,7 @@ def run_agent(
         learning_journey=learning_journey,
         learning_evidence_repository=learning_evidence_repository,
         learning_curriculum_repository=learning_curriculum_repository,
+        memory_reliability_run_record_store=memory_reliability_run_record_store,
     )
 
     if return_state:

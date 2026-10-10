@@ -199,6 +199,82 @@ def test_web_continue_should_forward_curriculum_repository_to_agent(
     assert curriculum_repository is not None
 
 
+def test_web_continue_should_forward_memory_reliability_store_to_agent(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "Python",
+            "goal": "掌握 Python 编程",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    captured_factory = {}
+    captured_agent = {}
+
+    fake_store = object()
+
+    def fake_create_store(
+        database_dir,
+        user_id,
+    ):
+        captured_factory["database_dir"] = database_dir
+
+        captured_factory["user_id"] = user_id
+
+        return fake_store
+
+    def fake_run_agent(
+        user_message,
+        **kwargs,
+    ):
+        captured_agent.update(kwargs)
+
+        return "今天学习 Python"
+
+    monkeypatch.setattr(
+        ("api.app.create_user_memory_reliability_run_record_store"),
+        fake_create_store,
+    )
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.get(
+        (f"/web/journeys/{journey['journey_id']}/continue"),
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert captured_factory["database_dir"] == tmp_path
+
+    assert captured_factory["user_id"] == user["user_id"]
+
+    assert captured_agent["memory_reliability_run_record_store"] is fake_store
+
+
 def test_web_learning_loop_should_use_previous_feedback_for_next_coach_task(
     tmp_path,
     monkeypatch,

@@ -58,9 +58,13 @@ from learning.sqlite_journey_completion_report_repository import (
 from memory.runtime import (
     create_user_memory_service,
 )
+from memory.memory_reliability_run_record_runtime import (
+    create_user_memory_reliability_run_record_store,
+)
 from memory.journey_memory_consolidation_service import (
     consolidate_journey_completion_summary,
 )
+
 
 _DEFAULT_CURRICULUM_GENERATOR = object()
 _DEFAULT_COMPLETION_COMMENTARY_GENERATOR = object()
@@ -626,9 +630,17 @@ def create_app(
             user_id=user_id,
         )
 
+        memory_reliability_run_record_store = (
+            create_user_memory_reliability_run_record_store(
+                database_dir=database_dir,
+                user_id=user_id,
+            )
+        )
+
         agent_result = run_agent(
             user_message="请根据我的学习目标和上一次学习反馈，安排今天的学习任务。",
             memory_service=memory_service,
+            memory_reliability_run_record_store=memory_reliability_run_record_store,
             learning_journey={
                 "domain": journey.domain,
                 "goal": journey.goal,
