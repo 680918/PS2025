@@ -114,3 +114,127 @@ def test_run_agent_runtime_should_store_memory_reliability_trace(
     assert trace["trusted_candidates"]["total"] == 2
 
     assert trace["not_selected_before_budget"]["total"] == 0
+
+
+def test_run_agent_runtime_should_persist_memory_reliability_run_record(
+    monkeypatch,
+):
+    raw_context = _empty_context()
+
+    raw_context["learning"] = [
+        {
+            "memory_key": "python-practice",
+            "content": "Needs Python practice.",
+            "confidence": 0.8,
+        },
+    ]
+
+    diagnostics = {
+        "blocked_by_trust": (_empty_context()),
+        "before_budget": (raw_context),
+        "after_budget": (raw_context),
+    }
+
+    saved_records = []
+
+    class FakeRunRecordStore:
+        def save(
+            self,
+            record,
+        ):
+            saved_records.append(record)
+
+    monkeypatch.setattr(
+        controller,
+        ("select_relevant_memory_context_with_budget_diagnostics"),
+        lambda *args, **kwargs: diagnostics,
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "run_simple_agent",
+        lambda user_message, state: "ok",
+    )
+
+    state, response = controller.run_agent_runtime(
+        "How should I study Python?",
+        memory_service=(StubMemoryService(raw_context)),
+        memory_reliability_run_record_store=(FakeRunRecordStore()),
+    )
+
+    assert response == "ok"
+
+    assert len(saved_records) == 1
+
+    record = saved_records[0]
+
+    assert record["run_id"] == state.run_id
+
+    assert record["schema_version"] == 1
+
+    assert record["candidates"] == 1
+
+    assert record["blocked_by_trust"] == 0
+
+    assert record["trusted_candidates"] == 1
+
+    assert record["not_selected_before_budget"] == 0
+
+    assert record["selected_before_budget"] == 1
+
+    assert record["removed_by_budget"] == 0
+
+    assert record["injected"] == 1
+
+    assert (
+        isinstance(
+            record["created_at"],
+            str,
+        )
+        and record["created_at"]
+    )
+
+
+def test_run_agent_runtime_should_not_require_run_record_store(
+    monkeypatch,
+):
+    raw_context = _empty_context()
+
+    diagnostics = {
+        "blocked_by_trust": (_empty_context()),
+        "before_budget": (_empty_context()),
+        "after_budget": (_empty_context()),
+    }
+
+    monkeypatch.setattr(
+        controller,
+        ("select_relevant_memory_context_with_budget_diagnostics"),
+        lambda *args, **kwargs: diagnostics,
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "run_simple_agent",
+        lambda user_message, state: "ok",
+    )
+
+    state, response = controller.run_agent_runtime(
+        "hello",
+        memory_service=(StubMemoryService(raw_context)),
+    )
+
+    assert response == "ok"
+
+    assert state.memory_reliability_trace is not None
