@@ -7,6 +7,13 @@ _RATE_SIGNAL_MAP = {
     "injection_rate": ("pipeline_yield_changed"),
 }
 
+_RATE_DENOMINATOR_MAP = {
+    "trust_block_rate": "candidates",
+    "selection_drop_rate": ("trusted_candidates"),
+    "budget_drop_rate": ("selected_before_budget"),
+    "injection_rate": "candidates",
+}
+
 
 def _direction(
     delta,
@@ -18,6 +25,19 @@ def _direction(
         return "decreased"
 
     return "unchanged"
+
+
+def _is_rate_comparable(
+    trend,
+    metric,
+):
+    denominator = _RATE_DENOMINATOR_MAP[metric]
+
+    previous_denominator = trend["previous"]["totals"][denominator]
+
+    recent_denominator = trend["recent"]["totals"][denominator]
+
+    return previous_denominator > 0 and recent_denominator > 0
 
 
 def interpret_memory_reliability_trend(
@@ -33,7 +53,15 @@ def interpret_memory_reliability_trend(
 
         delta = trend["deltas"]["rates"][metric]
 
-        direction = _direction(delta)
+        comparable = _is_rate_comparable(
+            trend,
+            metric,
+        )
+
+        if comparable:
+            direction = _direction(delta)
+        else:
+            direction = "not_comparable"
 
         facts.append(
             {
@@ -42,10 +70,11 @@ def interpret_memory_reliability_trend(
                 "recent": recent,
                 "delta": delta,
                 "direction": direction,
+                "comparable": comparable,
             }
         )
 
-        if direction != "unchanged":
+        if comparable and direction != "unchanged":
             signals.append(
                 {
                     "signal": signal_name,

@@ -1,5 +1,6 @@
 from memory.memory_reliability_run_record_runtime import (
     create_user_memory_reliability_run_record_store,
+    open_user_memory_reliability_run_record_store,
 )
 
 
@@ -75,3 +76,40 @@ def test_user_reliability_store_should_create_expected_directory(
     expected_db_path = tmp_path / "memory_reliability" / "user_a.db"
 
     assert expected_db_path.exists()
+
+
+def test_open_user_reliability_store_should_read_existing_database(
+    tmp_path,
+):
+    created_store = create_user_memory_reliability_run_record_store(
+        database_dir=tmp_path,
+        user_id="user_a",
+    )
+
+    created_store.save(_record("run-001"))
+
+    opened_store = open_user_memory_reliability_run_record_store(
+        database_dir=tmp_path,
+        user_id="user_a",
+    )
+
+    records = opened_store.list_all()
+
+    assert len(records) == 1
+    assert records[0]["run_id"] == "run-001"
+
+
+def test_open_user_reliability_store_should_reject_missing_database(
+    tmp_path,
+):
+    try:
+        open_user_memory_reliability_run_record_store(
+            database_dir=tmp_path,
+            user_id="missing-user",
+        )
+    except FileNotFoundError as error:
+        assert "missing-user" in str(error)
+    else:
+        raise AssertionError("Expected FileNotFoundError")
+
+    assert not (tmp_path / "memory_reliability" / "missing-user.db").exists()

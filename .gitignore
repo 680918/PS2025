@@ -24,3 +24,14 @@ logs/
 data/memory.db
 
 data/*-smoke/
+
+# Local application runtime databases
+data/users.db
+data/journeys.db
+data/sessions.db
+data/curriculums.db
+data/completion_reports.db
+
+# Per-user runtime databases
+data/memory/
+data/memory_reliability/
