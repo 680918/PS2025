@@ -64,6 +64,7 @@ from memory.memory_reliability_run_record_runtime import (
 from memory.journey_memory_consolidation_service import (
     consolidate_journey_completion_summary,
 )
+from coach.context_builder import build_coach_context
 
 
 _DEFAULT_CURRICULUM_GENERATOR = object()
@@ -637,8 +638,19 @@ def create_app(
             )
         )
 
+        user_message = "请根据我的学习目标和上一次学习反馈，安排今天的学习任务。"
+
+        coach_context = build_coach_context(
+            user_id=user_id,
+            user_message=user_message,
+            user_repository=user_repository,
+            journey_repository=journey_repository,
+            memory_service=None,
+            journey_id=journey.journey_id,
+        )
+
         agent_result = run_agent(
-            user_message="请根据我的学习目标和上一次学习反馈，安排今天的学习任务。",
+            user_message=user_message,
             memory_service=memory_service,
             memory_reliability_run_record_store=memory_reliability_run_record_store,
             learning_journey={
@@ -652,8 +664,8 @@ def create_app(
             learning_evidence_repository=evidence_repository,
             learning_curriculum_repository=curriculum_repository,
             return_state=True,
+            coach_context=coach_context,
         )
-
         if isinstance(agent_result, tuple):
             agent_state, coach_task = agent_result
         else:

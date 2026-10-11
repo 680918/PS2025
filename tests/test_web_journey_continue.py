@@ -1644,3 +1644,71 @@ def test_web_continue_should_forward_current_user_memory_to_agent(
 
     assert saved_memory is not None
     assert '"latest_understanding": 85' in saved_memory.content
+
+
+def test_web_continue_should_pass_coach_context_to_agent(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "Test User",
+            "email": "coach-context@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "AI Agent",
+            "goal": "Build an AI Agent",
+        },
+    ).json()
+
+    start_response = client.post(f"/journeys/{journey['journey_id']}/start")
+
+    assert start_response.status_code == 200
+
+    captured = {}
+
+    def fake_run_agent(
+        user_message,
+        **kwargs,
+    ):
+        captured.update(kwargs)
+        return "Coach task"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    coach_context = captured["coach_context"]
+
+    assert coach_context.user_context == {
+        "user_id": user["user_id"],
+        "name": "Test User",
+        "email": "coach-context@example.com",
+    }
+
+    assert coach_context.learning_context == {
+        "domain": "AI Agent",
+        "goal": "Build an AI Agent",
+        "status": "active",
+    }
+
+    assert coach_context.memory_context == {}

@@ -4,7 +4,7 @@ from coach.context_builder import (
 
 
 class FakeUser:
-    id = "u1"
+    user_id = "u1"
     name = "Test"
     email = "test@test.com"
 
