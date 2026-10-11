@@ -3,6 +3,7 @@ import pytest
 from agent.state import AgentState
 from memory.service import MemoryService
 from memory.store import MemoryStore
+from coach.context_models import CoachContext
 
 pytestmark = pytest.mark.unit
 
@@ -191,3 +192,23 @@ def test_agent_state_should_default_memory_reliability_trace_to_none():
     assert state.memory_reliability_trace is None
 
     assert state.get_state()["memory_reliability_trace"] is None
+
+
+def test_agent_state_should_start_without_coach_context():
+    state = AgentState("hello")
+
+    assert state.coach_context is None
+
+
+def test_agent_state_should_store_coach_context():
+    state = AgentState("hello")
+
+    coach_context = CoachContext(
+        user_context={"name": "Test User"},
+        learning_context={"domain": "AI Agent"},
+        memory_context={"learning": []},
+    )
+
+    state.set_coach_context(coach_context)
+
+    assert state.coach_context is coach_context

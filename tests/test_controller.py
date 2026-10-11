@@ -7297,3 +7297,290 @@ def test_run_agent_runtime_should_log_memory_context_budget_impact(
     assert any(
         call[0].startswith("Memory context budget impact:") for call in logged_calls
     )
+
+
+def test_run_agent_runtime_should_store_coach_context_in_state(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from coach.context_models import CoachContext
+
+    coach_context = CoachContext(
+        user_context={"name": "Test User"},
+        learning_context={"domain": "AI Agent"},
+        memory_context={"learning": []},
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: {
+            "status": "success",
+        },
+    )
+
+    state, response = controller_module.run_agent_runtime(
+        user_message="hello",
+        coach_context=coach_context,
+    )
+
+    assert state.coach_context is coach_context
+    assert response["status"] == "success"
+
+
+def test_run_agent_should_forward_coach_context_to_runtime(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+    from coach.context_models import CoachContext
+
+    coach_context = CoachContext(
+        user_context={"name": "Test User"},
+        learning_context={"domain": "AI Agent"},
+        memory_context={"learning": []},
+    )
+
+    captured = {}
+
+    def fake_run_agent_runtime(**kwargs):
+        captured.update(kwargs)
+
+        return (
+            AgentState(kwargs["user_message"]),
+            {"status": "success"},
+        )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_agent_runtime",
+        fake_run_agent_runtime,
+    )
+
+    state, response = controller_module.run_agent(
+        "hello",
+        return_state=True,
+        coach_context=coach_context,
+    )
+
+    assert captured["coach_context"] is coach_context
+    assert response["status"] == "success"
+    assert isinstance(state, AgentState)
+
+
+def test_run_agent_runtime_should_sync_selected_memory_into_coach_context(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from coach.context_models import CoachContext
+
+    class EmptyMemoryService:
+        def get_context(self):
+            return {
+                "profile": [],
+                "skill": [],
+                "learning": [],
+                "project": [],
+                "experience": [],
+            }
+
+    coach_context = CoachContext(
+        user_context={"name": "Test User"},
+        learning_context={"domain": "AI Agent"},
+        memory_context={
+            "stale": [
+                {
+                    "content": "raw memory that should be replaced",
+                }
+            ]
+        },
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: {
+            "status": "success",
+        },
+    )
+
+    state, response = controller_module.run_agent_runtime(
+        user_message="hello",
+        memory_service=EmptyMemoryService(),
+        coach_context=coach_context,
+    )
+
+    assert state.coach_context is coach_context
+    assert state.coach_context.memory_context == state.memory_context
+    assert "stale" not in state.coach_context.memory_context
+    assert response["status"] == "success"
+
+
+def test_run_simple_runtime_should_include_coach_context_in_prompt(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+    from coach.context_models import CoachContext
+
+    state = AgentState("hello")
+
+    state.set_coach_context(
+        CoachContext(
+            user_context={
+                "user_id": "user-1",
+                "name": "Test User",
+                "email": "test@example.com",
+            },
+            learning_context={
+                "domain": "AI Agent",
+                "goal": "Build commercial AI Agents",
+                "status": "active",
+            },
+            memory_context={},
+        )
+    )
+
+    state.set_memory_context(
+        {
+            "learning": [
+                {
+                    "content": "MEMORY_MARKER",
+                }
+            ]
+        }
+    )
+
+    captured = {}
+
+    def fake_call_llm(
+        system_prompt,
+        user_message,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm",
+        fake_call_llm,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: [],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda candidate_tools: [],
+    )
+
+    controller_module.run_simple_runtime(
+        "hello",
+        state=state,
+    )
+
+    prompt = captured["system_prompt"]
+
+    assert "Test User" in prompt
+    assert "AI Agent" in prompt
+    assert "Build commercial AI Agents" in prompt
+
+    assert "user-1" not in prompt
+    assert "test@example.com" not in prompt
+
+    assert prompt.count("MEMORY_MARKER") == 1
+
+
+def test_run_planning_agent_should_include_coach_context_in_final_prompt(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+    from coach.context_models import CoachContext
+
+    state = AgentState("plan my learning")
+
+    state.set_coach_context(
+        CoachContext(
+            user_context={
+                "user_id": "user-1",
+                "name": "Test User",
+                "email": "test@example.com",
+            },
+            learning_context={
+                "domain": "AI Agent",
+                "goal": "Build commercial AI Agents",
+                "status": "active",
+            },
+            memory_context={},
+        )
+    )
+
+    state.status = "success"
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_planning_runtime",
+        lambda user_message, state=None: (
+            state,
+            "success",
+        ),
+    )
+
+    captured = {}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    result = controller_module.run_planning_agent(
+        "plan my learning",
+        state=state,
+    )
+
+    prompt = captured["system_prompt"]
+
+    assert "Test User" in prompt
+    assert "AI Agent" in prompt
+    assert "Build commercial AI Agents" in prompt
+
+    assert "user-1" not in prompt
+    assert "test@example.com" not in prompt
+
+    assert "当前用户与本次学习目标上下文或 State" in prompt
+
+    assert result == "ok"
