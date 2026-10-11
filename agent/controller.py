@@ -194,11 +194,16 @@ def run_agent_runtime(
     learning_evidence_repository=None,
     learning_curriculum_repository=None,
     memory_reliability_run_record_store=None,
+    *,
+    coach_context=None,
 ):
     state = AgentState(
         user_message,
         memory_service=memory_service,
     )
+
+    if coach_context is not None:
+        state.set_coach_context(coach_context)
 
     if (
         learning_continuity_context is None
@@ -486,6 +491,8 @@ def run_agent(
     learning_curriculum_repository=None,
     memory_reliability_run_record_store=None,
     return_state=False,
+    *,
+    coach_context=None,
 ):
     state, response = run_agent_runtime(
         user_message=user_message,
@@ -501,6 +508,7 @@ def run_agent(
         learning_evidence_repository=learning_evidence_repository,
         learning_curriculum_repository=learning_curriculum_repository,
         memory_reliability_run_record_store=memory_reliability_run_record_store,
+        coach_context=coach_context,
     )
 
     if return_state:

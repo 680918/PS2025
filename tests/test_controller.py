@@ -7297,3 +7297,78 @@ def test_run_agent_runtime_should_log_memory_context_budget_impact(
     assert any(
         call[0].startswith("Memory context budget impact:") for call in logged_calls
     )
+
+
+def test_run_agent_runtime_should_store_coach_context_in_state(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from coach.context_models import CoachContext
+
+    coach_context = CoachContext(
+        user_context={"name": "Test User"},
+        learning_context={"domain": "AI Agent"},
+        memory_context={"learning": []},
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: {
+            "status": "success",
+        },
+    )
+
+    state, response = controller_module.run_agent_runtime(
+        user_message="hello",
+        coach_context=coach_context,
+    )
+
+    assert state.coach_context is coach_context
+    assert response["status"] == "success"
+
+
+def test_run_agent_should_forward_coach_context_to_runtime(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+    from coach.context_models import CoachContext
+
+    coach_context = CoachContext(
+        user_context={"name": "Test User"},
+        learning_context={"domain": "AI Agent"},
+        memory_context={"learning": []},
+    )
+
+    captured = {}
+
+    def fake_run_agent_runtime(**kwargs):
+        captured.update(kwargs)
+
+        return (
+            AgentState(kwargs["user_message"]),
+            {"status": "success"},
+        )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_agent_runtime",
+        fake_run_agent_runtime,
+    )
+
+    state, response = controller_module.run_agent(
+        "hello",
+        return_state=True,
+        coach_context=coach_context,
+    )
+
+    assert captured["coach_context"] is coach_context
+    assert response["status"] == "success"
+    assert isinstance(state, AgentState)
