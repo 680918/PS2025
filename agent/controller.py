@@ -332,6 +332,9 @@ def run_agent_runtime(
 
         state.set_memory_context(selected_memory_context)
 
+        if state.coach_context is not None:
+            state.coach_context.memory_context = selected_memory_context
+
         before_budget_usage = calculate_memory_context_usage(
             before_budget_context,
         )

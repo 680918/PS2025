@@ -7372,3 +7372,57 @@ def test_run_agent_should_forward_coach_context_to_runtime(
     assert captured["coach_context"] is coach_context
     assert response["status"] == "success"
     assert isinstance(state, AgentState)
+
+
+def test_run_agent_runtime_should_sync_selected_memory_into_coach_context(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from coach.context_models import CoachContext
+
+    class EmptyMemoryService:
+        def get_context(self):
+            return {
+                "profile": [],
+                "skill": [],
+                "learning": [],
+                "project": [],
+                "experience": [],
+            }
+
+    coach_context = CoachContext(
+        user_context={"name": "Test User"},
+        learning_context={"domain": "AI Agent"},
+        memory_context={
+            "stale": [
+                {
+                    "content": "raw memory that should be replaced",
+                }
+            ]
+        },
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_task",
+        lambda user_message: "simple",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_simple_agent",
+        lambda user_message, state=None: {
+            "status": "success",
+        },
+    )
+
+    state, response = controller_module.run_agent_runtime(
+        user_message="hello",
+        memory_service=EmptyMemoryService(),
+        coach_context=coach_context,
+    )
+
+    assert state.coach_context is coach_context
+    assert state.coach_context.memory_context == state.memory_context
+    assert "stale" not in state.coach_context.memory_context
+    assert response["status"] == "success"
