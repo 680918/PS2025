@@ -7509,3 +7509,78 @@ def test_run_simple_runtime_should_include_coach_context_in_prompt(
     assert "test@example.com" not in prompt
 
     assert prompt.count("MEMORY_MARKER") == 1
+
+
+def test_run_planning_agent_should_include_coach_context_in_final_prompt(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+    from coach.context_models import CoachContext
+
+    state = AgentState("plan my learning")
+
+    state.set_coach_context(
+        CoachContext(
+            user_context={
+                "user_id": "user-1",
+                "name": "Test User",
+                "email": "test@example.com",
+            },
+            learning_context={
+                "domain": "AI Agent",
+                "goal": "Build commercial AI Agents",
+                "status": "active",
+            },
+            memory_context={},
+        )
+    )
+
+    state.status = "success"
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_planning_runtime",
+        lambda user_message, state=None: (
+            state,
+            "success",
+        ),
+    )
+
+    captured = {}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    result = controller_module.run_planning_agent(
+        "plan my learning",
+        state=state,
+    )
+
+    prompt = captured["system_prompt"]
+
+    assert "Test User" in prompt
+    assert "AI Agent" in prompt
+    assert "Build commercial AI Agents" in prompt
+
+    assert "user-1" not in prompt
+    assert "test@example.com" not in prompt
+
+    assert "当前用户与本次学习目标上下文或 State" in prompt
+
+    assert result == "ok"

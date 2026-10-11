@@ -999,8 +999,15 @@ def run_planning_agent(user_message, state=None):
 
         return f"{user_error.title}：{user_error.message}{retry_text}"
 
+    coach_context_description = build_coach_context_prompt(
+        getattr(state, "coach_context", None),
+    )
+
     final_prompt = f"""
 你是 Personal Growth AI Coach。
+
+以下是当前用户与本次学习目标的上下文：
+{coach_context_description}
 
 用户问题：
 {user_message}
@@ -1009,15 +1016,16 @@ def run_planning_agent(user_message, state=None):
 
 {json.dumps(state_data, ensure_ascii=False, indent=2)}
 
-请严格根据以上 State 中已有的信息回答用户。
+请严格根据当前用户与本次学习目标的上下文，以及以下 State 中已有的信息回答用户。
 
 规则：
-1. 不得编造 State 中没有的用户事实。
+1. 不得编造当前用户与本次学习目标上下文或 State 中没有的用户事实。
 2. 不得自行假设用户的学习时间、技术基础、学习资源、框架选择或项目方向。
 3. 可以解释、整理和归纳 State 中已有的信息。
-4. 如果某项信息缺失，就明确说“当前信息不足”，不要猜。
+4. 如果当前用户与本次学习目标上下文以及 State 都不足以支持某项结论，
+   就明确说明“当前信息不足”，不要猜测。
 5. 不要向用户展示内部 State、Tool 调用过程、JSON 或系统实现细节。
-6. 回答应具体、清晰、可执行，但所有建议必须能从 State 中找到依据。
+6. 回答应具体、清晰、可执行，但所有个性化建议必须能从当前用户与本次学习目标上下文或 State 中找到依据。
 """
 
     response = call_llm_with_retry(final_prompt, user_message, run_id=state.run_id)
