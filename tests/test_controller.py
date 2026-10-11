@@ -4771,6 +4771,44 @@ def test_simple_agent_should_redact_internal_knowledge_metadata(
     assert "rank: 1" not in result
 
 
+def test_simple_runtime_should_not_force_knowledge_boundary_disclaimer(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("什么是Python类？")
+
+    state.set_knowledge_context([])
+
+    captured = {}
+
+    def fake_call_llm(system_prompt, user_message, run_id=None):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "Python类是一种组织数据和行为的方式。",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm,
+    )
+
+    result = controller_module.run_simple_agent(
+        "什么是Python类？",
+        state=state,
+    )
+
+    assert result == "Python类是一种组织数据和行为的方式。"
+
+    assert "当前知识库没有相关内容" not in captured["system_prompt"]
+
+    assert "以下基于通用知识回答" not in captured["system_prompt"]
+
+
 def test_planning_agent_should_redact_internal_knowledge_metadata(
     monkeypatch,
 ):
@@ -7584,3 +7622,63 @@ def test_run_planning_agent_should_include_coach_context_in_final_prompt(
     assert "当前用户与本次学习目标上下文或 State" in prompt
 
     assert result == "ok"
+
+
+def test_simple_runtime_final_prompt_should_not_force_knowledge_boundary_disclaimer(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("请保存学习反馈")
+
+    captured_prompts = []
+
+    responses = iter(
+        [
+            {
+                "status": "success",
+                "content": (
+                    '<tool_call>{"name":"save_learning_feedback",'
+                    '"arguments":{}}</tool_call>'
+                ),
+            },
+            {
+                "status": "success",
+                "content": "已完成。",
+            },
+        ]
+    )
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured_prompts.append(system_prompt)
+        return next(responses)
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        lambda name, arguments, **kwargs: {
+            "status": "success",
+            "content": "saved",
+        },
+    )
+
+    controller_module.run_simple_runtime(
+        "请保存学习反馈",
+        state=state,
+    )
+
+    final_prompt = captured_prompts[-1]
+
+    assert "当前知识库没有相关内容" not in final_prompt
+    assert "以下基于通用知识回答" not in final_prompt
