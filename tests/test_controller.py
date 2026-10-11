@@ -7426,3 +7426,86 @@ def test_run_agent_runtime_should_sync_selected_memory_into_coach_context(
     assert state.coach_context.memory_context == state.memory_context
     assert "stale" not in state.coach_context.memory_context
     assert response["status"] == "success"
+
+
+def test_run_simple_runtime_should_include_coach_context_in_prompt(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+    from coach.context_models import CoachContext
+
+    state = AgentState("hello")
+
+    state.set_coach_context(
+        CoachContext(
+            user_context={
+                "user_id": "user-1",
+                "name": "Test User",
+                "email": "test@example.com",
+            },
+            learning_context={
+                "domain": "AI Agent",
+                "goal": "Build commercial AI Agents",
+                "status": "active",
+            },
+            memory_context={},
+        )
+    )
+
+    state.set_memory_context(
+        {
+            "learning": [
+                {
+                    "content": "MEMORY_MARKER",
+                }
+            ]
+        }
+    )
+
+    captured = {}
+
+    def fake_call_llm(
+        system_prompt,
+        user_message,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm",
+        fake_call_llm,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "route_tools",
+        lambda user_message: [],
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "filter_tool_schemas",
+        lambda candidate_tools: [],
+    )
+
+    controller_module.run_simple_runtime(
+        "hello",
+        state=state,
+    )
+
+    prompt = captured["system_prompt"]
+
+    assert "Test User" in prompt
+    assert "AI Agent" in prompt
+    assert "Build commercial AI Agents" in prompt
+
+    assert "user-1" not in prompt
+    assert "test@example.com" not in prompt
+
+    assert prompt.count("MEMORY_MARKER") == 1

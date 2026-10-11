@@ -52,6 +52,7 @@ from memory.memory_reliability_trace import (
 from memory.memory_reliability_run_record import (
     build_memory_reliability_run_record,
 )
+from coach.context_prompt import build_coach_context_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -541,6 +542,10 @@ def run_simple_runtime(user_message, state=None):
         indent=2,
     )
 
+    coach_context_description = build_coach_context_prompt(
+        state.coach_context,
+    )
+
     knowledge_description = json.dumps(
         state.knowledge_context,
         ensure_ascii=False,
@@ -560,6 +565,9 @@ def run_simple_runtime(user_message, state=None):
 
     system_prompt = f"""
     你是Personal Growth AI Coach。
+
+    以下是当前用户与本次学习目标的上下文：
+    {coach_context_description}
 
     以下是与当前用户有关的长期记忆：
     {memory_description}
@@ -632,6 +640,9 @@ def run_simple_runtime(user_message, state=None):
 
     final_system_prompt = f"""
     你是 Personal Growth AI Coach。
+
+    以下是当前用户与本次学习目标的上下文：
+    {coach_context_description}
 
     以下是与当前用户有关的长期记忆：
     {memory_description}
