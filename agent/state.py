@@ -38,6 +38,8 @@ class AgentState:
         self.learning_continuity_context = {}
         self.next_learning_task = None
 
+        self.coach_context = None
+
         self.memory_reliability_trace = None
 
     def update_step(self):
@@ -78,6 +80,12 @@ class AgentState:
         memory_context_budget_impact,
     ):
         self.memory_context_budget_impact = memory_context_budget_impact
+
+    def set_coach_context(
+        self,
+        coach_context,
+    ):
+        self.coach_context = coach_context
 
     def get_state(self):
 
