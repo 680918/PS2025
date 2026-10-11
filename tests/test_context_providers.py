@@ -12,7 +12,7 @@ from coach.context_providers.memory_context_provider import (
 
 
 class FakeUser:
-    id = "user-1"
+    user_id = "user-1"
     name = "Test User"
     email = "test@example.com"
 
@@ -44,7 +44,11 @@ def test_user_context_provider():
         "user-1",
     )
 
-    assert context["name"] == "Test User"
+    assert context == {
+        "user_id": "user-1",
+        "name": "Test User",
+        "email": "test@example.com",
+    }
 
 
 def test_learning_context_provider():
