@@ -2280,6 +2280,7 @@ def test_web_message_should_use_default_learning_feedback_extractor(
 
     assert "确认本次学习反馈" in response.text
 
+
 def test_web_message_should_still_render_coach_response_when_feedback_extraction_fails(
     tmp_path,
     monkeypatch,
@@ -2289,9 +2290,7 @@ def test_web_message_should_still_render_coach_response_when_feedback_extraction
             self,
             user_message,
         ):
-            raise RuntimeError(
-                "feedback extraction failed"
-            )
+            raise RuntimeError("feedback extraction failed")
 
     app = create_app(
         database_dir=tmp_path,
@@ -2316,9 +2315,7 @@ def test_web_message_should_still_render_coach_response_when_feedback_extraction
         },
     ).json()
 
-    client.post(
-        f"/journeys/{journey['journey_id']}/start"
-    )
+    client.post(f"/journeys/{journey['journey_id']}/start")
 
     def fake_run_agent(
         user_message,
