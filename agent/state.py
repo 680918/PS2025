@@ -38,6 +38,8 @@ class AgentState:
         self.learning_continuity_context = {}
         self.next_learning_task = None
 
+        self.conversation_context = []
+
         self.coach_context = None
 
         self.memory_reliability_trace = None
@@ -121,6 +123,12 @@ class AgentState:
         learning_continuity_context,
     ):
         self.learning_continuity_context = learning_continuity_context
+
+    def set_conversation_context(
+        self,
+        conversation_context,
+    ):
+        self.conversation_context = conversation_context
 
     def set_memory_reliability_trace(
         self,

@@ -31,6 +31,7 @@ data/journeys.db
 data/sessions.db
 data/curriculums.db
 data/completion_reports.db
+data/conversations.db
 
 # Per-user runtime databases
 data/memory/
