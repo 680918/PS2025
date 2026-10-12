@@ -65,6 +65,7 @@ from memory.journey_memory_consolidation_service import (
     consolidate_journey_completion_summary,
 )
 from coach.context_builder import build_coach_context
+from api.markdown_renderer import render_safe_markdown
 
 
 _DEFAULT_CURRICULUM_GENERATOR = object()
@@ -717,7 +718,9 @@ def create_app(
             user_id=user_id,
             topic=session_topic,
         )
-        safe_coach_task = escape(str(coach_task))
+        rendered_coach_task = render_safe_markdown(
+            coach_task,
+        )
 
         if continuity.get("has_current_session") is True:
             continuity_topic_label = "当前主题"
@@ -743,7 +746,9 @@ def create_app(
             <h1>继续学习</h1>
             <h2>今天学习什么</h2>
 
-            <p>{safe_coach_task}</p>
+            <div>
+                {rendered_coach_task}
+            </div>
 
             <p>学习领域：{journey.domain}</p>
             <p>学习目标：{journey.goal}</p>
