@@ -151,3 +151,34 @@ def test_build_next_learning_task_should_accept_planning_decision_object():
 
     assert "教学调整建议" in result["prompt"]
     assert "围绕语速问题调整练习" in result["prompt"]
+
+
+def test_next_learning_task_should_continue_current_unfinished_session():
+    journey = {
+        "domain": "AI Agent",
+        "goal": "理解并实践 Tool Calling 与 Memory 的基本协作",
+    }
+
+    continuity = {
+        "has_current_session": True,
+        "current_session_id": "session_current",
+        "current_topic": "Tool Calling",
+        "current_understanding_score": None,
+        "current_difficulty": None,
+        "current_next_step": None,
+        "has_previous_session": False,
+    }
+
+    result = build_next_learning_task(
+        journey=journey,
+        continuity=continuity,
+    )
+
+    context = result["context"]
+    prompt = result["prompt"]
+
+    assert context["has_current_session"] is True
+    assert context["current_topic"] == "Tool Calling"
+
+    assert "Tool Calling" in prompt
+    assert "这是第一次学习" not in prompt

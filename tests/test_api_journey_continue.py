@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from api.app import create_app
 
 
-def test_continue_journey_should_restore_previous_learning_context(
+def test_continue_journey_should_restore_current_learning_context(
     tmp_path,
 ):
     app = create_app(database_dir=tmp_path)
@@ -40,8 +40,9 @@ def test_continue_journey_should_restore_previous_learning_context(
 
     data = response.json()
 
-    assert data["has_previous_session"] is True
-    assert data["topic"] == "英语"
+    assert data["has_current_session"] is True
+    assert data["has_previous_session"] is False
+    assert data["current_topic"] is not None
 
 
 def test_continue_journey_should_return_404_when_journey_not_found(

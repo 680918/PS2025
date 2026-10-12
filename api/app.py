@@ -638,7 +638,7 @@ def create_app(
             )
         )
 
-        user_message = "请根据我的学习目标和上一次学习反馈，安排今天的学习任务。"
+        user_message = "请根据我的学习目标和当前学习连续性状态，安排本次学习任务。"
 
         coach_context = build_coach_context(
             user_id=user_id,
@@ -672,10 +672,16 @@ def create_app(
             agent_state = None
             coach_task = agent_result
 
-        session_topic = continuity.get(
-            "topic",
-            journey.domain,
-        )
+        if continuity.get("has_current_session") is True:
+            session_topic = continuity.get(
+                "current_topic",
+                journey.domain,
+            )
+        else:
+            session_topic = continuity.get(
+                "topic",
+                journey.domain,
+            )
 
         planning_decision = None
 
@@ -713,6 +719,19 @@ def create_app(
         )
         safe_coach_task = escape(str(coach_task))
 
+        if continuity.get("has_current_session") is True:
+            continuity_topic_label = "当前主题"
+            continuity_topic = continuity.get(
+                "current_topic",
+                "暂无",
+            )
+        else:
+            continuity_topic_label = "上次主题"
+            continuity_topic = continuity.get(
+                "topic",
+                "暂无",
+            )
+
         return f"""
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -730,8 +749,8 @@ def create_app(
             <p>学习目标：{journey.goal}</p>
 
             <p>
-                上次主题：
-                {continuity.get("topic", "暂无")}
+                {continuity_topic_label}：
+                {continuity_topic}
             </p>
 
             <p>

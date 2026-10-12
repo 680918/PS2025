@@ -12,6 +12,11 @@ def build_next_learning_task_context(
         and continuity.get("completed") is not False
     )
 
+    has_current_learning = continuity.get(
+        "has_current_session",
+        False,
+    )
+
     return {
         "domain": journey["domain"],
         "goal": journey["goal"],
@@ -26,12 +31,47 @@ def build_next_learning_task_context(
         ),
         "evaluation": evaluation,
         "planning_decision": planning_decision,
+        "has_current_session": has_current_learning,
+        "current_topic": (
+            continuity.get("current_topic") if has_current_learning else None
+        ),
+        "current_understanding_score": (
+            continuity.get("current_understanding_score")
+            if has_current_learning
+            else None
+        ),
+        "current_difficulty": (
+            continuity.get("current_difficulty") if has_current_learning else None
+        ),
+        "current_next_step": (
+            continuity.get("current_next_step") if has_current_learning else None
+        ),
     }
 
 
 def build_next_learning_task_prompt(
     context,
 ):
+
+    if context.get("has_current_session") is True:
+        return f"""
+    当前存在尚未完成的学习任务。
+
+    当前学习主题：
+    {context["current_topic"]}
+
+    学习领域：
+    {context["domain"]}
+
+    学习目标：
+    {context["goal"]}
+
+    请优先继续当前学习主题，不要把它描述为“上一次已经完成的学习”，
+    也不要把它描述为“第一次学习”。
+
+    如果当前理解程度、难点或下一步信息为空，不要自行虚构。
+    应根据用户本轮输入继续当前主题，并逐步确认真实学习状态。
+    """
     if context["has_previous_session"] is False:
         return f"""
 你是一名长期学习教练。
