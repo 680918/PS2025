@@ -4771,6 +4771,44 @@ def test_simple_agent_should_redact_internal_knowledge_metadata(
     assert "rank: 1" not in result
 
 
+def test_simple_runtime_should_not_force_knowledge_boundary_disclaimer(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("什么是Python类？")
+
+    state.set_knowledge_context([])
+
+    captured = {}
+
+    def fake_call_llm(system_prompt, user_message, run_id=None):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "Python类是一种组织数据和行为的方式。",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm,
+    )
+
+    result = controller_module.run_simple_agent(
+        "什么是Python类？",
+        state=state,
+    )
+
+    assert result == "Python类是一种组织数据和行为的方式。"
+
+    assert "当前知识库没有相关内容" not in captured["system_prompt"]
+
+    assert "以下基于通用知识回答" not in captured["system_prompt"]
+
+
 def test_planning_agent_should_redact_internal_knowledge_metadata(
     monkeypatch,
 ):
@@ -5507,7 +5545,13 @@ def test_run_simple_runtime_should_prioritize_previous_next_step(
 
     assert status == "success"
 
-    assert "next_step 表示上一次学习留下的后续方向" in captured["system_prompt"]
+    assert (
+        "previous session 的 next_step 表示上一次已完成学习留下的后续方向"
+        in captured["system_prompt"]
+    )
+    assert (
+        "current_next_step 表示当前尚未完成学习的后续方向" in captured["system_prompt"]
+    )
 
     assert "继续练习参数结构" in captured["system_prompt"]
 
@@ -5741,7 +5785,7 @@ def test_run_agent_runtime_should_build_next_learning_task():
     assert "听力速度较快" in state.next_learning_task["prompt"]
 
 
-def test_run_agent_runtime_should_treat_uncompleted_session_as_first_learning(
+def test_run_agent_runtime_should_treat_uncompleted_session_as_current_learning(
     monkeypatch,
 ):
     captured = {}
@@ -5765,12 +5809,13 @@ def test_run_agent_runtime_should_treat_uncompleted_session_as_first_learning(
     }
 
     learning_continuity_context = {
-        "has_previous_session": True,
-        "topic": "英语",
-        "completed": False,
-        "understanding_score": None,
-        "difficulty": None,
-        "next_step": None,
+        "has_current_session": True,
+        "current_session_id": "session_current",
+        "current_topic": "英语",
+        "current_understanding_score": None,
+        "current_difficulty": None,
+        "current_next_step": None,
+        "has_previous_session": False,
     }
 
     state, response = run_agent_runtime(
@@ -5783,20 +5828,23 @@ def test_run_agent_runtime_should_treat_uncompleted_session_as_first_learning(
     next_task_prompt = state.next_learning_task["prompt"]
     system_prompt = captured["system_prompt"]
 
-    # 原始 Session 仍然存在，并且保持未完成状态。
-    assert state.learning_continuity_context["has_previous_session"] is True
-    assert state.learning_continuity_context["completed"] is False
+    assert context["has_current_session"] is True
+    assert context["current_topic"] == "英语"
 
-    # Next Task 不把未完成的 Session 当成历史学习成果。
     assert context["has_previous_session"] is False
     assert context["previous_topic"] is None
     assert context["difficulty"] is None
 
-    # 实际送入 LLM 的指导应当是首次学习。
-    assert "这是第一次学习" in next_task_prompt
-    assert "不要虚构之前的学习记录" in system_prompt
+    assert "当前" in next_task_prompt
+    assert "英语" in next_task_prompt
+    assert "这是第一次学习" not in next_task_prompt
 
-    assert "第一节：基础英语听力练习" in response
+    assert '"has_current_session": true' in system_prompt
+    assert '"current_topic": "英语"' in system_prompt
+
+    assert "has_current_session 为 true" in system_prompt
+    assert "当前尚未完成的学习" in system_prompt
+    assert "不得把 current session 描述为上一次学习" in system_prompt
 
 
 def test_run_agent_runtime_should_include_next_learning_task_prompt_in_llm_prompt(
@@ -7584,3 +7632,63 @@ def test_run_planning_agent_should_include_coach_context_in_final_prompt(
     assert "当前用户与本次学习目标上下文或 State" in prompt
 
     assert result == "ok"
+
+
+def test_simple_runtime_final_prompt_should_not_force_knowledge_boundary_disclaimer(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState("请保存学习反馈")
+
+    captured_prompts = []
+
+    responses = iter(
+        [
+            {
+                "status": "success",
+                "content": (
+                    '<tool_call>{"name":"save_learning_feedback",'
+                    '"arguments":{}}</tool_call>'
+                ),
+            },
+            {
+                "status": "success",
+                "content": "已完成。",
+            },
+        ]
+    )
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured_prompts.append(system_prompt)
+        return next(responses)
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "execute_tool",
+        lambda name, arguments, **kwargs: {
+            "status": "success",
+            "content": "saved",
+        },
+    )
+
+    controller_module.run_simple_runtime(
+        "请保存学习反馈",
+        state=state,
+    )
+
+    final_prompt = captured_prompts[-1]
+
+    assert "当前知识库没有相关内容" not in final_prompt
+    assert "以下基于通用知识回答" not in final_prompt

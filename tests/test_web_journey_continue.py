@@ -275,6 +275,44 @@ def test_web_continue_should_forward_memory_reliability_store_to_agent(
     assert captured_agent["memory_reliability_run_record_store"] is fake_store
 
 
+def test_web_continue_should_render_unfinished_session_as_current_topic(
+    tmp_path,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "zhangsan-current-session@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "英语",
+            "goal": "提升英语能力",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert "当前主题：" in response.text
+    assert "上次主题：" not in response.text
+
+
 def test_web_learning_loop_should_use_previous_feedback_for_next_coach_task(
     tmp_path,
     monkeypatch,
@@ -1068,6 +1106,127 @@ def test_web_continue_completed_journey_should_show_completion_page_without_new_
     sessions_after = session_repository.list_by_journey(journey["journey_id"])
 
     assert len(sessions_after) == len(sessions_before)
+
+
+def test_web_continue_should_use_neutral_learning_continuity_message(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "neutral-continuity@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "英语",
+            "goal": "提升英语能力",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    captured = {}
+
+    def fake_run_agent(user_message, **kwargs):
+        captured["user_message"] = user_message
+        return "继续当前学习。"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert "上一次学习反馈" not in captured["user_message"]
+    assert "当前学习连续性状态" in captured["user_message"]
+
+
+def test_web_continue_should_use_current_topic_for_session_topic(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "current-session-topic@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "AI Agent",
+            "goal": "理解并实践 Agent 基础",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    session_repository = SQLiteLearningSessionRepository(tmp_path / "sessions.db")
+
+    current_session = session_repository.get_latest_by_journey(journey["journey_id"])
+
+    current_session.topic = "Tool Calling"
+    session_repository.save(current_session)
+
+    captured = {}
+
+    original_get_or_create = app_module.get_or_create_learning_session
+
+    def capture_get_or_create(*args, **kwargs):
+        captured["topic"] = kwargs["topic"]
+
+        return original_get_or_create(
+            *args,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(
+        app_module,
+        "get_or_create_learning_session",
+        capture_get_or_create,
+    )
+
+    def fake_run_agent(*args, **kwargs):
+        return "继续当前学习。"
+
+    monkeypatch.setattr(
+        app_module,
+        "run_agent",
+        fake_run_agent,
+    )
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["topic"] == "Tool Calling"
 
 
 def test_completed_journey_page_should_survive_commentary_generation_failure(

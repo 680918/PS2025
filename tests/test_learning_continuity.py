@@ -45,6 +45,7 @@ def test_build_learning_continuity_context_should_handle_first_session():
     )
 
     assert context == {
+        "has_current_session": False,
         "has_previous_session": False,
     }
 
@@ -79,3 +80,27 @@ def test_build_learning_continuity_context_should_use_user_ownership():
     assert context["topic"] == "Tool Calling"
     assert context["next_step"] == "继续练习 Tool Schema"
     assert context["session_id"] == "session_user_001"
+
+
+def test_build_learning_continuity_context_should_treat_unfinished_latest_session_as_current():
+    repository = InMemoryLearningSessionRepository()
+
+    session = LearningSession(
+        journey_id="journey_001",
+        user_id="user_001",
+        topic="Tool Calling",
+        completed=False,
+    )
+
+    repository.save(session)
+
+    context = build_learning_continuity_context(
+        journey_id="journey_001",
+        repository=repository,
+    )
+
+    assert context["has_current_session"] is True
+    assert context["current_session_id"] == session.session_id
+    assert context["current_topic"] == "Tool Calling"
+
+    assert context["has_previous_session"] is False

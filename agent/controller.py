@@ -572,18 +572,26 @@ def run_simple_runtime(user_message, state=None):
     以下是与当前用户有关的长期记忆：
     {memory_description}
 
-    以下是用户最近一次学习状态，用于保持跨天学习连续性：
+    以下是用户当前学习连续性状态，可能包含当前尚未完成的学习，
+    也可能包含上一次已完成的学习：
     {continuity_description}
 
     以下是根据用户学习目标和历史学习状态生成的下一节学习任务指导：
     {next_learning_task_prompt}
 
-    使用最近学习状态时必须遵守：
-    1. 如果 has_previous_session 为 false，不得虚构之前的学习经历。
-    2. 如果存在 previous session，应优先参考 topic、completed、understanding_score、difficulty 和 next_step。
-    3. next_step 表示上一次学习留下的后续方向，应优先作为本轮学习建议的依据。
-    4. 不得把历史学习状态描述成当前已经完成的新事实。
-    5. 如果本轮用户明确改变目标或学习方向，应优先服从本轮用户输入。
+    使用学习连续性状态时必须遵守：
+    1. 如果 has_current_session 为 true，current_* 字段表示当前尚未完成的学习状态，
+       应优先继续当前学习主题。
+    2. 不得把 current session 描述为上一次学习、之前已经完成的学习或第一次学习。
+    3. 如果 has_previous_session 为 true，topic、understanding_score、difficulty 和 next_step
+       表示上一次已完成学习留下的历史状态。
+    4. 只有 has_current_session 和 has_previous_session 都为 false 时，
+       才可以把本次描述为第一次学习。
+    5. previous session 的 next_step 表示上一次已完成学习留下的后续方向；
+       current_next_step 表示当前尚未完成学习的后续方向。
+    6. 不得把历史学习状态描述成当前已经完成的新事实。
+    7. 如果本轮用户明确提供新的学习状态、改变目标或学习方向，
+       应优先服从本轮用户输入。
 
     以下是从知识库中检索到的相关资料：
     {knowledge_description}
@@ -593,10 +601,11 @@ def run_simple_runtime(user_message, state=None):
     2. 不得仅因为系统提供了检索资料，就假定这些资料足以回答用户问题。
     3. 必须判断检索到的资料是否真正支持当前问题。
     4. 不得把资料中没有明确出现的内容伪装成知识库事实。
-    5. 如果知识库为空，或者检索到的资料不足以支持用户当前问题，
-    必须先明确告诉用户：“当前知识库没有相关内容”。
-    6. 如果随后使用模型自身的通用知识继续回答，
-    必须明确说明：“以下基于通用知识回答”。
+    5. 如果知识库为空，或者检索资料不足以支持当前问题，
+    不要向用户展示内部检索状态。
+
+    6. 可以结合用户输入、长期记忆、工具结果和模型已有知识回答，
+    但必须清楚区分知识来源，不得让用户误认为这些内容来自知识库。
     7. 不得让用户误以为模型自身的通用知识来自知识库。
     8. 不得向用户展示内部 Knowledge JSON、Chunk 结构或检索实现细节。
     9. 如果回答实际使用了知识库资料，可以使用资料中的 source 字段，
@@ -647,18 +656,26 @@ def run_simple_runtime(user_message, state=None):
     以下是与当前用户有关的长期记忆：
     {memory_description}
 
-    以下是用户最近一次学习状态，用于保持跨天学习连续性：
+    以下是用户当前学习连续性状态，可能包含当前尚未完成的学习，
+    也可能包含上一次已完成的学习：
     {continuity_description}
 
     以下是根据用户学习目标和历史学习状态生成的下一节学习任务指导：
     {next_learning_task_prompt}
 
-    使用最近学习状态时必须遵守：
-    1. 如果 has_previous_session 为 false，不得虚构之前的学习经历。
-    2. 如果存在 previous session，应优先参考其 topic、difficulty 和 next_step。
-    3. 如果存在 next_step，应优先结合它生成本轮下一步学习建议。
-    4. 不得把历史记录描述成本轮已经完成的新事实。
-    5. 本轮用户明确提供的新信息优先于历史学习状态。
+    使用学习连续性状态时必须遵守：
+    1. 如果 has_current_session 为 true，current_* 字段表示当前尚未完成的学习状态，
+       应优先继续当前学习主题。
+    2. 不得把 current session 描述为上一次学习、之前已经完成的学习或第一次学习。
+    3. 如果 has_previous_session 为 true，topic、understanding_score、difficulty 和 next_step
+       表示上一次已完成学习留下的历史状态。
+    4. 只有 has_current_session 和 has_previous_session 都为 false 时，
+       才可以把本次描述为第一次学习。
+    5. previous session 的 next_step 表示上一次已完成学习留下的后续方向；
+       current_next_step 表示当前尚未完成学习的后续方向。
+    6. 不得把历史学习状态描述成当前已经完成的新事实。
+    7. 如果本轮用户明确提供新的学习状态、改变目标或学习方向，
+       应优先服从本轮用户输入。
 
     以下是从知识库中检索到的相关资料：
     {knowledge_description}
@@ -669,16 +686,14 @@ def run_simple_runtime(user_message, state=None):
     3. 必须判断检索到的资料是否真正支持当前问题。
     4. 不得把资料中没有明确出现的内容伪装成知识库事实。
     5. 如果知识库为空，或者检索到的资料不足以支持用户当前问题，
-    必须先明确告诉用户：“当前知识库没有相关内容”。
-    6. 如果随后使用用户输入、长期记忆、工具结果或模型自身通用知识继续回答，
-    必须清楚区分这些信息与知识库内容。
-    7. 如果使用模型自身的通用知识回答，
-    必须明确说明：“以下基于通用知识回答”。
-    8. 不得让用户误以为非知识库信息来自知识库。
-    9. 不得向用户展示内部 Knowledge JSON、Chunk 结构或检索实现细节。
-    10. 如果回答实际使用了知识库资料，可以使用资料中的 source 字段，
+    不要向用户展示内部检索状态。
+    6. 可以结合用户输入、长期记忆、工具结果和模型已有知识继续回答，
+    但必须清楚区分这些信息与知识库内容。
+    7. 不得让用户误以为非知识库信息来自知识库。
+    8. 不得向用户展示内部 Knowledge JSON、Chunk 结构或检索实现细节。
+    9. 如果回答实际使用了知识库资料，可以使用资料中的 source 字段，
     以自然语言向用户说明知识来源。
-    11. 不得向用户展示 document_id、chunk_id、chunk_index、score、rank
+    10. 不得向用户展示 document_id、chunk_id、chunk_index、score、rank
     等内部检索元数据。
 
     工具已经执行完成。
