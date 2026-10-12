@@ -66,16 +66,21 @@ from memory.journey_memory_consolidation_service import (
 )
 from coach.context_builder import build_coach_context
 from api.markdown_renderer import render_safe_markdown
+from learning.llm_learning_feedback_extractor import (
+    LLMLearningFeedbackExtractor,
+)
 
 
 _DEFAULT_CURRICULUM_GENERATOR = object()
 _DEFAULT_COMPLETION_COMMENTARY_GENERATOR = object()
+_DEFAULT_LEARNING_FEEDBACK_EXTRACTOR = object()
 
 
 def create_app(
     database_dir,
     curriculum_generator=_DEFAULT_CURRICULUM_GENERATOR,
     completion_commentary_generator=_DEFAULT_COMPLETION_COMMENTARY_GENERATOR,
+    learning_feedback_extractor=_DEFAULT_LEARNING_FEEDBACK_EXTRACTOR,
 ):
     app = FastAPI()
 
@@ -84,6 +89,9 @@ def create_app(
 
     if completion_commentary_generator is _DEFAULT_COMPLETION_COMMENTARY_GENERATOR:
         completion_commentary_generator = LLMJourneyCompletionCommentary()
+
+    if learning_feedback_extractor is _DEFAULT_LEARNING_FEEDBACK_EXTRACTOR:
+        learning_feedback_extractor = LLMLearningFeedbackExtractor()
 
     user_repository = SQLiteUserRepository(database_dir / "users.db")
 
@@ -106,6 +114,68 @@ def create_app(
     completion_report_repository = SQLiteJourneyCompletionReportRepository(
         database_dir / "completion_reports.db"
     )
+
+    def run_web_coach_turn(
+        journey,
+        user_id,
+        user_message,
+    ):
+        continuity = build_learning_continuity_context(
+            journey_id=journey.journey_id,
+            repository=session_repository,
+            user_id=user_id,
+        )
+
+        memory_service = create_user_memory_service(
+            database_dir=database_dir,
+            user_id=user_id,
+        )
+
+        memory_reliability_run_record_store = (
+            create_user_memory_reliability_run_record_store(
+                database_dir=database_dir,
+                user_id=user_id,
+            )
+        )
+
+        coach_context = build_coach_context(
+            user_id=user_id,
+            user_message=user_message,
+            user_repository=user_repository,
+            journey_repository=journey_repository,
+            memory_service=None,
+            journey_id=journey.journey_id,
+        )
+
+        agent_result = run_agent(
+            user_message=user_message,
+            memory_service=memory_service,
+            memory_reliability_run_record_store=(memory_reliability_run_record_store),
+            learning_journey={
+                "domain": journey.domain,
+                "goal": journey.goal,
+            },
+            learning_continuity_context=continuity,
+            journey_id=journey.journey_id,
+            user_id=user_id,
+            learning_session_repository=session_repository,
+            learning_evidence_repository=evidence_repository,
+            learning_curriculum_repository=curriculum_repository,
+            return_state=True,
+            coach_context=coach_context,
+        )
+
+        if isinstance(agent_result, tuple):
+            agent_state, coach_response = agent_result
+        else:
+            agent_state = None
+            coach_response = agent_result
+
+        return (
+            continuity,
+            agent_state,
+            coach_response,
+        )
 
     def render_journey_completion_page(
         journey,
@@ -621,57 +691,13 @@ def create_app(
                 user_id=user_id,
             )
 
-        continuity = build_learning_continuity_context(
-            journey_id=journey.journey_id,
-            repository=session_repository,
-            user_id=user_id,
-        )
-
-        memory_service = create_user_memory_service(
-            database_dir=database_dir,
-            user_id=user_id,
-        )
-
-        memory_reliability_run_record_store = (
-            create_user_memory_reliability_run_record_store(
-                database_dir=database_dir,
-                user_id=user_id,
-            )
-        )
-
         user_message = "请根据我的学习目标和当前学习连续性状态，安排本次学习任务。"
 
-        coach_context = build_coach_context(
+        continuity, agent_state, coach_task = run_web_coach_turn(
+            journey=journey,
             user_id=user_id,
             user_message=user_message,
-            user_repository=user_repository,
-            journey_repository=journey_repository,
-            memory_service=None,
-            journey_id=journey.journey_id,
         )
-
-        agent_result = run_agent(
-            user_message=user_message,
-            memory_service=memory_service,
-            memory_reliability_run_record_store=memory_reliability_run_record_store,
-            learning_journey={
-                "domain": journey.domain,
-                "goal": journey.goal,
-            },
-            learning_continuity_context=continuity,
-            journey_id=journey.journey_id,
-            user_id=user_id,
-            learning_session_repository=session_repository,
-            learning_evidence_repository=evidence_repository,
-            learning_curriculum_repository=curriculum_repository,
-            return_state=True,
-            coach_context=coach_context,
-        )
-        if isinstance(agent_result, tuple):
-            agent_state, coach_task = agent_result
-        else:
-            agent_state = None
-            coach_task = agent_result
 
         if continuity.get("has_current_session") is True:
             session_topic = continuity.get(
@@ -712,7 +738,7 @@ def create_app(
                 user_id=user_id,
             )
 
-        current_session = get_or_create_learning_session(
+        get_or_create_learning_session(
             repository=session_repository,
             journey_id=journey.journey_id,
             user_id=user_id,
@@ -773,133 +799,184 @@ def create_app(
                 {continuity.get("next_step", "暂无")}
             </p>
 
-            <h2>提交练习证据</h2>
+            <h2>继续对话</h2>
 
             <form
                 method="post"
-                action="/web/journeys/{journey.journey_id}/evidence"
+                action="/web/journeys/{journey.journey_id}/message"
             >
                 <input
                     type="hidden"
                     name="user_id"
                     value="{escape(user_id, quote=True)}"
                 >
-                <input
-                    type="hidden"
-                    name="session_id"
-                    value="{escape(current_session.session_id, quote=True)}"
-                >
 
-
-                <label>
-                    练习任务：
-                    <input
-                        type="text"
-                        name="task"
-                        required
-                    >
+                <label for="message">
+                    告诉我你的进展、问题，或者你想继续学习的方向：
                 </label>
 
                 <br>
 
-                <label>
-                    练习结果：
-                    <input
-                        type="text"
-                        name="result"
-                        required
-                    >
-                </label>
-
-                <br>
-
-                <label>
-                    自我评估：
-                    <input
-                        type="text"
-                        name="assessment"
-                        required
-                    >
-                </label>
-
-                <br>
-
-                <label>
-                    通过测试数：
-                    <input
-                        type="number"
-                        name="tests_passed"
-                        min="0"
-                    >
-                </label>
-
-                <br>
-
-                <label>
-                    测试总数：
-                    <input
-                        type="number"
-                        name="tests_total"
-                        min="1"
-                    >
-                </label>
+                <textarea
+                    id="message"
+                    name="message"
+                    rows="6"
+                    required
+                ></textarea>
 
                 <br>
 
                 <button type="submit">
-                    提交练习证据
+                    发送
                 </button>
             </form>
+        </body>
+        </html>
+        """
 
-            <h2>提交学习反馈</h2>
+    @app.post(
+        "/web/journeys/{journey_id}/message",
+        response_class=HTMLResponse,
+    )
+    def web_send_journey_message(
+        journey_id: str,
+        user_id: str = Form(...),
+        message: str = Form(...),
+    ):
+        journey = journey_repository.get_by_id_for_user(
+            journey_id=journey_id,
+            user_id=user_id,
+        )
+
+        if journey is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="journey not found",
+            )
+
+        _, _, coach_response = run_web_coach_turn(
+            journey=journey,
+            user_id=user_id,
+            user_message=message,
+        )
+
+        rendered_coach_response = render_safe_markdown(
+            coach_response,
+        )
+
+        feedback_confirmation = ""
+        feedback_proposal = None
+
+        if learning_feedback_extractor is not None:
+            try:
+                feedback_proposal = learning_feedback_extractor.extract(
+                    message,
+                )
+            except RuntimeError:
+                feedback_proposal = None
+
+        if feedback_proposal is not None:
+            understanding_score = feedback_proposal["understanding_score"]
+            difficulty = feedback_proposal["difficulty"]
+            next_step = feedback_proposal["next_step"]
+
+            feedback_confirmation = f"""
+                <h2>确认本次学习反馈</h2>
+
+                <p>
+                    理解程度：
+                    {escape(str(understanding_score))}
+                </p>
+
+                <p>
+                    当前难点：
+                    {escape(str(difficulty))}
+                </p>
+
+                <p>
+                    下一步：
+                    {escape(str(next_step))}
+                </p>
+
+                <form
+                    method="post"
+                    action="/web/journeys/{journey.journey_id}/feedback"
+                >
+                    <input
+                        type="hidden"
+                        name="user_id"
+                        value="{escape(user_id, quote=True)}"
+                    >
+
+                    <input
+                        type="hidden"
+                        name="understanding_score"
+                        value="{escape(str(understanding_score), quote=True)}"
+                    >
+
+                    <input
+                        type="hidden"
+                        name="difficulty"
+                        value="{escape(str(difficulty), quote=True)}"
+                    >
+
+                    <input
+                        type="hidden"
+                        name="next_step"
+                        value="{escape(str(next_step), quote=True)}"
+                    >
+
+                    <button type="submit">
+                        确认并保存
+                    </button>
+                </form>
+                """
+
+        return f"""
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <title>继续学习</title>
+        </head>
+        <body>
+            <h1>继续学习</h1>
+
+            <div>
+                {rendered_coach_response}
+            </div>
+
+            {feedback_confirmation}
+
+            <h2>继续对话</h2>
 
             <form
                 method="post"
-                action="/web/journeys/{journey.journey_id}/feedback"
+                action="/web/journeys/{journey.journey_id}/message"
             >
                 <input
                     type="hidden"
                     name="user_id"
-                    value="{user_id}"
+                    value="{escape(user_id, quote=True)}"
                 >
 
-                <label>
-                    理解程度：
-                    <input
-                        type="number"
-                        name="understanding_score"
-                        min="0"
-                        max="100"
-                        required
-                    >
+                <label for="message">
+                    告诉我你的进展、问题，或者你想继续学习的方向：
                 </label>
 
                 <br>
 
-                <label>
-                    当前难点：
-                    <input
-                        type="text"
-                        name="difficulty"
-                        required
-                    >
-                </label>
-
-                <br>
-
-                <label>
-                    下一步：
-                    <input
-                        type="text"
-                        name="next_step"
-                        required
-                    >
-                </label>
+                <textarea
+                    id="message"
+                    name="message"
+                    rows="6"
+                    required
+                ></textarea>
 
                 <br>
 
                 <button type="submit">
-                    提交学习反馈
+                    发送
                 </button>
             </form>
         </body>
