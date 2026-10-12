@@ -1108,6 +1108,65 @@ def test_web_continue_completed_journey_should_show_completion_page_without_new_
     assert len(sessions_after) == len(sessions_before)
 
 
+def test_web_continue_should_render_agent_markdown_safely(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "markdown-rendering@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "AI Agent",
+            "goal": "学习 Tool Calling",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    def fake_run_agent(*args, **kwargs):
+        return """
+## 本次学习定位
+
+这是 **Tool Calling** 学习任务。
+
+请实现 `save_note(content)`。
+
+<script>alert("xss")</script>
+"""
+
+    monkeypatch.setattr(
+        app_module,
+        "run_agent",
+        fake_run_agent,
+    )
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert "<h2>本次学习定位</h2>" in response.text
+    assert "<strong>Tool Calling</strong>" in response.text
+    assert "<code>save_note(content)</code>" in response.text
+
+    assert "<script>" not in response.text
+
+
 def test_web_continue_should_use_neutral_learning_continuity_message(
     tmp_path,
     monkeypatch,
