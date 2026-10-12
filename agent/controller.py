@@ -197,6 +197,7 @@ def run_agent_runtime(
     memory_reliability_run_record_store=None,
     *,
     coach_context=None,
+    conversation_context=None,
 ):
     state = AgentState(
         user_message,
@@ -205,6 +206,11 @@ def run_agent_runtime(
 
     if coach_context is not None:
         state.set_coach_context(coach_context)
+
+    if conversation_context is not None:
+        state.set_conversation_context(
+            conversation_context,
+        )
 
     if (
         learning_continuity_context is None
@@ -497,6 +503,7 @@ def run_agent(
     return_state=False,
     *,
     coach_context=None,
+    conversation_context=None,
 ):
     state, response = run_agent_runtime(
         user_message=user_message,
@@ -513,6 +520,7 @@ def run_agent(
         learning_curriculum_repository=learning_curriculum_repository,
         memory_reliability_run_record_store=memory_reliability_run_record_store,
         coach_context=coach_context,
+        conversation_context=conversation_context,
     )
 
     if return_state:
@@ -546,6 +554,12 @@ def run_simple_runtime(user_message, state=None):
         state.coach_context,
     )
 
+    conversation_description = json.dumps(
+        state.conversation_context,
+        ensure_ascii=False,
+        indent=2,
+    )
+
     knowledge_description = json.dumps(
         state.knowledge_context,
         ensure_ascii=False,
@@ -568,6 +582,13 @@ def run_simple_runtime(user_message, state=None):
 
     以下是当前用户与本次学习目标的上下文：
     {coach_context_description}
+
+    以下是当前 Journey 的最近对话历史：
+    {conversation_description}
+
+    使用最近对话历史时必须遵守：
+    1. 最近对话历史表示当前连续对话中的上下文，不等同于长期记忆。
+    2. 用户本轮明确提供的新信息优先于历史对话内容。
 
     以下是与当前用户有关的长期记忆：
     {memory_description}
@@ -652,6 +673,13 @@ def run_simple_runtime(user_message, state=None):
 
     以下是当前用户与本次学习目标的上下文：
     {coach_context_description}
+
+    以下是当前 Journey 的最近对话历史：
+    {conversation_description}
+
+    使用最近对话历史时必须遵守：
+    1. 最近对话历史表示当前连续对话中的上下文，不等同于长期记忆。
+    2. 用户本轮明确提供的新信息优先于历史对话内容。
 
     以下是与当前用户有关的长期记忆：
     {memory_description}

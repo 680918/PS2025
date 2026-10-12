@@ -69,6 +69,11 @@ from api.markdown_renderer import render_safe_markdown
 from learning.llm_learning_feedback_extractor import (
     LLMLearningFeedbackExtractor,
 )
+from conversation.message import ConversationMessage
+from conversation.sqlite_repository import (
+    SQLiteConversationRepository,
+)
+from conversation.context import build_conversation_context
 
 
 _DEFAULT_CURRICULUM_GENERATOR = object()
@@ -98,6 +103,10 @@ def create_app(
     journey_repository = SQLiteLearningJourneyRepository(database_dir / "journeys.db")
 
     session_repository = SQLiteLearningSessionRepository(database_dir / "sessions.db")
+
+    conversation_repository = SQLiteConversationRepository(
+        database_dir / "conversations.db"
+    )
 
     evidence_repository = SQLiteLearningEvidenceRepository(database_dir / "sessions.db")
 
@@ -147,6 +156,13 @@ def create_app(
             journey_id=journey.journey_id,
         )
 
+        conversation_context = build_conversation_context(
+            repository=conversation_repository,
+            journey_id=journey.journey_id,
+            user_id=user_id,
+            recent_limit=10,
+        )
+
         agent_result = run_agent(
             user_message=user_message,
             memory_service=memory_service,
@@ -163,6 +179,7 @@ def create_app(
             learning_curriculum_repository=curriculum_repository,
             return_state=True,
             coach_context=coach_context,
+            conversation_context=conversation_context,
         )
 
         if isinstance(agent_result, tuple):
@@ -176,6 +193,35 @@ def create_app(
             agent_state,
             coach_response,
         )
+
+    def render_conversation_history(
+        conversation_history,
+    ):
+        conversation_history_html = ""
+
+        for history_message in conversation_history:
+            role = history_message["role"]
+            content = history_message["content"]
+
+            if role == "assistant":
+                rendered_content = render_safe_markdown(
+                    content,
+                )
+                speaker = "Coach"
+            else:
+                rendered_content = escape(str(content))
+                speaker = "你"
+
+            conversation_history_html += f"""
+            <div>
+                <strong>{speaker}：</strong>
+                <div>
+                    {rendered_content}
+                </div>
+            </div>
+            """
+
+        return conversation_history_html
 
     def render_journey_completion_page(
         journey,
@@ -761,6 +807,17 @@ def create_app(
                 "暂无",
             )
 
+        conversation_history = build_conversation_context(
+            repository=conversation_repository,
+            journey_id=journey.journey_id,
+            user_id=user_id,
+            recent_limit=10,
+        )
+
+        conversation_history_html = render_conversation_history(
+            conversation_history,
+        )
+
         return f"""
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -798,6 +855,11 @@ def create_app(
                 下一步：
                 {continuity.get("next_step", "暂无")}
             </p>
+            <h2>对话</h2>
+
+            <div>
+                {conversation_history_html}
+            </div>
 
             <h2>继续对话</h2>
 
@@ -860,8 +922,33 @@ def create_app(
             user_message=message,
         )
 
-        rendered_coach_response = render_safe_markdown(
-            coach_response,
+        conversation_repository.save(
+            ConversationMessage(
+                journey_id=journey.journey_id,
+                user_id=user_id,
+                role="user",
+                content=message,
+            )
+        )
+
+        conversation_repository.save(
+            ConversationMessage(
+                journey_id=journey.journey_id,
+                user_id=user_id,
+                role="assistant",
+                content=coach_response,
+            )
+        )
+
+        conversation_history = build_conversation_context(
+            repository=conversation_repository,
+            journey_id=journey.journey_id,
+            user_id=user_id,
+            recent_limit=10,
+        )
+
+        conversation_history_html = render_conversation_history(
+            conversation_history,
         )
 
         feedback_confirmation = ""
@@ -942,8 +1029,10 @@ def create_app(
         <body>
             <h1>继续学习</h1>
 
+            <h2>对话</h2>
+
             <div>
-                {rendered_coach_response}
+                {conversation_history_html}
             </div>
 
             {feedback_confirmation}

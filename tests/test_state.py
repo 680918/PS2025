@@ -212,3 +212,30 @@ def test_agent_state_should_store_coach_context():
     state.set_coach_context(coach_context)
 
     assert state.coach_context is coach_context
+
+
+def test_agent_state_should_store_conversation_context():
+    state = AgentState("那第二种呢？")
+
+    conversation_context = [
+        {
+            "role": "user",
+            "content": "Memory 有哪两种读取模式？",
+        },
+        {
+            "role": "assistant",
+            "content": "第一种是隐式注入，第二种是显式工具调用。",
+        },
+    ]
+
+    state.set_conversation_context(
+        conversation_context,
+    )
+
+    assert state.conversation_context == conversation_context
+
+
+def test_agent_state_should_start_with_empty_conversation_context():
+    state = AgentState("hello")
+
+    assert state.conversation_context == []
