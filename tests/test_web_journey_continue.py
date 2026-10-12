@@ -52,18 +52,20 @@ def test_web_continue_journey_should_render_previous_learning_context(
     assert "英语" in response.text
 
 
-def test_web_continue_page_should_render_feedback_form(
+def test_web_continue_should_not_render_manual_feedback_form(
     tmp_path,
 ):
-    app = create_app(database_dir=tmp_path)
-
+    app = create_app(
+        database_dir=tmp_path,
+        learning_feedback_extractor=None,
+    )
     client = TestClient(app)
 
     user = client.post(
         "/users",
         json={
             "name": "张三",
-            "email": "zhangsan@example.com",
+            "email": "no-manual-feedback@example.com",
         },
     ).json()
 
@@ -71,8 +73,8 @@ def test_web_continue_page_should_render_feedback_form(
         "/journeys",
         json={
             "user_id": user["user_id"],
-            "domain": "英语",
-            "goal": "6个月达到日常交流",
+            "domain": "AI Agent",
+            "goal": "学习 Tool Calling",
         },
     ).json()
 
@@ -87,10 +89,10 @@ def test_web_continue_page_should_render_feedback_form(
 
     assert response.status_code == 200
 
-    assert "提交学习反馈" in response.text
-    assert 'name="understanding_score"' in response.text
-    assert 'name="difficulty"' in response.text
-    assert 'name="next_step"' in response.text
+    assert "提交学习反馈" not in response.text
+    assert 'name="understanding_score"' not in response.text
+    assert 'name="difficulty"' not in response.text
+    assert 'name="next_step"' not in response.text
 
 
 def test_web_continue_page_should_render_coach_next_task(
@@ -1930,3 +1932,410 @@ def test_web_continue_should_pass_coach_context_to_agent(
     }
 
     assert coach_context.memory_context == {}
+
+
+def test_web_continue_should_render_conversation_input(
+    tmp_path,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "conversation-first@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "AI Agent",
+            "goal": "学习 Tool Calling",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert 'name="message"' in response.text
+    assert "<textarea" in response.text
+    assert "发送" in response.text
+
+
+def test_web_message_should_forward_user_message_to_agent(
+    tmp_path,
+    monkeypatch,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "conversation-message@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "AI Agent",
+            "goal": "学习 Tool Calling",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    captured = {}
+
+    def fake_run_agent(
+        user_message,
+        **kwargs,
+    ):
+        captured["user_message"] = user_message
+        return "Coach response"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.post(
+        f"/web/journeys/{journey['journey_id']}/message",
+        data={
+            "user_id": user["user_id"],
+            "message": "我已经理解 Tool Calling，但还不清楚 Memory 怎么接进来。",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["user_message"] == (
+        "我已经理解 Tool Calling，但还不清楚 Memory 怎么接进来。"
+    )
+
+
+def test_web_continue_should_not_require_manual_evidence_form(
+    tmp_path,
+):
+    app = create_app(database_dir=tmp_path)
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "conversation-no-evidence@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "AI Agent",
+            "goal": "学习 Tool Calling",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    response = client.get(
+        f"/web/journeys/{journey['journey_id']}/continue",
+        params={
+            "user_id": user["user_id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert "提交练习证据" not in response.text
+    assert "/evidence" not in response.text
+    assert 'name="task"' not in response.text
+    assert 'name="assessment"' not in response.text
+
+
+def test_web_message_should_render_feedback_confirmation_when_feedback_is_inferred(
+    tmp_path,
+    monkeypatch,
+):
+    class FakeLearningFeedbackExtractor:
+        def extract(
+            self,
+            user_message,
+        ):
+            return {
+                "understanding_score": 80,
+                "difficulty": "还不清楚 Memory 怎么接入",
+                "next_step": "实现 Tool Calling 与 Memory 的最小 Demo",
+            }
+
+    app = create_app(
+        database_dir=tmp_path,
+        learning_feedback_extractor=FakeLearningFeedbackExtractor(),
+    )
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "conversation-feedback@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "AI Agent",
+            "goal": "理解 Tool Calling 与 Memory 的协作",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    def fake_run_agent(
+        user_message,
+        **kwargs,
+    ):
+        return "你已经掌握了 Tool Calling 的基本链路。"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.post(
+        f"/web/journeys/{journey['journey_id']}/message",
+        data={
+            "user_id": user["user_id"],
+            "message": (
+                "Tool Calling 我大概理解到 80 分，"
+                "现在主要是不清楚 Memory 怎么接入，"
+                "下一步想做一个最小 Demo。"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert "确认本次学习反馈" in response.text
+    assert "80" in response.text
+    assert "还不清楚 Memory 怎么接入" in response.text
+    assert "实现 Tool Calling 与 Memory 的最小 Demo" in response.text
+
+    assert f'action="/web/journeys/{journey["journey_id"]}/feedback"' in response.text
+
+
+def test_web_message_should_not_render_feedback_confirmation_without_inferred_feedback(
+    tmp_path,
+    monkeypatch,
+):
+    class FakeLearningFeedbackExtractor:
+        def extract(
+            self,
+            user_message,
+        ):
+            return None
+
+    app = create_app(
+        database_dir=tmp_path,
+        learning_feedback_extractor=FakeLearningFeedbackExtractor(),
+    )
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "conversation-no-feedback@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "AI Agent",
+            "goal": "理解 Tool Calling 与 Memory 的协作",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    def fake_run_agent(
+        user_message,
+        **kwargs,
+    ):
+        return "我们继续讨论 Tool Calling。"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.post(
+        f"/web/journeys/{journey['journey_id']}/message",
+        data={
+            "user_id": user["user_id"],
+            "message": "Tool Calling 和普通函数调用有什么区别？",
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert "我们继续讨论 Tool Calling。" in response.text
+    assert "确认本次学习反馈" not in response.text
+    assert "确认并保存" not in response.text
+
+
+def test_web_message_should_use_default_learning_feedback_extractor(
+    tmp_path,
+    monkeypatch,
+):
+    captured = {}
+
+    class FakeDefaultLearningFeedbackExtractor:
+        def __init__(self):
+            captured["created"] = True
+
+        def extract(self, user_message):
+            captured["user_message"] = user_message
+
+            return {
+                "understanding_score": 80,
+                "difficulty": "还不清楚 Memory 怎么接入",
+                "next_step": "实现最小 Demo",
+            }
+
+    monkeypatch.setattr(
+        "api.app.LLMLearningFeedbackExtractor",
+        FakeDefaultLearningFeedbackExtractor,
+    )
+
+    def fake_run_agent(
+        user_message,
+        **kwargs,
+    ):
+        return "我们继续学习。"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    app = create_app(
+        database_dir=tmp_path,
+    )
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "default-feedback-extractor@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "AI Agent",
+            "goal": "理解 Tool Calling 与 Memory 的协作",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    response = client.post(
+        f"/web/journeys/{journey['journey_id']}/message",
+        data={
+            "user_id": user["user_id"],
+            "message": (
+                "Tool Calling 我理解到 80 分，"
+                "但还不清楚 Memory 怎么接入，"
+                "下一步想实现最小 Demo。"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert captured["created"] is True
+    assert "80 分" in captured["user_message"]
+
+    assert "确认本次学习反馈" in response.text
+
+
+def test_web_message_should_still_render_coach_response_when_feedback_extraction_fails(
+    tmp_path,
+    monkeypatch,
+):
+    class FailingLearningFeedbackExtractor:
+        def extract(
+            self,
+            user_message,
+        ):
+            raise RuntimeError("feedback extraction failed")
+
+    app = create_app(
+        database_dir=tmp_path,
+        learning_feedback_extractor=FailingLearningFeedbackExtractor(),
+    )
+    client = TestClient(app)
+
+    user = client.post(
+        "/users",
+        json={
+            "name": "张三",
+            "email": "feedback-failure@example.com",
+        },
+    ).json()
+
+    journey = client.post(
+        "/journeys",
+        json={
+            "user_id": user["user_id"],
+            "domain": "AI Agent",
+            "goal": "学习 Tool Calling",
+        },
+    ).json()
+
+    client.post(f"/journeys/{journey['journey_id']}/start")
+
+    def fake_run_agent(
+        user_message,
+        **kwargs,
+    ):
+        return "Coach 正常回答"
+
+    monkeypatch.setattr(
+        "api.app.run_agent",
+        fake_run_agent,
+    )
+
+    response = client.post(
+        f"/web/journeys/{journey['journey_id']}/message",
+        data={
+            "user_id": user["user_id"],
+            "message": "Memory 应该什么时候读取？",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Coach 正常回答" in response.text
+    assert "确认本次学习反馈" not in response.text
