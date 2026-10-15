@@ -53,6 +53,41 @@ from memory.memory_reliability_run_record import (
     build_memory_reliability_run_record,
 )
 from coach.context_prompt import build_coach_context_prompt
+from agent.context_assembly import assemble_context
+from agent.context_conflict import (
+    detect_projection_conflicts,
+    resolve_projection_conflict,
+)
+from agent.context_assembly_prompt import (
+    format_assembled_context,
+    format_assembled_context_policy,
+)
+from agent.context_projection import (
+    project_learning_continuity,
+    project_learning_memory,
+    project_conversation_context,
+)
+from agent.context_policy import (
+    get_conflict_policy_name,
+    get_conflict_priority,
+)
+from agent.context_evaluation import (
+    evaluate_policy_compliance,
+    evaluate_trace_completeness,
+    evaluate_conflict_detection,
+)
+from agent.evaluation_report_builder import (
+    build_evaluation_report,
+)
+from agent.context_intelligence_trace import (
+    ContextIntelligenceTrace,
+)
+from agent.context_intelligence_result_builder import (
+    build_context_intelligence_result,
+)
+from coach.knowledge.runtime_service import (
+    KnowledgeRuntimeService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +233,7 @@ def run_agent_runtime(
     *,
     coach_context=None,
     conversation_context=None,
+    assembled_context=None,
 ):
     state = AgentState(
         user_message,
@@ -210,6 +246,11 @@ def run_agent_runtime(
     if conversation_context is not None:
         state.set_conversation_context(
             conversation_context,
+        )
+
+    if assembled_context is not None:
+        state.set_assembled_context(
+            assembled_context,
         )
 
     if (
@@ -412,6 +453,126 @@ def run_agent_runtime(
             memory_reliability_trace["injected"]["total"],
         )
 
+    if state.assembled_context is None:
+        state.set_assembled_context(
+            assemble_context(
+                conversation_context=state.conversation_context,
+                learning_continuity=state.learning_continuity_context,
+                memory_context=state.memory_context,
+            )
+        )
+
+    projected_contexts = {
+        "conversation": project_conversation_context(
+            state.conversation_context,
+        ),
+        "learning_continuity": project_learning_continuity(
+            state.learning_continuity_context,
+        ),
+        "memory": project_learning_memory(
+            state.memory_context,
+        ),
+    }
+
+    state.set_projected_contexts(
+        projected_contexts,
+    )
+
+    context_conflicts = detect_projection_conflicts(
+        projected_contexts,
+    )
+
+    state.set_context_conflicts(
+        context_conflicts,
+    )
+
+    context_resolutions = {}
+
+    context_resolution_trace = {}
+
+    for field_name in context_conflicts:
+        resolution = resolve_projection_conflict(
+            assembled_context=state.assembled_context,
+            projected_contexts=projected_contexts,
+            field_name=field_name,
+        )
+
+        context_resolutions[field_name] = {
+            "source": resolution.source,
+            "value": resolution.value,
+        }
+
+        context_resolution_trace[field_name] = {
+            "candidates": projected_contexts,
+            "winner": resolution.source,
+            "value": resolution.value,
+            "policy_name": get_conflict_policy_name(
+                field_name,
+            ),
+            "priority": get_conflict_priority(
+                field_name,
+            ),
+        }
+
+    state.set_context_resolutions(
+        context_resolutions,
+    )
+
+    state.set_context_resolution_trace(
+        context_resolution_trace,
+    )
+
+    context_evaluation_results = {}
+
+    context_evaluation_results["policy_compliance"] = evaluate_policy_compliance(
+        context_resolution_trace,
+    )
+
+    context_evaluation_results["trace_completeness"] = evaluate_trace_completeness(
+        context_resolution_trace,
+    )
+
+    context_evaluation_results["conflict_detection"] = evaluate_conflict_detection(
+        context_conflicts,
+        context_conflicts,
+    )
+
+    state.set_context_evaluation_results(
+        context_evaluation_results,
+    )
+
+    context_evaluation_report = build_evaluation_report(
+        context_evaluation_results,
+    )
+
+    state.set_context_evaluation_report(
+        context_evaluation_report,
+    )
+
+    context_intelligence_trace = ContextIntelligenceTrace(
+        assembled_context=(state.assembled_context),
+        conflicts=(state.context_conflicts),
+        resolutions=(state.context_resolutions),
+        evaluations=(state.context_evaluation_results),
+        report=(state.context_evaluation_report),
+    )
+
+    state.set_context_intelligence_trace(
+        context_intelligence_trace,
+    )
+
+    context_intelligence_result = build_context_intelligence_result(
+        context_intelligence_trace,
+    )
+
+    state.set_context_intelligence_result(
+        context_intelligence_result,
+    )
+
+    knowledge_runtime_service = KnowledgeRuntimeService()
+
+    knowledge_runtime_service.process(state)
+
     if knowledge_service is not None:
         if document_ids is None:
             available_documents = knowledge_service.list_documents()
@@ -504,6 +665,7 @@ def run_agent(
     *,
     coach_context=None,
     conversation_context=None,
+    assembled_context=None,
 ):
     state, response = run_agent_runtime(
         user_message=user_message,
@@ -521,6 +683,7 @@ def run_agent(
         memory_reliability_run_record_store=memory_reliability_run_record_store,
         coach_context=coach_context,
         conversation_context=conversation_context,
+        assembled_context=assembled_context,
     )
 
     if return_state:
@@ -544,30 +707,94 @@ def run_simple_runtime(user_message, state=None):
         indent=2,
     )
 
-    memory_description = json.dumps(
-        state.memory_context,
-        ensure_ascii=False,
-        indent=2,
-    )
-
     coach_context_description = build_coach_context_prompt(
         state.coach_context,
     )
 
-    conversation_description = json.dumps(
-        state.conversation_context,
-        ensure_ascii=False,
-        indent=2,
-    )
+    assembled_context_description = ""
+    assembled_context_policy_description = ""
+
+    if state.assembled_context is not None:
+        assembled_context_description = format_assembled_context(
+            state.assembled_context,
+        )
+
+        assembled_context_policy_description = format_assembled_context_policy(
+            state.assembled_context,
+        )
+        conversation_description = ""
+        memory_description = ""
+        continuity_description = ""
+    else:
+        conversation_description = json.dumps(
+            state.conversation_context,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+        memory_description = json.dumps(
+            state.memory_context,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+        continuity_description = json.dumps(
+            state.learning_continuity_context,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    legacy_context_sections = ""
+    legacy_conversation_rules = ""
+    legacy_learning_continuity_rules = ""
+    legacy_memory_rules = ""
+
+    if state.assembled_context is None:
+        legacy_context_sections = f"""
+        以下是当前 Journey 的最近对话历史：
+        {conversation_description}
+
+        以下是与当前用户有关的长期记忆：
+        {memory_description}
+
+        以下是用户当前学习连续性状态，可能包含当前尚未完成的学习，
+        也可能包含上一次已完成的学习：
+        {continuity_description}
+        """
+
+        legacy_conversation_rules = """
+        使用最近对话历史时必须遵守：
+        1. 最近对话历史表示当前连续对话中的上下文，不等同于长期记忆。
+        2. 用户本轮明确提供的新信息优先于历史对话内容。
+        """
+
+        legacy_learning_continuity_rules = """
+        使用学习连续性状态时必须遵守：
+        1. 如果 has_current_session 为 true，current_* 字段表示当前尚未完成的学习状态，
+        应优先继续当前学习主题。
+        2. 不得把 current session 描述为上一次学习、之前已经完成的学习或第一次学习。
+        3. 如果 has_previous_session 为 true，topic、understanding_score、difficulty 和 next_step
+        表示上一次已完成学习留下的历史状态。
+        4. 只有 has_current_session 和 has_previous_session 都为 false 时，
+        才可以把本次描述为第一次学习。
+        5. previous session 的 next_step 表示上一次已完成学习留下的后续方向；
+        current_next_step 表示当前尚未完成学习的后续方向。
+        6. 不得把历史学习状态描述成当前已经完成的新事实。
+        7. 如果本轮用户明确提供新的学习状态、改变目标或学习方向，
+        应优先服从本轮用户输入。
+        """
+
+        legacy_memory_rules = """
+        使用这些记忆时必须遵守：
+        1. 只能使用记忆中明确存在的信息。
+        2. 不得根据记忆推测新的用户事实。
+        3. 如果记忆为空或信息不足，不要自行补充。
+        4. 用户本轮明确提供的新信息优先于旧记忆。
+        5. 不要向用户展示内部 Memory JSON 或系统实现细节。
+        """
 
     knowledge_description = json.dumps(
         state.knowledge_context,
-        ensure_ascii=False,
-        indent=2,
-    )
-
-    continuity_description = json.dumps(
-        state.learning_continuity_context,
         ensure_ascii=False,
         indent=2,
     )
@@ -583,36 +810,20 @@ def run_simple_runtime(user_message, state=None):
     以下是当前用户与本次学习目标的上下文：
     {coach_context_description}
 
-    以下是当前 Journey 的最近对话历史：
-    {conversation_description}
+    以下是经过 Context Assembly 策略装配的运行时上下文：
+    {assembled_context_description}
 
-    使用最近对话历史时必须遵守：
-    1. 最近对话历史表示当前连续对话中的上下文，不等同于长期记忆。
-    2. 用户本轮明确提供的新信息优先于历史对话内容。
+    以下是 Context Assembly 的上下文使用策略：
+    {assembled_context_policy_description}
 
-    以下是与当前用户有关的长期记忆：
-    {memory_description}
+    {legacy_context_sections}
 
-    以下是用户当前学习连续性状态，可能包含当前尚未完成的学习，
-    也可能包含上一次已完成的学习：
-    {continuity_description}
+    {legacy_conversation_rules}
 
     以下是根据用户学习目标和历史学习状态生成的下一节学习任务指导：
     {next_learning_task_prompt}
 
-    使用学习连续性状态时必须遵守：
-    1. 如果 has_current_session 为 true，current_* 字段表示当前尚未完成的学习状态，
-       应优先继续当前学习主题。
-    2. 不得把 current session 描述为上一次学习、之前已经完成的学习或第一次学习。
-    3. 如果 has_previous_session 为 true，topic、understanding_score、difficulty 和 next_step
-       表示上一次已完成学习留下的历史状态。
-    4. 只有 has_current_session 和 has_previous_session 都为 false 时，
-       才可以把本次描述为第一次学习。
-    5. previous session 的 next_step 表示上一次已完成学习留下的后续方向；
-       current_next_step 表示当前尚未完成学习的后续方向。
-    6. 不得把历史学习状态描述成当前已经完成的新事实。
-    7. 如果本轮用户明确提供新的学习状态、改变目标或学习方向，
-       应优先服从本轮用户输入。
+    {legacy_learning_continuity_rules}
 
     以下是从知识库中检索到的相关资料：
     {knowledge_description}
@@ -623,29 +834,21 @@ def run_simple_runtime(user_message, state=None):
     3. 必须判断检索到的资料是否真正支持当前问题。
     4. 不得把资料中没有明确出现的内容伪装成知识库事实。
     5. 如果知识库为空，或者检索资料不足以支持当前问题，
-    不要向用户展示内部检索状态。
-
+       不要向用户展示内部检索状态。
     6. 可以结合用户输入、长期记忆、工具结果和模型已有知识回答，
-    但必须清楚区分知识来源，不得让用户误认为这些内容来自知识库。
+       但必须清楚区分知识来源，不得让用户误认为这些内容来自知识库。
     7. 不得让用户误以为模型自身的通用知识来自知识库。
     8. 不得向用户展示内部 Knowledge JSON、Chunk 结构或检索实现细节。
     9. 如果回答实际使用了知识库资料，可以使用资料中的 source 字段，
-    以自然语言向用户说明知识来源。
+       以自然语言向用户说明知识来源。
     10. 不得向用户展示 document_id、chunk_id、chunk_index、score、rank
-    等内部检索元数据。
+        等内部检索元数据。
 
-    使用这些记忆时必须遵守：
-    1. 只能使用记忆中明确存在的信息。
-    2. 不得根据记忆推测新的用户事实。
-    3. 如果记忆为空或信息不足，不要自行补充。
-    4. 用户本轮明确提供的新信息优先于旧记忆。
-    5. 不要向用户展示内部 Memory JSON 或系统实现细节。
-
+    {legacy_memory_rules}
 
     你可以使用以下工具：
 
     {tool_description}
-
 
     当需要调用工具时，只返回以下格式：
 
@@ -674,36 +877,20 @@ def run_simple_runtime(user_message, state=None):
     以下是当前用户与本次学习目标的上下文：
     {coach_context_description}
 
-    以下是当前 Journey 的最近对话历史：
-    {conversation_description}
+    以下是经过 Context Assembly 策略装配的运行时上下文：
+    {assembled_context_description}
 
-    使用最近对话历史时必须遵守：
-    1. 最近对话历史表示当前连续对话中的上下文，不等同于长期记忆。
-    2. 用户本轮明确提供的新信息优先于历史对话内容。
+    以下是 Context Assembly 的上下文使用策略：
+    {assembled_context_policy_description}
 
-    以下是与当前用户有关的长期记忆：
-    {memory_description}
+    {legacy_context_sections}
 
-    以下是用户当前学习连续性状态，可能包含当前尚未完成的学习，
-    也可能包含上一次已完成的学习：
-    {continuity_description}
+    {legacy_conversation_rules}
 
     以下是根据用户学习目标和历史学习状态生成的下一节学习任务指导：
     {next_learning_task_prompt}
 
-    使用学习连续性状态时必须遵守：
-    1. 如果 has_current_session 为 true，current_* 字段表示当前尚未完成的学习状态，
-       应优先继续当前学习主题。
-    2. 不得把 current session 描述为上一次学习、之前已经完成的学习或第一次学习。
-    3. 如果 has_previous_session 为 true，topic、understanding_score、difficulty 和 next_step
-       表示上一次已完成学习留下的历史状态。
-    4. 只有 has_current_session 和 has_previous_session 都为 false 时，
-       才可以把本次描述为第一次学习。
-    5. previous session 的 next_step 表示上一次已完成学习留下的后续方向；
-       current_next_step 表示当前尚未完成学习的后续方向。
-    6. 不得把历史学习状态描述成当前已经完成的新事实。
-    7. 如果本轮用户明确提供新的学习状态、改变目标或学习方向，
-       应优先服从本轮用户输入。
+    {legacy_learning_continuity_rules}
 
     以下是从知识库中检索到的相关资料：
     {knowledge_description}
@@ -714,18 +901,19 @@ def run_simple_runtime(user_message, state=None):
     3. 必须判断检索到的资料是否真正支持当前问题。
     4. 不得把资料中没有明确出现的内容伪装成知识库事实。
     5. 如果知识库为空，或者检索到的资料不足以支持用户当前问题，
-    不要向用户展示内部检索状态。
+       不要向用户展示内部检索状态。
     6. 可以结合用户输入、长期记忆、工具结果和模型已有知识继续回答，
-    但必须清楚区分这些信息与知识库内容。
+       但必须清楚区分这些信息与知识库内容。
     7. 不得让用户误以为非知识库信息来自知识库。
     8. 不得向用户展示内部 Knowledge JSON、Chunk 结构或检索实现细节。
     9. 如果回答实际使用了知识库资料，可以使用资料中的 source 字段，
-    以自然语言向用户说明知识来源。
+       以自然语言向用户说明知识来源。
     10. 不得向用户展示 document_id、chunk_id、chunk_index、score、rank
-    等内部检索元数据。
+        等内部检索元数据。
+
+    {legacy_memory_rules}
 
     工具已经执行完成。
-
 
     现在你的任务是根据用户问题和工具执行结果，
     生成最终给用户看的自然语言回答。
@@ -738,11 +926,15 @@ def run_simple_runtime(user_message, state=None):
     4. 只能根据用户输入、长期记忆、知识库资料和工具执行结果回答。
     5. 不得虚构工具没有返回的事实或操作结果。
     6. 如果工具已经成功执行，应自然说明结果，不要再次请求确认执行。
-    7. 如果工具结果中包含 next_learning_action、next_learning_topic 或 next_learning_reason，
+    7. 如果工具结果中包含 next_learning_action、next_learning_topic
+       或 next_learning_reason，
        必须优先依据这些字段生成下一步学习建议。
-    8. 如果 next_learning_topic 不为空，不得自行推荐与其不同的下一学习主题。
-    9. 不得用“你想继续学什么”“你想选哪个方向”等开放式问题替代已经存在的 Planning Decision。
-    10. 可以补充简短解释，但不得覆盖、改写或否定 Planner 已经给出的下一步决策。
+    8. 如果 next_learning_topic 不为空，
+       不得自行推荐与其不同的下一学习主题。
+    9. 不得用“你想继续学什么”“你想选哪个方向”等开放式问题
+       替代已经存在的 Planning Decision。
+    10. 可以补充简短解释，但不得覆盖、改写或否定 Planner
+        已经给出的下一步决策。
     11. 不得把高理解度、高分或单次测验结果表述为“完全掌握”。
         应使用“当前证据显示掌握度较高”“当前表现较稳定”等谨慎措辞。
     12. 除非系统已经实际创建了日程、提醒或计划，
@@ -771,7 +963,8 @@ def run_simple_runtime(user_message, state=None):
         coach_response.recommendation.reason 为准，
         不得重新规划、改写或替换其中的核心决策。
     18. 可以把 facts、assessment、recommendation 转换成自然语言，
-        但不得改变它们的语义层级，也不得补充没有证据支持的新结论。
+        但不得改变它们的语义层级，
+        也不得补充没有证据支持的新结论。
     """
 
     response = call_llm_with_retry(
@@ -1046,30 +1239,48 @@ def run_planning_agent(user_message, state=None):
         getattr(state, "coach_context", None),
     )
 
+    assembled_context_description = ""
+    assembled_context_policy_description = ""
+
+    if state.assembled_context is not None:
+        assembled_context_description = format_assembled_context(
+            state.assembled_context,
+        )
+
+        assembled_context_policy_description = format_assembled_context_policy(
+            state.assembled_context,
+        )
+
     final_prompt = f"""
-你是 Personal Growth AI Coach。
+    你是 Personal Growth AI Coach。
 
-以下是当前用户与本次学习目标的上下文：
-{coach_context_description}
+    以下是当前用户与本次学习目标的上下文：
+    {coach_context_description}
 
-用户问题：
-{user_message}
+    以下是经过 Context Assembly 策略装配的运行时上下文：
+    {assembled_context_description}
 
-下面是 Agent 已经完成规划和工具执行后得到的内部状态数据：
+    以下是 Context Assembly 的上下文使用策略：
+    {assembled_context_policy_description}
 
-{json.dumps(state_data, ensure_ascii=False, indent=2)}
+    用户问题：
+    {user_message}
 
-请严格根据当前用户与本次学习目标的上下文，以及以下 State 中已有的信息回答用户。
+    下面是 Agent 已经完成规划和工具执行后得到的内部状态数据：
 
-规则：
-1. 不得编造当前用户与本次学习目标上下文或 State 中没有的用户事实。
-2. 不得自行假设用户的学习时间、技术基础、学习资源、框架选择或项目方向。
-3. 可以解释、整理和归纳 State 中已有的信息。
-4. 如果当前用户与本次学习目标上下文以及 State 都不足以支持某项结论，
-   就明确说明“当前信息不足”，不要猜测。
-5. 不要向用户展示内部 State、Tool 调用过程、JSON 或系统实现细节。
-6. 回答应具体、清晰、可执行，但所有个性化建议必须能从当前用户与本次学习目标上下文或 State 中找到依据。
-"""
+    {json.dumps(state_data, ensure_ascii=False, indent=2)}
+
+    请严格根据当前用户与本次学习目标的上下文，以及以下 State 中已有的信息回答用户。
+
+    规则：
+    1. 不得编造当前用户与本次学习目标上下文或 State 中没有的用户事实。
+    2. 不得自行假设用户的学习时间、技术基础、学习资源、框架选择或项目方向。
+    3. 可以解释、整理和归纳 State 中已有的信息。
+    4. 如果当前用户与本次学习目标上下文以及 State 都不足以支持某项结论，
+    就明确说明“当前信息不足”，不要猜测。
+    5. 不要向用户展示内部 State、Tool 调用过程、JSON 或系统实现细节。
+    6. 回答应具体、清晰、可执行，但所有个性化建议必须能从当前用户与本次学习目标上下文或 State 中找到依据。
+    """
 
     response = call_llm_with_retry(final_prompt, user_message, run_id=state.run_id)
 

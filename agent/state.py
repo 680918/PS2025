@@ -39,6 +39,17 @@ class AgentState:
         self.next_learning_task = None
 
         self.conversation_context = []
+        self.assembled_context = None
+        self.context_intelligence_trace = None
+        self.context_intelligence_result = None
+        self.pending_knowledge_candidate = None
+        self.knowledge_suggestion = None
+        self.projected_contexts = {}
+        self.context_conflicts = {}
+        self.context_resolutions = {}
+        self.context_resolution_trace = {}
+        self.context_evaluation_results = {}
+        self.context_evaluation_report = None
 
         self.coach_context = None
 
@@ -106,6 +117,15 @@ class AgentState:
             "last_result": self.last_result,
             "knowledge_context": self.knowledge_context,
             "routing_trace": self.routing_trace,
+            "context_conflicts": self.context_conflicts,
+            "context_resolutions": self.context_resolutions,
+            "context_resolution_trace": self.context_resolution_trace,
+            "context_evaluation_results": self.context_evaluation_results,
+            "context_evaluation_report": self.context_evaluation_report,
+            "context_intelligence_trace": self.context_intelligence_trace,
+            "context_intelligence_result": self.context_intelligence_result,
+            "pending_knowledge_candidate": self.pending_knowledge_candidate,
+            "knowledge_suggestion": self.knowledge_suggestion,
         }
 
     def get_tool_result(self, key):
@@ -129,6 +149,72 @@ class AgentState:
         conversation_context,
     ):
         self.conversation_context = conversation_context
+
+    def set_assembled_context(
+        self,
+        assembled_context,
+    ):
+        self.assembled_context = assembled_context
+
+    def set_projected_contexts(
+        self,
+        projected_contexts,
+    ):
+        self.projected_contexts = projected_contexts
+
+    def set_context_conflicts(
+        self,
+        context_conflicts,
+    ):
+        self.context_conflicts = context_conflicts
+
+    def set_context_resolutions(
+        self,
+        context_resolutions,
+    ):
+        self.context_resolutions = context_resolutions
+
+    def set_context_resolution_trace(
+        self,
+        context_resolution_trace,
+    ):
+        self.context_resolution_trace = context_resolution_trace
+
+    def set_context_evaluation_results(
+        self,
+        context_evaluation_results,
+    ):
+        self.context_evaluation_results = context_evaluation_results
+
+    def set_context_evaluation_report(
+        self,
+        report,
+    ):
+        self.context_evaluation_report = report
+
+    def set_context_intelligence_trace(
+        self,
+        trace,
+    ):
+        self.context_intelligence_trace = trace
+
+    def set_context_intelligence_result(
+        self,
+        result,
+    ):
+        self.context_intelligence_result = result
+
+    def set_pending_knowledge_candidate(
+        self,
+        candidate,
+    ):
+        self.pending_knowledge_candidate = candidate
+
+    def set_knowledge_suggestion(
+        self,
+        suggestion,
+    ):
+        self.knowledge_suggestion = suggestion
 
     def set_memory_reliability_trace(
         self,
