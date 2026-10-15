@@ -1041,6 +1041,8 @@ def test_run_planning_agent_retries_final_llm(monkeypatch):
     class FakeState:
         def __init__(self):
             self.run_id = "run-123"
+            self.assembled_context = None
+            self.projected_contexts = {}
 
         def get_state(self):
             return {
@@ -1536,6 +1538,8 @@ def test_run_planning_agent_passes_run_id_to_final_llm(monkeypatch):
     class FakeState:
         def __init__(self):
             self.run_id = "run-123"
+            self.assembled_context = None
+            self.projected_contexts = {}
 
         def get_state(self):
             return {
@@ -4117,6 +4121,8 @@ def test_run_planning_agent_should_present_safe_final_llm_error(
     class FakeState:
         status = "success"
         run_id = "test-run"
+        assembled_context = None
+        projected_contexts = {}
         last_result = {
             "status": "success",
             "content": "internal result",
@@ -6737,6 +6743,19 @@ def test_run_agent_runtime_should_limit_ranked_learning_memory(
         "learning_feedback:python-basics",
     ]
 
+    assembled_learning_keys = [
+        memory["memory_key"]
+        for memory in state.assembled_context.memory_context["learning"]
+    ]
+
+    assert state.assembled_context.memory_context == state.memory_context
+
+    assert assembled_learning_keys == learning_keys
+
+    assert len(state.assembled_context.memory_context["learning"]) < len(
+        raw_memory_context["learning"]
+    )
+
 
 @pytest.mark.unit
 def test_run_agent_runtime_should_limit_profile_memory_by_type(
@@ -7632,6 +7651,204 @@ def test_run_planning_agent_should_include_coach_context_in_final_prompt(
     assert "当前用户与本次学习目标上下文或 State" in prompt
 
     assert result == "ok"
+
+
+def test_run_planning_agent_should_include_assembled_context_in_final_prompt(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.context_assembly import assemble_context
+    from agent.state import AgentState
+
+    state = AgentState(
+        "继续学习",
+    )
+
+    assembled_context = assemble_context(
+        conversation_context=[
+            {
+                "role": "user",
+                "content": "上一轮在讨论 Tool Calling",
+            }
+        ],
+        learning_continuity={
+            "topic": "Tool Calling",
+        },
+        memory_context={
+            "learning": [],
+        },
+    )
+
+    state.set_assembled_context(
+        assembled_context,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_planning_runtime",
+        lambda user_message, state=None: (
+            state,
+            "success",
+        ),
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "format_assembled_context",
+        lambda context: (
+            "PLANNING_ASSEMBLED_CONTEXT_SENTINEL"
+            if context is assembled_context
+            else ""
+        ),
+    )
+
+    captured = {}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "继续学习 Tool Calling。",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    controller_module.run_planning_agent(
+        "继续学习",
+        state=state,
+    )
+
+    assert "PLANNING_ASSEMBLED_CONTEXT_SENTINEL" in captured["system_prompt"]
+
+
+def test_run_planning_agent_should_include_assembled_context_policy_in_final_prompt(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.context_assembly import assemble_context
+    from agent.state import AgentState
+
+    state = AgentState(
+        "继续学习",
+    )
+
+    assembled_context = assemble_context(
+        conversation_context=[],
+        learning_continuity={},
+        memory_context={},
+    )
+
+    state.set_assembled_context(
+        assembled_context,
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_planning_runtime",
+        lambda user_message, state=None: (
+            state,
+            "success",
+        ),
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "format_assembled_context",
+        lambda context: "ASSEMBLED_CONTEXT",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "format_assembled_context_policy",
+        lambda context: (
+            "PLANNING_ASSEMBLED_POLICY_SENTINEL" if context is assembled_context else ""
+        ),
+    )
+
+    captured = {}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "继续学习 Tool Calling。",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    controller_module.run_planning_agent(
+        "继续学习",
+        state=state,
+    )
+
+    assert "PLANNING_ASSEMBLED_POLICY_SENTINEL" in captured["system_prompt"]
+
+
+def test_run_planning_agent_should_work_without_assembled_context(
+    monkeypatch,
+):
+    import agent.controller as controller_module
+    from agent.state import AgentState
+
+    state = AgentState(
+        "继续学习",
+    )
+
+    monkeypatch.setattr(
+        controller_module,
+        "run_planning_runtime",
+        lambda user_message, state=None: (
+            state,
+            "success",
+        ),
+    )
+
+    captured = {}
+
+    def fake_call_llm_with_retry(
+        system_prompt,
+        user_message,
+        run_id=None,
+    ):
+        captured["system_prompt"] = system_prompt
+
+        return {
+            "status": "success",
+            "content": "继续学习。",
+        }
+
+    monkeypatch.setattr(
+        controller_module,
+        "call_llm_with_retry",
+        fake_call_llm_with_retry,
+    )
+
+    result = controller_module.run_planning_agent(
+        "继续学习",
+        state=state,
+    )
+
+    assert result == "继续学习。"
+
+    assert "None" not in captured["system_prompt"]
 
 
 def test_simple_runtime_final_prompt_should_not_force_knowledge_boundary_disclaimer(

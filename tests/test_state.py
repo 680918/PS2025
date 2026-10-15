@@ -4,6 +4,19 @@ from agent.state import AgentState
 from memory.service import MemoryService
 from memory.store import MemoryStore
 from coach.context_models import CoachContext
+from agent.context_intelligence_trace import (
+    ContextIntelligenceTrace,
+)
+from agent.context_intelligence_result import (
+    ContextIntelligenceResult,
+)
+from agent.evaluation_report import (
+    EvaluationReport,
+)
+from agent.evaluation_models import (
+    EvaluationResult,
+)
+
 
 pytestmark = pytest.mark.unit
 
@@ -239,3 +252,234 @@ def test_agent_state_should_start_with_empty_conversation_context():
     state = AgentState("hello")
 
     assert state.conversation_context == []
+
+
+def test_agent_state_should_store_assembled_context():
+    state = AgentState(
+        "继续学习",
+    )
+
+    assembled_context = object()
+
+    state.set_assembled_context(
+        assembled_context,
+    )
+
+    assert state.assembled_context is assembled_context
+
+
+def test_agent_state_should_store_projected_contexts():
+
+    state = AgentState(
+        "continue learning",
+    )
+
+    projected_contexts = {
+        "learning_continuity": {
+            "learning.current_topic": "AI Agent",
+        },
+        "memory": {
+            "learning.completed_understanding": 80,
+        },
+    }
+
+    state.set_projected_contexts(
+        projected_contexts,
+    )
+
+    assert state.projected_contexts == projected_contexts
+
+
+def test_agent_state_should_store_context_conflicts():
+
+    state = AgentState(
+        "test",
+    )
+
+    conflicts = {
+        "learning.current_topic": [
+            "Memory",
+            "Tool Calling",
+        ]
+    }
+
+    state.set_context_conflicts(
+        conflicts,
+    )
+
+    assert state.context_conflicts == conflicts
+
+
+def test_agent_state_should_store_context_resolutions():
+
+    state = AgentState(
+        "test",
+    )
+
+    resolutions = {
+        "learning.current_topic": {
+            "source": "conversation",
+            "value": "Memory",
+        }
+    }
+
+    state.set_context_resolutions(
+        resolutions,
+    )
+
+    assert state.context_resolutions == resolutions
+
+
+def test_agent_state_should_store_context_resolution_trace():
+
+    state = AgentState(
+        "test",
+    )
+
+    trace = {
+        "learning.current_topic": {
+            "winner": "conversation",
+            "reason": "higher priority",
+        }
+    }
+
+    state.set_context_resolution_trace(
+        trace,
+    )
+
+    assert state.context_resolution_trace == trace
+
+
+def test_agent_state_should_store_context_evaluation_results():
+
+    state = AgentState(
+        "test",
+    )
+
+    results = {
+        "policy_compliance": {
+            "passed": True,
+        }
+    }
+
+    state.set_context_evaluation_results(
+        results,
+    )
+
+    assert state.context_evaluation_results == results
+
+
+def test_agent_state_should_store_context_evaluation_result_objects():
+
+    state = AgentState(
+        "test",
+    )
+
+    results = {
+        "policy_compliance": {
+            "learning.current_topic": EvaluationResult(
+                metric="policy_compliance",
+                passed=True,
+                details={
+                    "expected": "conversation",
+                    "actual": "conversation",
+                },
+            )
+        }
+    }
+
+    state.set_context_evaluation_results(
+        results,
+    )
+
+    assert (
+        state.context_evaluation_results["policy_compliance"][
+            "learning.current_topic"
+        ].passed
+        is True
+    )
+
+
+def test_agent_state_should_store_context_evaluation_report():
+
+    state = AgentState(
+        "test",
+    )
+
+    report = EvaluationReport(
+        passed=True,
+        evaluations={},
+        summary={
+            "total_checks": 0,
+            "passed_checks": 0,
+            "failed_checks": 0,
+        },
+    )
+
+    state.set_context_evaluation_report(
+        report,
+    )
+
+    assert state.context_evaluation_report is report
+
+
+def test_agent_state_should_store_context_intelligence_trace():
+
+    state = AgentState(
+        "test",
+    )
+
+    trace = ContextIntelligenceTrace(
+        assembled_context="context",
+        conflicts={},
+        resolutions={},
+        evaluations={},
+        report="report",
+    )
+
+    state.set_context_intelligence_trace(
+        trace,
+    )
+
+    assert state.context_intelligence_trace is trace
+
+    assert state.get_state()["context_intelligence_trace"] is trace
+
+
+def test_agent_state_should_store_context_intelligence_result():
+
+    state = AgentState(
+        "test",
+    )
+
+    result = ContextIntelligenceResult(
+        context="context",
+        conflicts={},
+        resolutions={},
+        report="report",
+    )
+
+    state.set_context_intelligence_result(
+        result,
+    )
+
+    assert state.context_intelligence_result is result
+
+    assert state.get_state()["context_intelligence_result"] is result
+
+
+def test_agent_state_should_store_pending_knowledge_candidate():
+
+    state = AgentState(
+        "test",
+    )
+
+    candidate = {"topic": "Memory"}
+
+    state.set_pending_knowledge_candidate(
+        candidate,
+    )
+
+    assert state.pending_knowledge_candidate == candidate
+
+    assert state.get_state()["pending_knowledge_candidate"] == candidate
