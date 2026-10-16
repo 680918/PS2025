@@ -52,7 +52,18 @@
                 }
                 fragment.append(message("user", turn.user_content));
                 if (turn.status === "complete") {
-                    fragment.append(message("coach", turn.assistant_content));
+                    const reply = message("coach", turn.assistant_content);
+                    for (const source of (turn.citations || [])) {
+                        const details = document.createElement("details");
+                        details.className = "citation";
+                        const summary = document.createElement("summary");
+                        summary.textContent = `引用依据：${source.title} · ${source.locator}`;
+                        const excerpt = document.createElement("p");
+                        excerpt.textContent = source.excerpt;
+                        details.append(summary, excerpt);
+                        reply.append(details);
+                    }
+                    fragment.append(reply);
                 } else {
                     const note = document.createElement("p");
                     note.className = "dialogue-state";

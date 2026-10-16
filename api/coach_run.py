@@ -24,9 +24,9 @@ def build_app(directory, port, *, simulated=False, settings=None, responder=None
         "模拟体验 · 邮件与 AI 回复均为模拟，不产生服务调用费用"
         if simulated
         else (
-            "AI 对话已启用 · 消息会发送至已配置的 AI 服务；资料与知识库准备中"
+            "AI 对话已启用 · 消息及相关资料片段会发送至已配置的 AI 服务"
             if responder
-            else "AI 对话未启用 · 可查看已有记录；资料与知识库准备中"
+            else "AI 对话未启用 · 可管理资料、查阅已保存教案与已有记录"
         )
     )
     if simulated or settings is not None:
@@ -67,7 +67,10 @@ def _serve(directory, port, *, simulated=False, settings=None, responder=None):
         print(f"记录保存在本机：{directory}；停止服务后仍保留。", flush=True)
         if simulated:
             print(f"模拟收件箱：http://127.0.0.1:{port}/web/trial-mailbox", flush=True)
-        print("停止服务请按 Ctrl+C。未接通书籍上传和知识库保存。", flush=True)
+        print(
+            "资料保存在本机；教案需在页面预览并确认后收入知识库。停止服务请按 Ctrl+C。",
+            flush=True,
+        )
         server = uvicorn.Server(
             uvicorn.Config(
                 app,

@@ -6,3 +6,4 @@ uvicorn
 python-multipart
 markdown-it-py==4.2.0
 argon2-cffi==25.1.0
+pypdf==6.20.1

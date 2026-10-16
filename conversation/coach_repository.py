@@ -1,6 +1,8 @@
 """Account-owned dialogue and learning anchors, independent of legacy journeys."""
 
 import sqlite3
+import json
+from uuid import uuid4
 from contextlib import closing
 from pathlib import Path
 from time import time
@@ -38,7 +40,20 @@ class CoachRepository:
                     next_step TEXT NOT NULL,
                     updated_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS coach_knowledge (
+                    knowledge_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, turn_id INTEGER NOT NULL,
+                    title TEXT NOT NULL, topic TEXT NOT NULL, content TEXT NOT NULL,
+                    citations_json TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','saved','dismissed')),
+                    created_at INTEGER NOT NULL, saved_at INTEGER, UNIQUE(user_id,turn_id)
+                );
+                CREATE TABLE IF NOT EXISTS coach_review (user_id TEXT PRIMARY KEY, knowledge_id TEXT NOT NULL);
             """)
+            if "citations_json" not in {
+                row[1] for row in connection.execute("PRAGMA table_info(coach_turns)")
+            }:
+                connection.execute(
+                    "ALTER TABLE coach_turns ADD COLUMN citations_json TEXT NOT NULL DEFAULT '[]'"
+                )
 
     def _connect(self):
         connection = sqlite3.connect(self.database_path, timeout=5)
@@ -57,7 +72,7 @@ class CoachRepository:
     @staticmethod
     def _history_page(connection, user_id, before=None):
         rows = connection.execute(
-            "SELECT turn_id, user_content, assistant_content, status, created_at "
+            "SELECT turn_id, user_content, assistant_content, status, created_at, citations_json "
             "FROM coach_turns WHERE user_id=? AND turn_id<? ORDER BY turn_id DESC LIMIT ?",
             (
                 user_id,
@@ -66,6 +81,8 @@ class CoachRepository:
             ),
         ).fetchall()
         turns = [dict(row) for row in reversed(rows[:HISTORY_PAGE_SIZE])]
+        for turn in turns:
+            turn["citations"] = json.loads(turn.pop("citations_json"))
         return {
             "turns": turns,
             "before": turns[0]["turn_id"] if len(rows) > HISTORY_PAGE_SIZE else None,
@@ -110,13 +127,22 @@ class CoachRepository:
             )
         return "claimed"
 
-    def finish(self, user_id, nonce, answer, learning, *, now):
+    def finish(
+        self, user_id, nonce, answer, learning, *, now, citations=None, draft=None
+    ):
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             changed = connection.execute(
-                "UPDATE coach_turns SET status='complete', assistant_content=?, completed_at=? "
+                "UPDATE coach_turns SET status='complete', assistant_content=?, completed_at=?, citations_json=? "
                 "WHERE user_id=? AND nonce=? AND status='pending' AND created_at>?",
-                (answer, now, user_id, nonce, now - PENDING_LIFETIME),
+                (
+                    answer,
+                    now,
+                    json.dumps(citations or [], ensure_ascii=False),
+                    user_id,
+                    nonce,
+                    now - PENDING_LIFETIME,
+                ),
             ).rowcount
             if changed and learning is not None:
                 connection.execute(
@@ -132,7 +158,104 @@ class CoachRepository:
                         now,
                     ),
                 )
+            if changed and draft is not None:
+                turn_id = connection.execute(
+                    "SELECT turn_id FROM coach_turns WHERE user_id=? AND nonce=?",
+                    (user_id, nonce),
+                ).fetchone()[0]
+                connection.execute(
+                    "INSERT INTO coach_knowledge VALUES(?,?,?,?,?,?,?,'pending',?,NULL)",
+                    (
+                        uuid4().hex,
+                        user_id,
+                        turn_id,
+                        draft["title"],
+                        draft["topic"],
+                        draft["content"],
+                        json.dumps(citations or [], ensure_ascii=False),
+                        now,
+                    ),
+                )
         return bool(changed)
+
+    def knowledge(self, user_id, knowledge_id, *, saved_only=False):
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT * FROM coach_knowledge WHERE user_id=? AND knowledge_id=? AND status<> 'dismissed'",
+                (user_id, knowledge_id),
+            ).fetchone()
+        if not row or (saved_only and row["status"] != "saved"):
+            return None
+        result = dict(row)
+        result["citations"] = json.loads(result.pop("citations_json"))
+        return result
+
+    def list_knowledge(self, user_id, *, status="saved", query="", offset=0, limit=21):
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT knowledge_id,title,topic,status,created_at FROM coach_knowledge WHERE user_id=? AND status=? AND (instr(lower(title),lower(?))>0 OR instr(lower(topic),lower(?))>0) ORDER BY created_at DESC, knowledge_id LIMIT ? OFFSET ?",
+                (user_id, status, query, query, limit, offset),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def confirm_knowledge(
+        self, user_id, knowledge_id, *, save=True, title=None, content=None
+    ):
+        if title is not None and (
+            not isinstance(title, str) or not 1 <= len(title.strip()) <= 120
+        ):
+            raise ValueError("invalid title")
+        if content is not None and (
+            not isinstance(content, str) or not 1 <= len(content.strip()) <= 12000
+        ):
+            raise ValueError("invalid lesson")
+        with closing(self._connect()) as db, db:
+            db.execute(
+                "UPDATE coach_knowledge SET status=?,saved_at=?,title=COALESCE(?,title),content=COALESCE(?,content) WHERE user_id=? AND knowledge_id=? AND status='pending'",
+                (
+                    "saved" if save else "dismissed",
+                    int(time()) if save else None,
+                    title.strip() if title else None,
+                    content.strip() if content else None,
+                    user_id,
+                    knowledge_id,
+                ),
+            )
+        return self.knowledge(user_id, knowledge_id)
+
+    def select_review(self, user_id, knowledge_id=None):
+        lesson = (
+            self.knowledge(user_id, knowledge_id, saved_only=True)
+            if knowledge_id
+            else None
+        )
+        if knowledge_id is not None and lesson is None:
+            raise ValueError("saved lesson unavailable")
+        with closing(self._connect()) as db, db:
+            if knowledge_id is None:
+                db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
+            else:
+                db.execute(
+                    "INSERT INTO coach_review VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET knowledge_id=excluded.knowledge_id",
+                    (user_id, knowledge_id),
+                )
+                db.execute(
+                    "INSERT INTO coach_learning VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET topic=excluded.topic,progress=excluded.progress,next_step=excluded.next_step,updated_at=excluded.updated_at",
+                    (
+                        user_id,
+                        lesson["topic"],
+                        "已打开教案《" + lesson["title"] + "》，准备重温。",
+                        "从教案的核心知识点开始，结合具体例子回顾。",
+                        int(time()),
+                    ),
+                )
+
+    def review(self, user_id):
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT knowledge_id FROM coach_review WHERE user_id=?", (user_id,)
+            ).fetchone()
+        return self.knowledge(user_id, row[0], saved_only=True) if row else None
 
     def fail(self, user_id, nonce, *, now):
         with closing(self._connect()) as connection, connection:

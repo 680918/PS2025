@@ -11,6 +11,7 @@ from api.email_verification_pages import register_registration_verification_page
 from api.public_pages import PUBLIC_STATIC_DIRECTORY, render_public_page
 from api.registration_pages import register_registration_pages
 from conversation.coach_repository import CoachRepository
+from coach.materials import MaterialRepository
 from user.sqlite_repository import SQLiteUserRepository
 
 
@@ -23,12 +24,14 @@ def create_account_app(
     register_registration_pages(app, repository, mail_config=registration_mail)
     register_registration_verification_pages(app, repository, login_enabled=True)
     dialogue = CoachRepository(Path(database_dir) / "coach_conversations.db")
+    materials = MaterialRepository(Path(database_dir) / "coach_library.db")
     register_account_pages(
         app,
         repository,
         dialogue_repository=dialogue,
         dialogue_responder=dialogue_responder,
         dialogue_label=dialogue_label,
+        materials_repository=materials,
     )
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)

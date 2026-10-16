@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.public_pages import _render_layout
+from api.library_pages import register_library_pages, library_csrf
 from coach.dialogue import send_dialogue
 from security.login_sessions import (
     SESSION_LIFETIME,
@@ -89,6 +90,7 @@ def register_account_pages(
     dialogue_repository=None,
     dialogue_responder=None,
     dialogue_label="",
+    materials_repository=None,
 ):
     key = secrets.token_bytes(32)
     # Do comparable Argon2 work for unknown addresses and legacy empty credentials.
@@ -99,6 +101,10 @@ def register_account_pages(
     dialogue_limit = RegistrationRateLimiter(per_client_limit=8, total_limit=80)
     history_limit = RegistrationRateLimiter(per_client_limit=30, total_limit=300)
     dialogue_slots = BoundedSemaphore(2)
+    if materials_repository is not None:
+        register_library_pages(
+            app, repository, materials_repository, dialogue_repository, csrf_key=key
+        )
 
     def signature(purpose, value):
         return hmac.new(
@@ -282,9 +288,9 @@ def register_account_pages(
                 if dialogue_repository
                 else {"turns": [], "learning": None}
             )
+            dialogue_body, learning_panel = workspace(view, token, account.user_id)
         except sqlite3.Error:
             return dialogue_problem("暂时无法读取对话记录，请稍后再试。", 503)
-        dialogue_body, learning_panel = workspace(view, token)
         body = Template(
             (_TEMPLATES / "account_welcome.html").read_text(encoding="utf-8")
         ).substitute(
@@ -337,7 +343,7 @@ def register_account_pages(
         csrf = signature("dialogue", f"{token}.{nonce}.{action}")
         return f'<form method="post" action="/web/coach/message"><input type="hidden" name="nonce" value="{nonce}"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="action" value="{action}">{content}</form>'
 
-    def workspace(view, token):
+    def workspace(view, token, user_id):
         enabled = dialogue_responder is not None
         pending = any(turn["status"] == "pending" for turn in view["turns"])
         history = []
@@ -347,8 +353,16 @@ def register_account_pages(
                 f'<article class="dialogue-message dialogue-user"><p class="message-author">你</p><div class="message-content">{escape(turn["user_content"])}</div></article>'
             )
             if turn["status"] == "complete":
+                citations_html = "".join(
+                    '<details class="citation"><summary>引用依据：'
+                    + escape(source["title"] + " · " + source["locator"])
+                    + "</summary><p>"
+                    + escape(source["excerpt"])
+                    + "</p></details>"
+                    for source in turn.get("citations", [])
+                )
                 history.append(
-                    f'<article{latest} class="dialogue-message dialogue-coach"><p class="message-author">知行 · 成长教练</p><div class="message-content">{escape(turn["assistant_content"])}</div></article>'
+                    f'<article{latest} class="dialogue-message dialogue-coach"><p class="message-author">知行 · 成长教练</p><div class="message-content">{escape(turn["assistant_content"])}</div>{citations_html}</article>'
                 )
             elif turn["status"] == "pending":
                 history.append(
@@ -359,16 +373,25 @@ def register_account_pages(
                     f'<p{latest} class="dialogue-state" role="status">这次未能取得回复。你的消息已保留；需要时可以重新输入发送。系统不会自动重试。</p>'
                 )
         disabled = "" if enabled and not pending else " disabled"
-        composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="3" maxlength="2000" required placeholder="说说你的想法，或输入：我想学习…" aria-describedby="conversation-availability"{disabled}></textarea><div class="conversation-tools"><button class="button button-outline" type="button" disabled>＋ 添加资料</button><button class="button button-primary" type="submit"{disabled}>发送</button></div></div>'
+        composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="3" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability"{disabled}></textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials#add-material">＋ 添加资料</a><button class="button button-primary" type="submit"{disabled}>发送</button></div></div>'
         if enabled:
             composer = dialogue_form(token, "message", composer)
         learning = view["learning"]
+        selected = (
+            materials_repository.selected(user_id) if materials_repository else None
+        )
+        draft_items = dialogue_repository.list_knowledge(
+            user_id, status="pending", limit=3
+        )
+        review = dialogue_repository.review(user_id)
         mobile_context = (
             '<div class="mobile-learning-context" aria-label="学习位置速览"><p>当前学习主题 · <strong>'
             + escape(learning["topic"] if learning else "尚未开始")
             + '</strong></p><p class="mobile-learning-progress">学习进度 · '
             + escape(learning["progress"] if learning else "尚无学习记录")
-            + '</p><p>引用资料 · 未关联资料</p><a class="text-link" href="#learning-title">查看学习详情与续学按钮 →</a></div>'
+            + "</p><p>讨论资料 · "
+            + escape(selected["title"] if selected else "未关联资料")
+            + '</p><a class="text-link" href="#learning-title">查看学习详情、教案与续学 →</a></div>'
         )
         body = (
             mobile_context
@@ -391,11 +414,73 @@ def register_account_pages(
             )
         else:
             button = button.replace('type="submit"', 'type="button"')
+        lesson_button = (
+            dialogue_form(
+                token,
+                "lesson",
+                '<input type="hidden" name="message" value=""><button class="button button-outline button-full" type="submit">把本次知识点整理成教案</button>',
+            )
+            if enabled and not pending and (view["turns"] or selected)
+            else ""
+        )
+        source_content = '<p class="source-empty">未关联资料</p><a class="text-link" href="/web/materials">添加或选择资料 →</a>'
+        if selected:
+            source_content = (
+                '<p><a class="text-link" href="/web/materials/'
+                + selected["material_id"]
+                + '">'
+                + escape(selected["title"])
+                + '</a></p><p>已选入讨论；回答将根据相关片段整理。</p><form method="post" action="/web/materials/clear"><input type="hidden" name="csrf" value="'
+                + library_csrf(key, token, "clear")
+                + '"><button class="history-load" type="submit">取消当前资料</button></form>'
+            )
+        latest_sources = next(
+            (
+                turn.get("citations", [])
+                for turn in reversed(view["turns"])
+                if turn["status"] == "complete"
+            ),
+            [],
+        )
+        source_content += "".join(
+            '<details class="citation"><summary>最近回复引用：'
+            + escape(source["title"] + " · " + source["locator"])
+            + "</summary><p>"
+            + escape(source["excerpt"])
+            + "</p></details>"
+            for source in latest_sources
+        )
+        draft_content = "".join(
+            '<article class="draft-card"><span>教案草稿 · 待你确认</span><p>'
+            + escape(item["title"])
+            + '</p><a class="button button-outline button-full" href="/web/knowledge/'
+            + item["knowledge_id"]
+            + '">预览与确认保存</a></article>'
+            for item in draft_items
+        )
+        if draft_items:
+            draft_content += '<a class="text-link" href="/web/knowledge?status=pending">查看全部待确认草稿 →</a>'
+        review_content = (
+            '<div class="review-note"><p>正在重温教案</p><a class="text-link" href="/web/knowledge/'
+            + review["knowledge_id"]
+            + '">'
+            + escape(review["title"])
+            + "</a></div>"
+            if review
+            else ""
+        )
         panel = (
             '<section class="learning-status" aria-labelledby="learning-title"><p class="eyebrow">LEARNING COMPANION</p><h2 id="learning-title">当前学习主题</h2>'
             + details
             + button
-            + '<p class="learning-return-note">临时聊别的，也会保留这里的学习位置。</p><div class="learning-sources"><h3>正在引用的书籍资料</h3><p class="source-empty">未关联资料</p><p>资料上传与检索准备中，当前没有调用你上传的书籍。</p></div><details class="workspace-help"><summary>对话记录与使用说明</summary><p>每批加载 40 轮（一问一答为一轮），上滑可继续加载更早记录。记录按账户保存在本机，不因超过 40 轮自动删除；实际容量取决于磁盘空间。每次可输入 2000 字。</p><p>学习进度记录已讨论内容，由教练整理供你核对。知识成果保存功能准备中，后续由你确认后收入知识库。</p><p id="conversation-availability">'
+            + '<p class="learning-return-note">临时聊别的，也会保留这里的学习位置。</p>'
+            + '<div class="learning-sources"><h3>正在引用的书籍资料</h3>'
+            + source_content
+            + "</div>"
+            + review_content
+            + lesson_button
+            + draft_content
+            + '<details class="workspace-help"><summary>对话记录与使用说明</summary><p>每批加载 40 轮（一问一答为一轮），上滑可继续加载更早记录。记录按账户保存在本机，不因超过 40 轮自动删除；实际容量取决于磁盘空间。每次可输入 2000 字。</p><p>学习进度由教练整理供你核对。教案先形成草稿，经你确认后保存到知识库。</p><p id="conversation-availability">'
             + escape(
                 dialogue_label
                 or ("对话已启用。" if enabled else "对话准备中，当前暂不能发送消息。")
@@ -423,6 +508,7 @@ def register_account_pages(
                 nonce,
                 responder=dialogue_responder,
                 action=action,
+                materials=materials_repository,
             )
         finally:
             dialogue_slots.release()
@@ -448,7 +534,7 @@ def register_account_pages(
             return dialogue_problem("消息格式无法读取，请返回对话重新填写。", 400)
         if (
             re.fullmatch(r"[A-Za-z0-9_-]{43}", values["nonce"]) is None
-            or values["action"] not in {"message", "continue"}
+            or values["action"] not in {"message", "continue", "lesson"}
             or re.fullmatch(r"[0-9a-f]{64}", values["csrf"]) is None
         ):
             return dialogue_problem("页面无法核对，请返回对话后重新发送。", 403)

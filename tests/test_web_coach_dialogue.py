@@ -104,7 +104,7 @@ def setup(tmp_path, password_hash):
     user = add_user(tmp_path, password_hash, "one@example.com", "成长者")
     calls = []
 
-    def responder(history, message, learning):
+    def responder(history, message, learning, **kwargs):
         calls.append((history, message, learning))
         return CoachAnswer(
             "<script>不会执行</script>讨论优先级。",
@@ -264,7 +264,7 @@ def test_provider_failure_is_private_and_refresh_does_not_retry(
     add_user(tmp_path, password_hash, "one@example.com", "成长者")
     calls = []
 
-    def broken(*args):
+    def broken(*args, **kwargs):
         calls.append(True)
         raise RuntimeError("private-api-key")
 
