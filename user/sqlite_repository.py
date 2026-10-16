@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from user.model import User
@@ -56,6 +57,76 @@ class SQLiteUserRepository:
                 )
                 """
             )
+
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pending_registrations (
+                    request_id TEXT PRIMARY KEY NOT NULL CHECK (length(request_id) = 45),
+                    name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 40),
+                    email TEXT NOT NULL UNIQUE CHECK (email = lower(trim(email))),
+                    password_hash TEXT NOT NULL CHECK (password_hash LIKE '$argon2id$%'),
+                    created_at INTEGER NOT NULL,
+                    expires_at INTEGER NOT NULL CHECK (expires_at > created_at)
+                )
+                """
+            )
+
+    def save_pending_registration(
+        self, *, request_id, name, email, password_hash, created_at, expires_at
+    ):
+        """Insert a draft atomically; never replace an active draft or user."""
+        if not isinstance(password_hash, str) or not password_hash.startswith(
+            "$argon2id$"
+        ):
+            raise ValueError("an Argon2id password hash is required")
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "DELETE FROM pending_registrations WHERE expires_at <= ?", (created_at,)
+            )
+            if (
+                connection.execute(
+                    "SELECT 1 FROM users WHERE lower(trim(email)) = ?", (email,)
+                ).fetchone()
+                is not None
+            ):
+                raise ValueError("registration request unavailable")
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO pending_registrations
+                        (request_id, name, email, password_hash, created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (request_id, name, email, password_hash, created_at, expires_at),
+                )
+            except sqlite3.IntegrityError:
+                raise ValueError("registration request unavailable") from None
+
+    def get_pending_registration(self, request_id, now):
+        """Read secrets only for trusted internal callers; not a user profile."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            # Lazy cleanup avoids retaining expired draft hashes indefinitely
+            # during normal use, without a background scheduler.
+            connection.execute(
+                """
+                DELETE FROM pending_registrations
+                WHERE expires_at <= ? OR EXISTS (
+                    SELECT 1 FROM users
+                    WHERE lower(trim(users.email)) = pending_registrations.email
+                )
+                """,
+                (now,),
+            )
+            return connection.execute(
+                """
+                SELECT request_id, name, email, password_hash, created_at, expires_at
+                FROM pending_registrations
+                WHERE request_id = ? AND created_at <= ? AND expires_at > ?
+                """,
+                (request_id, now, now),
+            ).fetchone()
 
     def issue_email_verification_token(
         self, user_id, token_hash, issued_at, expires_at, resend_interval

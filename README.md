@@ -88,6 +88,8 @@ python -m api.run --data-dir .\data\web-smoke --port 8001
 
 注册填写检查与邮箱验证准备页说明见 [注册表单预览](docs/registration-form-preview.md)。真实邮件测试工具与注册预览保持独立，提交注册预览不会触发测试工具或真实发信。
 
+另已提供内部的 [待验证注册申请保存能力](docs/pending-registration-foundation.md)：只保存密码安全哈希，申请默认 1 小时过期，重复申请不能替换尚有效的内容或覆盖已有账户。当前尚未连接网页或发信，注册预览仍不会保存申请或创建账户。
+
 ## 开发检查
 
 安装开发依赖后运行相关测试：
