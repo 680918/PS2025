@@ -97,6 +97,22 @@ class SQLiteUserRepository:
                 """
             )
 
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS registration_mail_deliveries (
+                    request_id TEXT PRIMARY KEY NOT NULL,
+                    attempt_id TEXT NOT NULL UNIQUE CHECK (
+                        length(attempt_id) = 32 AND attempt_id NOT GLOB '*[^0-9a-f]*'
+                    ),
+                    state TEXT NOT NULL CHECK (
+                        state IN ('sending', 'accepted', 'failed', 'unknown')
+                    ),
+                    FOREIGN KEY (request_id) REFERENCES pending_registrations (request_id)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+
     def save_pending_registration(
         self,
         *,
@@ -206,6 +222,8 @@ class SQLiteUserRepository:
         lifetime,
         resend_interval,
         browser_token_hash=None,
+        delivery_attempt_id=None,
+        retry_failed=False,
     ):
         """Bind a token to an immutable draft; resend never extends its lifetime."""
         with closing(self._connect()) as connection, connection:
@@ -239,9 +257,25 @@ class SQLiteUserRepository:
                 "SELECT issued_at FROM registration_email_verifications WHERE request_id = ?",
                 (request_id,),
             ).fetchone()
-            if row is None or (
-                previous is not None and issued_at < previous[0] + resend_interval
+            delivery = connection.execute(
+                "SELECT state FROM registration_mail_deliveries WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+            if (
+                row is None
+                or (previous is not None and issued_at < previous[0] + resend_interval)
+                or (
+                    delivery is not None
+                    and not (
+                        delivery_attempt_id is not None
+                        and retry_failed is True
+                        and delivery[0] == "failed"
+                    )
+                )
+                or (delivery is None and retry_failed)
             ):
+                raise ValueError("registration verification unavailable")
+            if delivery_attempt_id is not None and browser_token_hash is None:
                 raise ValueError("registration verification unavailable")
             expires_at = min(row[1], issued_at + lifetime)
             connection.execute(
@@ -256,7 +290,52 @@ class SQLiteUserRepository:
                 """,
                 (request_id, token_hash, issued_at, expires_at),
             )
+            if delivery_attempt_id is not None:
+                connection.execute(
+                    """
+                    INSERT INTO registration_mail_deliveries (request_id, attempt_id, state)
+                    VALUES (?, ?, 'sending')
+                    ON CONFLICT(request_id) DO UPDATE SET
+                        attempt_id = excluded.attempt_id, state = 'sending'
+                    """,
+                    (request_id, delivery_attempt_id),
+                )
             return row[0], expires_at
+
+    def finish_registration_delivery(self, request_id, attempt_id, state):
+        """Only the active worker may finish its own durable claim."""
+        if state not in {"accepted", "failed", "unknown"}:
+            raise ValueError("invalid delivery state")
+        with closing(self._connect()) as connection, connection:
+            cursor = connection.execute(
+                """
+                UPDATE registration_mail_deliveries SET state = ?
+                WHERE request_id = ? AND attempt_id = ? AND state = 'sending'
+                """,
+                (state, request_id, attempt_id),
+            )
+            return cursor.rowcount == 1
+
+    def get_registration_delivery_status(self, request_id, browser_token_hash, now):
+        """Return only a state, with the same owner and lifetime checks as the draft."""
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """
+                SELECT coalesce(delivery.state, 'not_sent')
+                FROM pending_registrations AS draft
+                JOIN registration_browser_bindings AS binding
+                    ON binding.request_id = draft.request_id
+                LEFT JOIN registration_mail_deliveries AS delivery
+                    ON delivery.request_id = draft.request_id
+                WHERE draft.request_id = ? AND binding.token_hash = ?
+                    AND draft.created_at <= ? AND draft.expires_at > ?
+                    AND NOT EXISTS (
+                        SELECT 1 FROM users WHERE lower(trim(users.email)) = draft.email
+                    )
+                """,
+                (request_id, browser_token_hash, now, now),
+            ).fetchone()
+            return row[0] if row is not None else None
 
     def consume_registration_verification_token(self, *, token_hash, now, user_id):
         """Create user, credentials and verified flag together, or roll back all."""
