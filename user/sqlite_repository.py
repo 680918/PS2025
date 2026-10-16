@@ -71,6 +71,19 @@ class SQLiteUserRepository:
                 """
             )
 
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS registration_email_verifications (
+                    request_id TEXT PRIMARY KEY NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE CHECK (length(token_hash) = 64),
+                    issued_at INTEGER NOT NULL,
+                    expires_at INTEGER NOT NULL CHECK (expires_at > issued_at),
+                    FOREIGN KEY (request_id) REFERENCES pending_registrations (request_id)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+
     def save_pending_registration(
         self, *, request_id, name, email, password_hash, created_at, expires_at
     ):
@@ -127,6 +140,95 @@ class SQLiteUserRepository:
                 """,
                 (request_id, now, now),
             ).fetchone()
+
+    def issue_registration_verification_token(
+        self, *, request_id, token_hash, issued_at, lifetime, resend_interval
+    ):
+        """Bind a token to an immutable draft; resend never extends its lifetime."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT email, expires_at FROM pending_registrations AS draft
+                WHERE request_id = ? AND created_at <= ? AND expires_at > ?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM users WHERE lower(trim(users.email)) = draft.email
+                  )
+                """,
+                (request_id, issued_at, issued_at),
+            ).fetchone()
+            previous = connection.execute(
+                "SELECT issued_at FROM registration_email_verifications WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+            if row is None or (
+                previous is not None and issued_at < previous[0] + resend_interval
+            ):
+                raise ValueError("registration verification unavailable")
+            expires_at = min(row[1], issued_at + lifetime)
+            connection.execute(
+                """
+                INSERT INTO registration_email_verifications
+                    (request_id, token_hash, issued_at, expires_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(request_id) DO UPDATE SET
+                    token_hash = excluded.token_hash,
+                    issued_at = excluded.issued_at,
+                    expires_at = excluded.expires_at
+                """,
+                (request_id, token_hash, issued_at, expires_at),
+            )
+            return row[0], expires_at
+
+    def consume_registration_verification_token(self, *, token_hash, now, user_id):
+        """Create user, credentials and verified flag together, or roll back all."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                DELETE FROM pending_registrations
+                WHERE expires_at <= ? OR EXISTS (
+                    SELECT 1 FROM users
+                    WHERE lower(trim(users.email)) = pending_registrations.email
+                )
+                """,
+                (now,),
+            )
+            row = connection.execute(
+                """
+                SELECT draft.request_id, draft.name, draft.email, draft.password_hash,
+                       verification.issued_at, verification.expires_at
+                FROM pending_registrations AS draft
+                JOIN registration_email_verifications AS verification
+                  ON verification.request_id = draft.request_id
+                WHERE verification.token_hash = ?
+                  AND verification.issued_at <= ? AND verification.expires_at > ?
+                  AND draft.created_at <= ? AND draft.expires_at > ?
+                """,
+                (token_hash, now, now, now, now),
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                "INSERT INTO users (user_id, name, email) VALUES (?, ?, ?)",
+                (user_id, row[1], row[2]),
+            )
+            connection.execute(
+                "INSERT INTO user_passwords (user_id, password_hash) VALUES (?, ?)",
+                (user_id, row[3]),
+            )
+            connection.execute(
+                """
+                INSERT INTO user_email_verifications
+                    (user_id, email, token_hash, issued_at, expires_at, verified_at)
+                VALUES (?, ?, NULL, ?, ?, ?)
+                """,
+                (user_id, row[2], row[4], row[5], now),
+            )
+            connection.execute(
+                "DELETE FROM pending_registrations WHERE request_id = ?", (row[0],)
+            )
+            return user_id
 
     def issue_email_verification_token(
         self, user_id, token_hash, issued_at, expires_at, resend_interval

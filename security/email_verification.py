@@ -1,4 +1,4 @@
-"""Internal email-verification links. No HTTP routes or mail delivery are enabled."""
+"""Email verification primitives; callers control HTTP access and mail delivery."""
 
 import hashlib
 import re
@@ -6,6 +6,7 @@ import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlsplit, urlunsplit
+from uuid import uuid4
 
 
 VERIFICATION_LIFETIME_SECONDS = 3600
@@ -104,3 +105,52 @@ def confirm_email_verification(
         return None
     token_hash = hashlib.sha256(token.encode("ascii")).hexdigest()
     return repository.consume_email_verification_token(token_hash, _timestamp(now))
+
+
+def _registration_token_hash(token):
+    # A registration link must never act as an existing user's verification link.
+    return hashlib.sha256(b"registration\0" + token.encode("ascii")).hexdigest()
+
+
+def issue_registration_verification(
+    repository, request_id: str, activation_url: str, *, now: datetime | None = None
+) -> EmailVerificationMessage:
+    """Prepare a draft's one-time link for a TRUSTED internal caller; no SMTP.
+
+    The configured URL must target a registration-specific confirmation handler.
+    This primitive is not a public resend API or proof of mailbox ownership.
+    """
+    parsed = _trusted_activation_url(activation_url)
+    if (
+        not isinstance(request_id, str)
+        or re.fullmatch(r"registration_[0-9a-f]{32}", request_id) is None
+    ):
+        raise ValueError("registration verification unavailable")
+    token = secrets.token_urlsafe(32)
+    recipient, expires_at = repository.issue_registration_verification_token(
+        request_id=request_id,
+        token_hash=_registration_token_hash(token),
+        issued_at=_timestamp(now),
+        lifetime=VERIFICATION_LIFETIME_SECONDS,
+        resend_interval=RESEND_INTERVAL_SECONDS,
+    )
+    return EmailVerificationMessage(
+        recipient=recipient,
+        activation_url=urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, urlencode({"token": token}), "")
+        ),
+        expires_at=datetime.fromtimestamp(expires_at, timezone.utc),
+    )
+
+
+def confirm_registration_verification(
+    repository, token: str, *, now: datetime | None = None
+) -> str | None:
+    """Create the verified account atomically, once. Does not log the user in."""
+    if not isinstance(token, str) or _TOKEN_PATTERN.fullmatch(token) is None:
+        return None
+    return repository.consume_registration_verification_token(
+        token_hash=_registration_token_hash(token),
+        now=_timestamp(now),
+        user_id=str(uuid4()),
+    )
