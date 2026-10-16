@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
+from security.pending_registration import registration_browser_secret_hash
+
 
 VERIFICATION_LIFETIME_SECONDS = 3600
 RESEND_INTERVAL_SECONDS = 60
@@ -113,13 +115,23 @@ def _registration_token_hash(token):
 
 
 def issue_registration_verification(
-    repository, request_id: str, activation_url: str, *, now: datetime | None = None
+    repository,
+    request_id: str,
+    activation_url: str,
+    *,
+    browser_secret: str | None = None,
+    now: datetime | None = None,
 ) -> EmailVerificationMessage:
     """Prepare a draft's one-time link for a TRUSTED internal caller; no SMTP.
 
     The configured URL must target a registration-specific confirmation handler.
     This primitive is not a public resend API or proof of mailbox ownership.
     """
+    browser_hash = None
+    if browser_secret is not None:
+        browser_hash = registration_browser_secret_hash(browser_secret)
+        if browser_hash is None:
+            raise ValueError("registration verification unavailable")
     parsed = _trusted_activation_url(activation_url)
     if (
         not isinstance(request_id, str)
@@ -133,6 +145,7 @@ def issue_registration_verification(
         issued_at=_timestamp(now),
         lifetime=VERIFICATION_LIFETIME_SECONDS,
         resend_interval=RESEND_INTERVAL_SECONDS,
+        browser_token_hash=browser_hash,
     )
     return EmailVerificationMessage(
         recipient=recipient,

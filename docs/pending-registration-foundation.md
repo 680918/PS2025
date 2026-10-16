@@ -2,6 +2,8 @@
 
 提供受信任内部流程使用的申请保存、链接生成与确认开户能力。确认开户现已接上 [注册专用邮箱确认页](registration-confirmation-page.md)，申请提交尚未连接网页或 SMTP。注册表单仍只检查填写，不保存注册申请。请勿把内部签发函数直接暴露为公开注册接口。
 
+已新增 [申请浏览器归属](registration-browser-binding.md) 的内部能力。后续网页须使用带归属的申请创建与查询；本说明中的无归属申请接口仅保留给受信任的旧内部流程。
+
 ## 已完成的行为
 
 - 先复用注册字段校验，再用既有 Argon2id 参数生成密码哈希。数据库保存哈希，不保存原始密码；密码两侧空格保留。未填称呼时使用「成长者」。
@@ -18,11 +20,11 @@
 `security/pending_registration.py`：
 
 - `begin_pending_registration(repository, *, email, password, name="", now=None)`：返回只包含申请编号和到期时间的 `PendingRegistrationReceipt`。现有账户或有效重复申请统一抛出 `PendingRegistrationUnavailable`，不将具体邮箱状态提供给网页。
-- `get_pending_registration(repository, request_id, now=None)`：受信任调用者可读取内部申请记录；未知、过期、格式错误、尚未到创建时间或已被正式账户占用时不可用。
+- `get_pending_registration(repository, request_id, now=None)`：受信任调用者可读取没有浏览器绑定的旧内部申请记录；未知、已绑定、过期、格式错误、尚未到创建时间或已被正式账户占用时不可用。
 
 `security/email_verification.py`：
 
-- `issue_registration_verification(repository, request_id, activation_url, now=None)`：返回已有 `EmailVerificationMessage` 类型，收件人取自保存的申请。没有 SMTP 调用，不自动发送邮件。申请不可用和重发间隔不足统一抛出 `ValueError`；数据库异常交给调用者处理，不能伪装成发送成功。
+- `issue_registration_verification(repository, request_id, activation_url, browser_secret=None, now=None)`：返回已有 `EmailVerificationMessage` 类型，收件人取自保存的申请。带归属申请必须提供正确的 `browser_secret`；没有 SMTP 调用，不自动发送邮件。申请不可用、凭证不符和重发间隔不足统一抛出 `ValueError`；数据库异常交给调用者处理，不能伪装成发送成功。
 - `confirm_registration_verification(repository, token, now=None)`：有效确认后返回新用户编号。未知、格式错误、未到生效时间、已过期、已使用或邮箱已被账户占用时返回 `None`，不创建半成品账户；数据库错误保留为异常，事务回退。
 
 `activation_url` 必须来自服务端可信配置，使用 HTTPS（本机回环调试允许 HTTP），不能包含查询串、片段或用户信息，不得取自表单或 Host 请求头。新注册使用 `/web/verify-registration` 专用路径；现阶段只用临时数据进行内部验收，尚未连接真实发信。既有 `/web/verify-email` 只用于已存在的用户，其确认函数不会创建账户。
@@ -41,7 +43,7 @@
 
 旧的邮箱验证凭证关联已经存在的用户，不能直接把待验证申请编号传入该流程来建号。本步新增的注册凭证使用单独的表和摘要用途前缀，与旧流程分离。
 
-注册专用的网页确认处理器及 CSRF 保护已完成：打开链接只展示确认页，明确提交后才开户，避免邮件预读取自动建号。后续完成注册提交的 CSRF、请求次数限制、重发入口与邮件失败恢复，再接通 SMTP。公开入口应说明只有本人发起的注册才应确认，并为发起注册的浏览器建立上下文校验；不能仅凭申请编号允许公众重发邮件。登录会话另一步实现。
+注册专用网页确认、注册表单 CSRF、请求次数限制和内部申请归属校验已完成。后续连接网页保存与专用浏览器 Cookie，再补重发入口与邮件失败恢复，之后接通 SMTP；不能仅凭申请编号允许公众重发邮件。登录会话另一步实现。
 
 保存和签发能力仍仅供内部调用；网页仅新增确认路径，不发邮件、不开放登录，也不增加队列或定时任务。
 

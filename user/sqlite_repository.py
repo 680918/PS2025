@@ -84,8 +84,29 @@ class SQLiteUserRepository:
                 """
             )
 
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS registration_browser_bindings (
+                    request_id TEXT PRIMARY KEY NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE CHECK (
+                        length(token_hash) = 64 AND token_hash NOT GLOB '*[^0-9a-f]*'
+                    ),
+                    FOREIGN KEY (request_id) REFERENCES pending_registrations (request_id)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+
     def save_pending_registration(
-        self, *, request_id, name, email, password_hash, created_at, expires_at
+        self,
+        *,
+        request_id,
+        name,
+        email,
+        password_hash,
+        created_at,
+        expires_at,
+        browser_token_hash=None,
     ):
         """Insert a draft atomically; never replace an active draft or user."""
         if not isinstance(password_hash, str) or not password_hash.startswith(
@@ -113,6 +134,11 @@ class SQLiteUserRepository:
                     """,
                     (request_id, name, email, password_hash, created_at, expires_at),
                 )
+                if browser_token_hash is not None:
+                    connection.execute(
+                        "INSERT INTO registration_browser_bindings (request_id, token_hash) VALUES (?, ?)",
+                        (request_id, browser_token_hash),
+                    )
             except sqlite3.IntegrityError:
                 raise ValueError("registration request unavailable") from None
 
@@ -137,12 +163,49 @@ class SQLiteUserRepository:
                 SELECT request_id, name, email, password_hash, created_at, expires_at
                 FROM pending_registrations
                 WHERE request_id = ? AND created_at <= ? AND expires_at > ?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM registration_browser_bindings AS binding
+                    WHERE binding.request_id = pending_registrations.request_id
+                  )
                 """,
                 (request_id, now, now),
             ).fetchone()
 
+    def get_browser_registration(self, request_id, browser_token_hash, now):
+        """Authorize a minimal status read using the bound credential digest."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                DELETE FROM pending_registrations
+                WHERE expires_at <= ? OR EXISTS (
+                    SELECT 1 FROM users
+                    WHERE lower(trim(users.email)) = pending_registrations.email
+                )
+                """,
+                (now,),
+            )
+            return connection.execute(
+                """
+                SELECT draft.request_id, draft.expires_at
+                FROM pending_registrations AS draft
+                JOIN registration_browser_bindings AS binding
+                  ON binding.request_id = draft.request_id
+                WHERE draft.request_id = ? AND binding.token_hash = ?
+                  AND draft.created_at <= ? AND draft.expires_at > ?
+                """,
+                (request_id, browser_token_hash, now, now),
+            ).fetchone()
+
     def issue_registration_verification_token(
-        self, *, request_id, token_hash, issued_at, lifetime, resend_interval
+        self,
+        *,
+        request_id,
+        token_hash,
+        issued_at,
+        lifetime,
+        resend_interval,
+        browser_token_hash=None,
     ):
         """Bind a token to an immutable draft; resend never extends its lifetime."""
         with closing(self._connect()) as connection, connection:
@@ -154,8 +217,23 @@ class SQLiteUserRepository:
                   AND NOT EXISTS (
                     SELECT 1 FROM users WHERE lower(trim(users.email)) = draft.email
                   )
+                  AND (
+                    (? IS NULL AND NOT EXISTS (
+                      SELECT 1 FROM registration_browser_bindings AS binding
+                      WHERE binding.request_id = draft.request_id
+                    )) OR EXISTS (
+                      SELECT 1 FROM registration_browser_bindings AS binding
+                      WHERE binding.request_id = draft.request_id AND binding.token_hash = ?
+                    )
+                  )
                 """,
-                (request_id, issued_at, issued_at),
+                (
+                    request_id,
+                    issued_at,
+                    issued_at,
+                    browser_token_hash,
+                    browser_token_hash,
+                ),
             ).fetchone()
             previous = connection.execute(
                 "SELECT issued_at FROM registration_email_verifications WHERE request_id = ?",
