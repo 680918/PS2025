@@ -1,27 +1,39 @@
-"""Registration form preview: bounded, read-only validation with honest status."""
+"""Protected registration applications; mail and login remain unavailable."""
 
 import hashlib
 import hmac
 import re
 import secrets
+import sqlite3
+from datetime import datetime, timezone
+from threading import BoundedSemaphore
 from time import time
 from urllib.parse import parse_qs
 
 from fastapi import Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.concurrency import run_in_threadpool
 
 from api.public_pages import (
     render_registration_page,
+    render_registration_problem_page,
     render_registration_rate_limited_page,
     render_registration_security_retry_page,
     render_registration_waiting_page,
 )
 from security.registration_validation import validate_registration_fields
 from security.registration_rate_limit import RegistrationRateLimiter
+from security.pending_registration import (
+    PendingRegistrationUnavailable,
+    begin_browser_registration,
+    get_browser_registration_status,
+)
 
 
 _COOKIE = "coach_registration_form"
 _COOKIE_PATH = "/web"
+_APPLICATION_COOKIE = "coach_registration_application"
+_PENDING_PATH = "/web/register/pending"
 _FORM_LIFETIME = 1800
 _GET_PER_CLIENT = 30
 _GET_TOTAL = 240
@@ -40,10 +52,14 @@ _HEADERS = {
 }
 
 
-def register_registration_preview(app):
+def register_registration_pages(app, repository):
     # Single-process local development. Restarting requires reopening the form.
     signing_key = secrets.token_bytes(32)
+    hash_slots = BoundedSemaphore(2)
     page_limit = RegistrationRateLimiter(
+        per_client_limit=_GET_PER_CLIENT, total_limit=_GET_TOTAL
+    )
+    pending_limit = RegistrationRateLimiter(
         per_client_limit=_GET_PER_CLIENT, total_limit=_GET_TOTAL
     )
     submit_limit = RegistrationRateLimiter(
@@ -101,6 +117,62 @@ def register_registration_preview(app):
         return HTMLResponse(
             render_registration_security_retry_page(),
             status_code=403,
+            headers=_HEADERS,
+        )
+
+    def problem(kind, code, *, retry_after=None):
+        headers = dict(_HEADERS)
+        if retry_after is not None:
+            headers["Retry-After"] = str(retry_after)
+        return HTMLResponse(
+            render_registration_problem_page(kind), status_code=code, headers=headers
+        )
+
+    def application_status(request):
+        value = request.cookies.get(_APPLICATION_COOKIE, "")
+        if len(value) != 89 or value.count(".") != 1:
+            return None
+        request_id, secret = value.split(".")
+        return get_browser_registration_status(repository, request_id, secret)
+
+    def save_application(fields, password):
+        # Never queue an unbounded number of memory-intensive password hashes.
+        if not hash_slots.acquire(blocking=False):
+            return None
+        try:
+            return begin_browser_registration(
+                repository,
+                email=fields["email"],
+                name=fields["name"],
+                password=password,
+            )
+        finally:
+            hash_slots.release()
+
+    def pending_redirect():
+        return RedirectResponse(_PENDING_PATH, status_code=303, headers=_HEADERS)
+
+    @app.get(_PENDING_PATH, response_class=HTMLResponse, include_in_schema=False)
+    def pending_page(request: Request):
+        limited = limited_response(request, pending_limit)
+        if limited is not None:
+            return limited
+        try:
+            status = application_status(request)
+        except sqlite3.Error:
+            return problem("unavailable", 503)
+        if status is None:
+            page = problem("missing", 403)
+            page.delete_cookie(
+                _APPLICATION_COOKIE,
+                path=_COOKIE_PATH,
+                secure=request.url.scheme == "https",
+                httponly=True,
+                samesite="strict",
+            )
+            return page
+        return HTMLResponse(
+            render_registration_waiting_page(status.masked_email, status.expires_at),
             headers=_HEADERS,
         )
 
@@ -184,6 +256,34 @@ def register_registration_preview(app):
             return form_response(
                 csrf, fields=checked, errors=checked["errors"], code=400
             )
-        return HTMLResponse(
-            render_registration_waiting_page(checked["email"]), headers=_HEADERS
+        try:
+            # A repeat submission from the same browser cannot change an active
+            # application's email/password or silently replace its ownership.
+            active = await run_in_threadpool(application_status, request)
+            if active is not None:
+                return pending_redirect()
+            receipt = await run_in_threadpool(
+                save_application, checked, fields["password"][0]
+            )
+        except PendingRegistrationUnavailable:
+            return problem("conflict", 409)
+        except sqlite3.Error:
+            return problem("unavailable", 503)
+        if receipt is None:
+            return problem("unavailable", 503, retry_after=2)
+        page = pending_redirect()
+        max_age = max(
+            1,
+            int(receipt.expires_at.timestamp())
+            - int(datetime.now(timezone.utc).timestamp()),
         )
+        page.set_cookie(
+            _APPLICATION_COOKIE,
+            f"{receipt.request_id}.{receipt.browser_secret}",
+            max_age=max_age,
+            path=_COOKIE_PATH,
+            secure=request.url.scheme == "https",
+            httponly=True,
+            samesite="strict",
+        )
+        return page

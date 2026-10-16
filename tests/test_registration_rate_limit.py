@@ -129,10 +129,11 @@ def data(csrf):
 def test_default_post_limit_has_private_response_and_recovers_exactly(setup):
     _, client, clock, directory = setup
     csrf = token(client)
+    assert client.post("/web/auth/register", data=data(csrf)).status_code == 200
     before = {
         p: hashlib.sha256(p.read_bytes()).hexdigest() for p in directory.rglob("*.db")
     }
-    for _ in range(10):
+    for _ in range(9):
         assert client.post("/web/auth/register", data=data(csrf)).status_code == 200
     blocked = client.post("/web/auth/register", data=data(csrf))
     assert blocked.status_code == 429
@@ -178,6 +179,16 @@ def test_get_limit_is_independent_preserves_context_and_keeps_other_pages_usable
     assert client.get("/static/public.css").status_code == 200
     clock.now += 60
     assert token(client) == csrf
+
+
+def test_pending_queries_have_their_own_budget_and_do_not_block_form(setup):
+    _, client, clock, _ = setup
+    for _ in range(30):
+        assert client.get("/web/register/pending").status_code == 403
+    assert client.get("/web/register/pending").status_code == 429
+    assert token(client)
+    clock.now += 60
+    assert client.get("/web/register/pending").status_code == 403
 
 
 def test_post_limit_does_not_block_reopening_form_or_email_confirmation(setup):

@@ -376,7 +376,7 @@ def test_naive_time_is_rejected_and_timezone_equivalent_is_supported(repository)
     )
 
 
-def test_web_preview_never_binds_or_saves_an_application(tmp_path):
+def test_web_submission_saves_only_bound_draft_not_formal_account(tmp_path):
     app = create_app(
         tmp_path,
         curriculum_generator=None,
@@ -392,8 +392,9 @@ def test_web_preview_never_binds_or_saves_an_application(tmp_path):
             data={"csrf": csrf, "email": "preview@example.com", "password": PASSWORD},
         )
         assert response.status_code == 200
-    assert rows(repository, "pending_registrations") == []
-    assert rows(repository, "registration_browser_bindings") == []
+    assert len(rows(repository, "pending_registrations")) == 1
+    assert len(rows(repository, "registration_browser_bindings")) == 1
+    assert rows(repository, "users") == []
 
 
 def test_confirmation_link_can_be_explicitly_confirmed_in_another_browser(

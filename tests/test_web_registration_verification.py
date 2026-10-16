@@ -396,7 +396,7 @@ def test_registration_cookie_cannot_be_renamed_to_impersonate_old_flow(account):
     assert counts(repository) == (0, 0, 0, 1, 1)
 
 
-def test_registration_form_stays_readonly_and_new_handlers_not_in_public_schema(
+def test_submission_saves_draft_but_does_not_enable_login_or_issue_mail(
     account,
 ):
     repository, client = account
@@ -411,7 +411,7 @@ def test_registration_form_stays_readonly_and_new_handlers_not_in_public_schema(
         },
     )
     assert response.status_code == 200
-    assert counts(repository) == (0, 0, 0, 0, 0)
+    assert counts(repository) == (0, 0, 0, 1, 0)
     assert PATH not in client.get("/openapi.json").json()["paths"]
     assert (
         client.post(

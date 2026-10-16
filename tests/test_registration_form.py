@@ -70,7 +70,7 @@ def test_get_form_supports_basic_browser_validation_but_login_stays_closed(clien
     assert not any(
         "disabled" in a for tag, a in elements if tag in {"fieldset", "button", "input"}
     )
-    assert "检查填写并继续" in response.text
+    assert "保存申请并继续" in response.text
     assert "请使用测试资料" in response.text
     assert "disabled" in client.get("/web/login").text
     assert (
@@ -83,7 +83,7 @@ def test_get_form_supports_basic_browser_validation_but_login_stays_closed(clien
 
 
 @pytest.mark.parametrize("name", ["", "测试成长者"])
-def test_valid_submission_goes_to_honest_masked_waiting_page_without_writes(
+def test_valid_submission_saves_bound_draft_without_creating_account(
     client, tmp_path, name
 ):
     before = {
@@ -94,7 +94,7 @@ def test_valid_submission_goes_to_honest_masked_waiting_page_without_writes(
         data={"name": name, "email": "learner@example.com", "password": PASSWORD},
     )
     assert response.status_code == 200
-    assert "下一步，验证你的邮箱" in response.text
+    assert "申请已保存，等待验证邮箱" in response.text
     assert "l***@example.com" in response.text
     assert "learner@example.com" not in response.text
     assert PASSWORD not in response.text
@@ -103,9 +103,31 @@ def test_valid_submission_goes_to_honest_masked_waiting_page_without_writes(
     assert "已发送至" not in response.text
     assert "set-cookie" not in response.headers
     assert not any(tag == "form" for tag, _ in Elements(response.text).elements)
+    repository = SQLiteUserRepository(tmp_path / "users.db")
+    assert repository.get_by_email("learner@example.com") is None
+    assert response.history[0].status_code == 303
+    assert client.cookies.get(pages._APPLICATION_COOKIE)
+    with repository._connect() as connection:
+        assert (
+            connection.execute("SELECT COUNT(*) FROM pending_registrations").fetchone()[
+                0
+            ]
+            == 1
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM registration_browser_bindings"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            connection.execute("SELECT COUNT(*) FROM user_passwords").fetchone()[0] == 0
+        )
+    assert PASSWORD.encode() not in (tmp_path / "users.db").read_bytes()
     assert all(
         hashlib.sha256(p.read_bytes()).hexdigest() == digest
         for p, digest in before.items()
+        if p.name != "users.db"
     )
 
 
@@ -247,7 +269,7 @@ def test_preview_cannot_change_an_existing_password_or_verification(client, tmp_
             "password": "a different quiet password",
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 409
     assert repository.get_by_id(user.user_id).name == "原来的称呼"
     assert repository.get_password_hash(user.user_id) == original_hash
     assert verify_user_password(repository, user.user_id, PASSWORD)
@@ -414,7 +436,7 @@ def test_same_site_and_private_browser_origin_require_and_accept_valid_form(
     )
     assert response.status_code == 200
     assert "无需等待邮件" in response.text
-    assert set(client.cookies.keys()) == {pages._COOKIE}
+    assert set(client.cookies.keys()) == {pages._COOKIE, pages._APPLICATION_COOKIE}
 
 
 def test_expired_page_can_reopen_and_submit_without_extending_old_context(
@@ -561,7 +583,7 @@ def test_https_uses_secure_cookie_and_success_is_not_login(tmp_path):
             ).status_code
             == 200
         )
-        assert set(browser.cookies.keys()) == {pages._COOKIE}
+        assert set(browser.cookies.keys()) == {pages._COOKIE, pages._APPLICATION_COOKIE}
 
 
 def test_email_confirmation_cookie_cannot_be_renamed_to_registration_form_context(

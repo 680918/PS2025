@@ -332,9 +332,7 @@ def test_legacy_database_and_learning_files_are_preserved(tmp_path):
     assert notes.read_text(encoding="utf-8") == "已有的成长记录"
 
 
-def test_web_form_remains_read_only_and_cannot_replace_internal_draft(
-    repository, tmp_path
-):
+def test_web_form_cannot_claim_or_replace_legacy_internal_draft(repository, tmp_path):
     # Use the current clock because this is a web request, not a supplied time.
     receipt = begin(repository, now=datetime.now(timezone.utc))
     before = get_pending_registration(repository, receipt.request_id)
@@ -355,8 +353,8 @@ def test_web_form_remains_read_only_and_cannot_replace_internal_draft(
                 "csrf": csrf,
             },
         )
-        assert response.status_code == 200
-        assert "无需等待邮件" in response.text
+        assert response.status_code == 409
+        assert "暂时无法继续这次申请" in response.text
         assert "set-cookie" not in response.headers
         assert (
             client.post(

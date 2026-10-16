@@ -8,7 +8,10 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from security.passwords import hash_password
-from security.registration_validation import validate_registration_fields
+from security.registration_validation import (
+    masked_registration_email,
+    validate_registration_fields,
+)
 
 
 PENDING_REGISTRATION_LIFETIME_SECONDS = 3600
@@ -31,6 +34,12 @@ class BrowserRegistrationReceipt:
     # Trusted handoff only. Never serialize this object into a page or log.
     request_id: str = field(repr=False)
     browser_secret: str = field(repr=False)
+    expires_at: datetime
+
+
+@dataclass(frozen=True)
+class BrowserRegistrationStatus:
+    masked_email: str = field(repr=False)
     expires_at: datetime
 
 
@@ -122,17 +131,33 @@ def _begin_pending_registration(
 
 def get_browser_registration(repository, request_id, browser_secret, *, now=None):
     """Return only active request ID and expiry; never email or password hash."""
-    if not isinstance(request_id, str) or _REQUEST_ID.fullmatch(request_id) is None:
-        return None
-    digest = registration_browser_secret_hash(browser_secret)
-    if digest is None:
-        return None
-    row = repository.get_browser_registration(request_id, digest, _timestamp(now))
+    row = _browser_registration_row(repository, request_id, browser_secret, now)
     if row is None:
         return None
     return PendingRegistrationReceipt(
         row[0], datetime.fromtimestamp(row[1], timezone.utc)
     )
+
+
+def get_browser_registration_status(
+    repository, request_id, browser_secret, *, now=None
+):
+    """Browser-authorized display data only, with the stored email masked."""
+    row = _browser_registration_row(repository, request_id, browser_secret, now)
+    if row is None:
+        return None
+    return BrowserRegistrationStatus(
+        masked_registration_email(row[2]), datetime.fromtimestamp(row[1], timezone.utc)
+    )
+
+
+def _browser_registration_row(repository, request_id, browser_secret, now):
+    if not isinstance(request_id, str) or _REQUEST_ID.fullmatch(request_id) is None:
+        return None
+    digest = registration_browser_secret_hash(browser_secret)
+    if digest is None:
+        return None
+    return repository.get_browser_registration(request_id, digest, _timestamp(now))
 
 
 def get_pending_registration(repository, request_id, *, now=None):

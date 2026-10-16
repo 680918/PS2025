@@ -187,7 +187,7 @@ class SQLiteUserRepository:
             )
             return connection.execute(
                 """
-                SELECT draft.request_id, draft.expires_at
+                SELECT draft.request_id, draft.expires_at, draft.email
                 FROM pending_registrations AS draft
                 JOIN registration_browser_bindings AS binding
                   ON binding.request_id = draft.request_id

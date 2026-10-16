@@ -29,7 +29,7 @@ from api.email_verification_pages import (
     register_email_verification_pages,
     register_registration_verification_pages,
 )
-from api.registration_pages import register_registration_preview
+from api.registration_pages import register_registration_pages
 from learning.session_service import (
     update_learning_session_feedback,
     get_or_create_learning_session,
@@ -109,7 +109,7 @@ def create_app(
     user_repository = SQLiteUserRepository(database_dir / "users.db")
     register_email_verification_pages(app, user_repository)
     register_registration_verification_pages(app, user_repository)
-    register_registration_preview(app)
+    register_registration_pages(app, user_repository)
 
     journey_repository = SQLiteLearningJourneyRepository(database_dir / "journeys.db")
 

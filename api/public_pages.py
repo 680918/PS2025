@@ -3,6 +3,7 @@
 from pathlib import Path
 from string import Template
 from html import escape
+from datetime import timedelta, timezone
 
 
 _TEMPLATES = Path(__file__).parent / "templates" / "public"
@@ -65,14 +66,45 @@ def render_registration_page(*, fields=None, errors=None, form_error="", csrf=""
     )
 
 
-def render_registration_waiting_page(email):
-    from security.registration_validation import masked_registration_email
-
+def render_registration_waiting_page(masked_email, expires_at):
     template = Template(
         (_TEMPLATES / "registration_waiting.html").read_text(encoding="utf-8")
     )
-    content = template.substitute(masked_email=escape(masked_registration_email(email)))
-    return _render_layout("准备验证邮箱 · 知行成长教练", content, "register")
+    expires = expires_at.astimezone(timezone(timedelta(hours=8))).strftime(
+        "%m月%d日 %H:%M"
+    )
+    content = template.substitute(
+        masked_email=escape(masked_email), expires_at=escape(expires)
+    )
+    return _render_layout("申请已保存 · 知行成长教练", content, "register")
+
+
+def render_registration_problem_page(kind):
+    copy = {
+        "missing": (
+            "暂时无法查看这份申请",
+            "浏览器未保留有效申请信息，或申请已经失效。请返回注册页查看进度。",
+            "为保护你的信息，页面不会显示其他浏览器的申请。正式登录与邮件发送仍在准备中。",
+        ),
+        "conflict": (
+            "暂时无法继续这次申请",
+            "请稍后重新打开注册页再试。已有账户的用户可以查看登录页进度。",
+            "本次没有更改已有申请或账户，也没有发送邮件。请勿反复提交或更改密码尝试。",
+        ),
+        "unavailable": (
+            "申请暂时无法保存或查看",
+            "服务暂时较忙，或保存没有完成。请稍后重新打开注册页再试。",
+            "本次没有创建正式账户或发送邮件。稍后重试时，密码需要重新填写。",
+        ),
+    }
+    heading, description, help_text = copy[kind]
+    return _render_registration_notice(
+        symbol="…",
+        heading=heading,
+        description=description,
+        help_text=help_text,
+        button="返回注册页 →",
+    )
 
 
 def render_registration_security_retry_page():
