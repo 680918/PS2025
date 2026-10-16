@@ -1,4 +1,4 @@
-"""Explicit email confirmation only; no issuing, sending, passwords or login."""
+"""Explicit email confirmations; no public token issuing, mail sending or login."""
 
 import hashlib
 import hmac
@@ -11,12 +11,20 @@ from urllib.parse import parse_qs
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 
-from api.public_pages import render_verification_page
-from security.email_verification import confirm_email_verification
+from api.public_pages import (
+    render_registration_verification_page,
+    render_verification_page,
+)
+from security.email_verification import (
+    confirm_email_verification,
+    confirm_registration_verification,
+)
 
 
 _PATH = "/web/verify-email"
 _COOKIE = "coach_email_confirmation"
+_REGISTRATION_PATH = "/web/verify-registration"
+_REGISTRATION_COOKIE = "coach_registration_confirmation"
 _LIFETIME = 600
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
 _HEADERS = {
@@ -36,22 +44,42 @@ def _valid_token(value):
 
 
 def register_email_verification_pages(app, repository):
+    _register_confirmation_pages(
+        app,
+        path=_PATH,
+        cookie_name=_COOKIE,
+        render_page=render_verification_page,
+        confirm=lambda token: confirm_email_verification(repository, token),
+    )
+
+
+def register_registration_verification_pages(app, repository):
+    _register_confirmation_pages(
+        app,
+        path=_REGISTRATION_PATH,
+        cookie_name=_REGISTRATION_COOKIE,
+        render_page=render_registration_verification_page,
+        confirm=lambda token: confirm_registration_verification(repository, token),
+    )
+
+
+def _register_confirmation_pages(app, *, path, cookie_name, render_page, confirm):
     # Ephemeral per-process signing key: a restart requires reopening the email,
     # while the actual verification token remains valid until its stored expiry.
     signing_key = secrets.token_bytes(32)
 
     def signature(token, nonce, expires):
-        payload = f"{token}.{nonce}.{expires}".encode("ascii")
+        payload = f"{path}.{token}.{nonce}.{expires}".encode("ascii")
         return hmac.new(signing_key, payload, hashlib.sha256).hexdigest()
 
     def response(state, code=200, **fields):
         return HTMLResponse(
-            render_verification_page(state, **fields),
+            render_page(state, **fields),
             status_code=code,
             headers=_HEADERS,
         )
 
-    @app.get(_PATH, response_class=HTMLResponse, include_in_schema=False)
+    @app.get(path, response_class=HTMLResponse, include_in_schema=False)
     def verification_page(request: Request):
         tokens = request.query_params.getlist("token")
         if len(tokens) != 1 or not _valid_token(tokens[0]):
@@ -62,17 +90,17 @@ def register_email_verification_pages(app, repository):
         cookie = f"{nonce}.{expires}.{signature(token, nonce, expires)}"
         page = response("confirm", token=token, csrf=nonce)
         page.set_cookie(
-            _COOKIE,
+            cookie_name,
             cookie,
             max_age=_LIFETIME,
-            path=_PATH,
+            path=path,
             secure=request.url.scheme == "https",
             httponly=True,
             samesite="strict",
         )
         return page
 
-    @app.post(_PATH, response_class=HTMLResponse, include_in_schema=False)
+    @app.post(path, response_class=HTMLResponse, include_in_schema=False)
     async def verification_confirm(request: Request):
         origin = request.headers.get("origin")
         if request.headers.get("sec-fetch-site") == "cross-site" or (
@@ -110,7 +138,7 @@ def register_email_verification_pages(app, repository):
         token, csrf = fields["token"][0], fields["csrf"][0]
         if not _valid_token(token) or not _valid_token(csrf):
             return response("invalid", 400)
-        cookie = request.cookies.get(_COOKIE, "")
+        cookie = request.cookies.get(cookie_name, "")
         parts = cookie.split(".")
         if len(parts) != 3:
             return response("retry", 403)
@@ -127,7 +155,7 @@ def register_email_verification_pages(app, repository):
         ):
             return response("retry", 403)
         try:
-            verified_user_id = confirm_email_verification(repository, token)
+            verified_user_id = confirm(token)
         except sqlite3.Error:
             # Do not expose database details or mistake a storage failure for an
             # invalid link. The user can retry from the original email.
@@ -137,8 +165,8 @@ def register_email_verification_pages(app, repository):
             200 if verified_user_id is not None else 400,
         )
         page.delete_cookie(
-            _COOKIE,
-            path=_PATH,
+            cookie_name,
+            path=path,
             secure=request.url.scheme == "https",
             httponly=True,
             samesite="strict",

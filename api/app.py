@@ -25,7 +25,10 @@ from learning.continuity import (
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from api.public_pages import PUBLIC_STATIC_DIRECTORY, render_public_page
-from api.email_verification_pages import register_email_verification_pages
+from api.email_verification_pages import (
+    register_email_verification_pages,
+    register_registration_verification_pages,
+)
 from api.registration_pages import register_registration_preview
 from learning.session_service import (
     update_learning_session_feedback,
@@ -105,6 +108,7 @@ def create_app(
 
     user_repository = SQLiteUserRepository(database_dir / "users.db")
     register_email_verification_pages(app, user_repository)
+    register_registration_verification_pages(app, user_repository)
     register_registration_preview(app)
 
     journey_repository = SQLiteLearningJourneyRepository(database_dir / "journeys.db")

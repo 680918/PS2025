@@ -124,13 +124,62 @@ def render_verification_page(state, *, token="", csrf=""):
             "如果链接已经过期，请等待重新发送入口开放后申请新邮件。",
         ),
     }
+    return _render_confirmation_page(
+        state, copy, "/web/verify-email", "确认验证邮箱 →", token, csrf
+    )
+
+
+def render_registration_verification_page(state, *, token="", csrf=""):
+    copy = {
+        "confirm": (
+            "信",
+            "YOUR GROWTH STARTS HERE",
+            "确认邮箱，开启成长的第一步",
+            "如果你本人刚刚申请创建知行账户，请确认使用这个邮箱。确认后，我们会为你创建账户。",
+            "只有你本人发起的注册才应确认。如果这不是你的操作，直接关闭页面即可，不会因此创建账户。",
+        ),
+        "success": (
+            "✓",
+            "A NEW BEGINNING",
+            "账户已创建，邮箱已验证",
+            "你的账户已准备好，注册时设置的密码也已安全保存。期待与你一起，把每一次学习变成成长的积累。",
+            "登录功能正在准备中，目前还不能进入成长空间。本次确认不会自动登录，也不会修改你设置的密码。",
+        ),
+        "invalid": (
+            "!",
+            "LET’S TRY AGAIN",
+            "这个注册链接暂时无法使用",
+            "链接可能已过期、已使用或已被更新。请从最新的注册验证邮件重新打开。",
+            "如果之前已经看到开户成功，无需再次确认。重新申请和重发邮件入口仍在准备中，当前注册页仅供预览。",
+        ),
+        "retry": (
+            "↻",
+            "OPEN YOUR EMAIL",
+            "请重新打开注册验证邮件",
+            "确认页面已失效，或浏览器未保留确认信息。请从最新邮件重新打开链接，再点击确认。",
+            "如果打开了多个注册确认页面，请使用最近打开的那一个。注册链接仍按原有效期计算。",
+        ),
+        "unavailable": (
+            "…",
+            "PLEASE TRY LATER",
+            "账户创建暂时无法完成",
+            "服务暂时无法完成这次确认。请稍后重新打开邮件链接，再试一次。",
+            "本次操作没有完成账户创建。你可以在链接有效期内稍后重试，重新打开页面不会延长期限。",
+        ),
+    }
+    return _render_confirmation_page(
+        state, copy, "/web/verify-registration", "确认邮箱并创建账户 →", token, csrf
+    )
+
+
+def _render_confirmation_page(state, copy, path, button_label, token, csrf):
     symbol, eyebrow, heading, description, help_text = copy[state]
     if state == "confirm":
         action = (
-            '<form method="post" action="/web/verify-email" autocomplete="off">'
+            f'<form method="post" action="{escape(path, quote=True)}" autocomplete="off">'
             f'<input type="hidden" name="token" value="{escape(token, quote=True)}">'
             f'<input type="hidden" name="csrf" value="{escape(csrf, quote=True)}">'
-            '<button class="button button-primary button-full" type="submit">确认验证邮箱 →</button></form>'
+            f'<button class="button button-primary button-full" type="submit">{escape(button_label)}</button></form>'
         )
     elif state == "success":
         action = '<a class="button button-primary button-full" href="/web/login">查看登录页 →</a>'
