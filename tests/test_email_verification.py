@@ -353,7 +353,7 @@ def test_verification_does_not_enable_web_login_or_registration(account, tmp_pat
         response = client.post(
             path, data={"email": user.email, "token": token_from(message)}
         )
-        assert response.status_code == (503 if path.endswith("login") else 400)
+        assert response.status_code == (503 if path.endswith("login") else 403)
         assert "set-cookie" not in response.headers
         assert token_from(message) not in response.text
 

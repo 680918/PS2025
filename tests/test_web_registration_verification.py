@@ -400,9 +400,15 @@ def test_registration_form_stays_readonly_and_new_handlers_not_in_public_schema(
     account,
 ):
     repository, client = account
+    csrf = ConfirmationForm(client.get("/web/register").text).values["csrf"]
     response = client.post(
         "/web/auth/register",
-        data={"name": "测试者", "email": "preview@example.com", "password": PASSWORD},
+        data={
+            "name": "测试者",
+            "email": "preview@example.com",
+            "password": PASSWORD,
+            "csrf": csrf,
+        },
     )
     assert response.status_code == 200
     assert counts(repository) == (0, 0, 0, 0, 0)

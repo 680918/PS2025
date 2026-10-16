@@ -23,9 +23,10 @@ def render_public_page(page: str) -> str:
     return _render_layout(title, content, page)
 
 
-def render_registration_page(*, fields=None, errors=None, form_error=""):
+def render_registration_page(*, fields=None, errors=None, form_error="", csrf=""):
     fields, errors = fields or {}, errors or {}
     values = {
+        "csrf_value": escape(csrf, quote=True),
         "name_value": escape(fields.get("name", ""), quote=True),
         "email_value": escape(fields.get("email", ""), quote=True),
     }
@@ -72,6 +73,22 @@ def render_registration_waiting_page(email):
     )
     content = template.substitute(masked_email=escape(masked_registration_email(email)))
     return _render_layout("准备验证邮箱 · 知行成长教练", content, "register")
+
+
+def render_registration_security_retry_page():
+    heading = "请重新打开注册页面"
+    content = Template(
+        (_TEMPLATES / "verification.html").read_text(encoding="utf-8")
+    ).substitute(
+        step_label="注册填写",
+        symbol="↻",
+        eyebrow="LET’S START AGAIN",
+        heading=heading,
+        description="页面已过期，或浏览器未保留注册信息。请重新打开注册页，再填写并提交。",
+        help="为保护你的信息，本次没有继续处理填写内容，也没有创建账户或发送邮件。",
+        action='<a class="button button-primary button-full" href="/web/register">重新打开注册页 →</a>',
+    )
+    return _render_layout(f"{heading} · 知行成长教练", content, "register")
 
 
 def _render_layout(title, content, page=""):
@@ -187,6 +204,7 @@ def _render_confirmation_page(state, copy, path, button_label, token, csrf):
         action = '<a class="button button-outline button-full" href="/web/register">查看注册页 →</a>'
     template = Template((_TEMPLATES / "verification.html").read_text(encoding="utf-8"))
     content = template.substitute(
+        step_label="邮箱验证",
         symbol=symbol,
         eyebrow=eyebrow,
         heading=heading,

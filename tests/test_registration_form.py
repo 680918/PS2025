@@ -5,6 +5,7 @@ from html.parser import HTMLParser
 import pytest
 from fastapi.testclient import TestClient
 
+from api import registration_pages as pages
 from api.app import create_app
 from security.auth import initialize_user_password, verify_user_password
 from security.registration_validation import validate_registration_fields
@@ -23,6 +24,19 @@ class Elements(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         self.elements.append((tag, dict(attrs)))
+
+
+def form_token(html):
+    return next(
+        a["value"]
+        for tag, a in Elements(html).elements
+        if tag == "input" and a.get("name") == "csrf"
+    )
+
+
+def submit(client, *, data):
+    csrf = form_token(client.get("/web/register").text)
+    return client.post("/web/auth/register", data={**data, "csrf": csrf})
 
 
 @pytest.fixture
@@ -75,8 +89,8 @@ def test_valid_submission_goes_to_honest_masked_waiting_page_without_writes(
     before = {
         p: hashlib.sha256(p.read_bytes()).hexdigest() for p in tmp_path.rglob("*.db")
     }
-    response = client.post(
-        "/web/auth/register",
+    response = submit(
+        client,
         data={"name": name, "email": "learner@example.com", "password": PASSWORD},
     )
     assert response.status_code == 200
@@ -108,8 +122,8 @@ def test_valid_submission_goes_to_honest_masked_waiting_page_without_writes(
     ],
 )
 def test_password_policy_matches_existing_hashing_input_limits(client, password, valid):
-    response = client.post(
-        "/web/auth/register",
+    response = submit(
+        client,
         data={"name": "测试", "email": "learner@example.com", "password": password},
     )
     assert response.status_code == (200 if valid else 400)
@@ -146,8 +160,8 @@ def test_password_policy_matches_existing_hashing_input_limits(client, password,
 def test_invalid_addresses_get_field_errors_without_mail_or_password_echo(
     client, email
 ):
-    response = client.post(
-        "/web/auth/register",
+    response = submit(
+        client,
         data={"name": "测试", "email": email, "password": PASSWORD},
     )
     assert response.status_code == 400
@@ -158,8 +172,8 @@ def test_invalid_addresses_get_field_errors_without_mail_or_password_echo(
 def test_name_and_email_are_retained_escaped_on_password_error(client):
     name = '<img src=x onerror="alert(1)">'
     email = "learner@example.com"
-    response = client.post(
-        "/web/auth/register",
+    response = submit(
+        client,
         data={"name": name, "email": email, "password": "short-secret"},
     )
     assert response.status_code == 400
@@ -178,8 +192,8 @@ def test_name_and_email_are_retained_escaped_on_password_error(client):
 
 @pytest.mark.parametrize("name", ["名" * 41, "name\nnewline", "name\x00control"])
 def test_name_length_and_control_characters_are_checked(client, name):
-    response = client.post(
-        "/web/auth/register",
+    response = submit(
+        client,
         data={"name": name, "email": "learner@example.com", "password": PASSWORD},
     )
     assert response.status_code == 400
@@ -201,6 +215,7 @@ def test_name_length_and_control_characters_are_checked(client, name):
     ],
 )
 def test_malformed_and_large_requests_are_not_echoed(client, body, kind):
+    client.get("/web/register")
     response = client.post(
         "/web/auth/register", content=body, headers={"Content-Type": kind}
     )
@@ -211,7 +226,7 @@ def test_malformed_and_large_requests_are_not_echoed(client, body, kind):
 
 
 def test_missing_inputs_are_form_errors_instead_of_api_validation_details(client):
-    response = client.post("/web/auth/register", data={"name": "测试"})
+    response = submit(client, data={"name": "测试"})
     assert response.status_code == 400
     assert "register-email-error" in response.text
     assert "register-password-error" in response.text
@@ -224,8 +239,8 @@ def test_preview_cannot_change_an_existing_password_or_verification(client, tmp_
     repository.save(user)
     initialize_user_password(repository, user.user_id, PASSWORD)
     original_hash = repository.get_password_hash(user.user_id)
-    response = client.post(
-        "/web/auth/register",
+    response = submit(
+        client,
         data={
             "name": "不同的称呼",
             "email": user.email,
@@ -242,8 +257,8 @@ def test_preview_cannot_change_an_existing_password_or_verification(client, tmp_
 
 def test_responses_are_private_and_have_only_local_navigation(client):
     for password in [PASSWORD, "short"]:
-        response = client.post(
-            "/web/auth/register",
+        response = submit(
+            client,
             data={"email": "learner@example.com", "password": password},
         )
         assert response.headers["cache-control"] == "no-store"
@@ -264,3 +279,309 @@ def test_validation_result_never_carries_password_and_normalizes_editable_fields
     )
     assert checked == {"name": "测试", "email": "learner@example.com", "errors": {}}
     assert PASSWORD not in repr(checked)
+
+
+def test_get_sets_private_scoped_form_context_and_keeps_it_stable(client, monkeypatch):
+    first = client.get("/web/register")
+    csrf = form_token(first.text)
+    assert len(csrf) == 43
+    cookie = first.headers["set-cookie"]
+    for flag in ("HttpOnly", "SameSite=strict", "Path=/web", "Max-Age=1800"):
+        assert flag in cookie
+    assert "Secure" not in cookie  # TestClient defaults to local HTTP.
+    assert first.headers["cache-control"] == "no-store"
+    assert first.headers["referrer-policy"] == "no-referrer"
+    assert "frame-ancestors 'none'" in first.headers["content-security-policy"]
+    before = client.cookies.get(pages._COOKIE)
+    later = pages.time() + 60
+    monkeypatch.setattr(pages, "time", lambda: later)
+    second = client.get("/web/register")
+    assert form_token(second.text) == csrf
+    assert client.cookies.get(pages._COOKIE) == before
+    assert "set-cookie" not in second.headers
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing-cookie",
+        "tampered-cookie",
+        "missing-csrf",
+        "wrong-csrf",
+        "non-ascii-csrf",
+        "expired",
+        "other-browser",
+    ],
+)
+def test_csrf_failures_are_generic_and_rejected_before_field_validation(
+    client, tmp_path, monkeypatch, case
+):
+    token = form_token(client.get("/web/register").text)
+    data = {
+        "csrf": token,
+        "name": "private-name-only",
+        "email": "private-only@example.com",
+        "password": "private-password-only",
+    }
+    if case == "missing-cookie":
+        client.cookies.clear()
+    elif case == "tampered-cookie":
+        original = client.cookies.get(pages._COOKIE)
+        client.cookies.clear()
+        client.cookies.set(
+            pages._COOKIE, original[:-1] + ("1" if original[-1] != "1" else "2")
+        )
+    elif case == "missing-csrf":
+        data.pop("csrf")
+    elif case == "wrong-csrf":
+        data["csrf"] = "a" * 43
+    elif case == "non-ascii-csrf":
+        data["csrf"] = "字" * 43
+    elif case == "expired":
+        later = pages.time() + 1800
+        monkeypatch.setattr(pages, "time", lambda: later)
+    elif case == "other-browser":
+        original = client.cookies.get(pages._COOKIE)
+        client.cookies.clear()
+        client.get("/web/register")
+        assert client.cookies.get(pages._COOKIE) != original
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("rejected form must not validate submitted credentials")
+
+    monkeypatch.setattr(pages, "validate_registration_fields", forbidden)
+    before = {
+        p: hashlib.sha256(p.read_bytes()).hexdigest() for p in tmp_path.rglob("*.db")
+    }
+    response = client.post("/web/auth/register", data=data)
+    assert response.status_code == 403
+    assert "请重新打开注册页面" in response.text
+    assert "重新打开注册页 →" in response.text
+    assert "<form" not in response.text
+    assert "set-cookie" not in response.headers
+    for value in (
+        token,
+        "private-name-only",
+        "private-only@example.com",
+        "private-password-only",
+    ):
+        assert value not in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert all(
+        hashlib.sha256(p.read_bytes()).hexdigest() == digest
+        for p, digest in before.items()
+    )
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Origin": "https://other.example"},
+        {"Origin": "http://testserver:81"},
+        {"Origin": "https://testserver"},
+        {"Sec-Fetch-Site": "cross-site"},
+        {"Origin": "null", "Sec-Fetch-Site": "cross-site"},
+    ],
+)
+def test_cross_site_submission_rejected_even_with_valid_form(client, headers):
+    csrf = form_token(client.get("/web/register").text)
+    response = client.post(
+        "/web/auth/register",
+        data={"csrf": csrf, "email": "learner@example.com", "password": PASSWORD},
+        headers=headers,
+    )
+    assert response.status_code == 403
+    assert "请重新打开注册页面" in response.text
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"Origin": "null"},
+        {"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"},
+    ],
+)
+def test_same_site_and_private_browser_origin_require_and_accept_valid_form(
+    client, headers
+):
+    csrf = form_token(client.get("/web/register").text)
+    response = client.post(
+        "/web/auth/register",
+        data={"csrf": csrf, "email": "learner@example.com", "password": PASSWORD},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert "无需等待邮件" in response.text
+    assert set(client.cookies.keys()) == {pages._COOKIE}
+
+
+def test_expired_page_can_reopen_and_submit_without_extending_old_context(
+    client, monkeypatch
+):
+    first = form_token(client.get("/web/register").text)
+    original = client.cookies.get(pages._COOKIE)
+    later = pages.time() + 1800
+    monkeypatch.setattr(pages, "time", lambda: later)
+    assert client.post("/web/auth/register", data={"csrf": first}).status_code == 403
+    reopened = client.get("/web/register")
+    assert "set-cookie" in reopened.headers
+    new = form_token(reopened.text)
+    assert new != first
+    assert client.cookies.get(pages._COOKIE) != original
+    assert client.post("/web/auth/register", data={"csrf": first}).status_code == 403
+    assert (
+        client.post(
+            "/web/auth/register",
+            data={"csrf": new, "email": "learner@example.com", "password": PASSWORD},
+        ).status_code
+        == 200
+    )
+
+
+def test_multiple_tabs_and_field_error_correction_keep_valid_form(client):
+    first = form_token(client.get("/web/register").text)
+    assert form_token(client.get("/web/register").text) == first
+    error = client.post(
+        "/web/auth/register",
+        data={
+            "csrf": first,
+            "name": "称呼",
+            "email": "learner@example.com",
+            "password": "short-secret",
+        },
+    )
+    assert error.status_code == 400
+    assert "register-password-error" in error.text
+    assert "short-secret" not in error.text
+    assert form_token(error.text) == first
+    assert "set-cookie" not in error.headers
+    valid = client.post(
+        "/web/auth/register",
+        data={
+            "csrf": first,
+            "name": "称呼",
+            "email": "learner@example.com",
+            "password": PASSWORD,
+        },
+    )
+    assert valid.status_code == 200
+    assert "本次尚未发送邮件，也未创建账户" in valid.text
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "csrf={token}&csrf={token}",
+        "csrf={token}&unexpected=1",
+        "csrf={token}&name=a&name=b",
+        "csrf={token}&email=x&password=x&name=x&extra=x",
+    ],
+)
+def test_duplicate_and_extra_fields_are_rejected_with_valid_cookie(client, body):
+    csrf = form_token(client.get("/web/register").text)
+    response = client.post(
+        "/web/auth/register",
+        content=body.format(token=csrf),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == 400
+    assert "无法读取" in response.text
+    assert form_token(response.text) == csrf
+
+
+@pytest.mark.parametrize(
+    "cookie",
+    [
+        "",
+        "bad",
+        "x" * 201,
+        "a.b.c",
+        "a" * 43 + ".abcdefghij." + "b" * 64,
+        "a" * 43 + ".%EF%BC%91." + "b" * 64,
+        "a" * 43 + ".9999999999." + "b" * 64,
+    ],
+)
+def test_bad_cookie_never_crashes_or_is_accepted_and_get_recovers(client, cookie):
+    client.cookies.set(pages._COOKIE, cookie)
+    assert client.post("/web/auth/register", data={"csrf": "a" * 43}).status_code == 403
+    client.cookies.clear()
+    client.cookies.set(pages._COOKIE, cookie)
+    reopened = client.get("/web/register")
+    assert reopened.status_code == 200
+    assert "set-cookie" in reopened.headers
+    assert len(form_token(reopened.text)) == 43
+
+
+def test_restart_requires_new_form_but_writes_nothing(client, tmp_path):
+    csrf = form_token(client.get("/web/register").text)
+    cookie = client.cookies.get(pages._COOKIE)
+    app = create_app(
+        tmp_path,
+        curriculum_generator=None,
+        completion_commentary_generator=None,
+        learning_feedback_extractor=None,
+    )
+    with TestClient(app) as restarted:
+        restarted.cookies.set(pages._COOKIE, cookie)
+        assert (
+            restarted.post("/web/auth/register", data={"csrf": csrf}).status_code == 403
+        )
+        restarted.cookies.clear()
+        assert (
+            submit(
+                restarted, data={"email": "learner@example.com", "password": PASSWORD}
+            ).status_code
+            == 200
+        )
+    repository = SQLiteUserRepository(tmp_path / "users.db")
+    assert repository.get_by_email("learner@example.com") is None
+
+
+def test_https_uses_secure_cookie_and_success_is_not_login(tmp_path):
+    app = create_app(
+        tmp_path,
+        curriculum_generator=None,
+        completion_commentary_generator=None,
+        learning_feedback_extractor=None,
+    )
+    with TestClient(app, base_url="https://coach.example.com") as browser:
+        page = browser.get("/web/register")
+        assert "Secure" in page.headers["set-cookie"]
+        assert (
+            browser.post(
+                "/web/auth/register",
+                data={
+                    "csrf": form_token(page.text),
+                    "email": "learner@example.com",
+                    "password": PASSWORD,
+                },
+                headers={"Origin": "https://coach.example.com"},
+            ).status_code
+            == 200
+        )
+        assert set(browser.cookies.keys()) == {pages._COOKIE}
+
+
+def test_email_confirmation_cookie_cannot_be_renamed_to_registration_form_context(
+    client,
+):
+    page = client.get("/web/verify-registration?token=" + "a" * 43)
+    inputs = {
+        a["name"]: a.get("value", "")
+        for tag, a in Elements(page.text).elements
+        if tag == "input"
+    }
+    original = client.cookies.get("coach_registration_confirmation")
+    client.cookies.clear()
+    client.cookies.set(pages._COOKIE, original)
+    result = client.post(
+        "/web/auth/register",
+        data={
+            "csrf": inputs["csrf"],
+            "email": "learner@example.com",
+            "password": PASSWORD,
+        },
+    )
+    assert result.status_code == 403

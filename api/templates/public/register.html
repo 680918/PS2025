@@ -16,6 +16,7 @@
         <p class="auth-intro">已有账户？<a class="text-link" href="/web/login">去登录</a></p>
         $error_summary
         <form method="post" action="/web/auth/register" aria-describedby="auth-availability">
+            <input type="hidden" name="csrf" value="$csrf_value">
             <fieldset>
                 <legend class="visually-hidden">邮箱与密码注册</legend>
                 <label for="register-name">如何称呼你<span class="optional-label">选填</span></label>

@@ -326,10 +326,6 @@ def create_app(
     def web_login_page():
         return render_public_page("login")
 
-    @app.get("/web/register", response_class=HTMLResponse)
-    def web_register_page():
-        return render_public_page("register")
-
     @app.post(
         "/web/auth/login",
         response_class=HTMLResponse,

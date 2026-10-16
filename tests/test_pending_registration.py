@@ -1,3 +1,4 @@
+import re
 import sqlite3
 import smtplib
 from concurrent.futures import ThreadPoolExecutor
@@ -344,11 +345,14 @@ def test_web_form_remains_read_only_and_cannot_replace_internal_draft(
         learning_feedback_extractor=None,
     )
     with TestClient(app) as client:
+        form = client.get("/web/register")
+        csrf = re.search(r'name="csrf" value="([A-Za-z0-9_-]{43})"', form.text).group(1)
         response = client.post(
             "/web/auth/register",
             data={
                 "email": "learner@example.com",
                 "password": "a different registration password",
+                "csrf": csrf,
             },
         )
         assert response.status_code == 200

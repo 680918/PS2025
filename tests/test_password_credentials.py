@@ -168,9 +168,10 @@ def test_new_credential_primitives_do_not_open_web_registration_or_login(
         response = client.post(
             path, data={"email": user.email, "password": "a quiet place to learn"}
         )
-        assert response.status_code == (503 if path.endswith("login") else 200)
+        # Direct registration POST now also requires the signed form context.
+        assert response.status_code == (503 if path.endswith("login") else 403)
         if path.endswith("register"):
-            assert "尚未发送邮件" in response.text
+            assert "请重新打开注册页面" in response.text
             assert repository.get_by_email(user.email).user_id == user.user_id
         assert "set-cookie" not in response.headers
         assert "a quiet place to learn" not in response.text

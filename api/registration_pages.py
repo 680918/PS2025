@@ -1,14 +1,27 @@
 """Registration form preview: bounded, read-only validation with honest status."""
 
+import hashlib
+import hmac
+import re
+import secrets
+from time import time
 from urllib.parse import parse_qs
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 
-from api.public_pages import render_registration_page, render_registration_waiting_page
+from api.public_pages import (
+    render_registration_page,
+    render_registration_security_retry_page,
+    render_registration_waiting_page,
+)
 from security.registration_validation import validate_registration_fields
 
 
+_COOKIE = "coach_registration_form"
+_COOKIE_PATH = "/web"
+_FORM_LIFETIME = 1800
+_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
 _HEADERS = {
     "Cache-Control": "no-store",
     "Referrer-Policy": "no-referrer",
@@ -22,26 +35,93 @@ _HEADERS = {
 
 
 def register_registration_preview(app):
-    def form_error():
+    # Single-process local development. Restarting requires reopening the form.
+    signing_key = secrets.token_bytes(32)
+
+    def signature(nonce, expires):
+        payload = f"registration-form.{nonce}.{expires}".encode("ascii")
+        return hmac.new(signing_key, payload, hashlib.sha256).hexdigest()
+
+    def browser_context(request):
+        cookie = request.cookies.get(_COOKIE, "")
+        if len(cookie) > 200:
+            return None
+        parts = cookie.split(".")
+        if len(parts) != 3:
+            return None
+        nonce, expires, signed = parts
+        if (
+            _TOKEN.fullmatch(nonce) is None
+            or not re.fullmatch(r"[0-9]{10}", expires)
+            or not re.fullmatch(r"[0-9a-f]{64}", signed)
+            or not hmac.compare_digest(signature(nonce, expires), signed)
+            or not int(time()) < int(expires) <= int(time()) + _FORM_LIFETIME
+        ):
+            return None
+        return nonce
+
+    def form_response(csrf, *, code=200, **fields):
         return HTMLResponse(
-            render_registration_page(form_error="填写内容无法读取，请重新填写后提交。"),
-            status_code=400,
+            render_registration_page(csrf=csrf, **fields),
+            status_code=code,
             headers=_HEADERS,
         )
+
+    def form_error(csrf):
+        return form_response(
+            csrf, code=400, form_error="填写内容无法读取，请重新填写后提交。"
+        )
+
+    def security_retry():
+        return HTMLResponse(
+            render_registration_security_retry_page(),
+            status_code=403,
+            headers=_HEADERS,
+        )
+
+    @app.get("/web/register", response_class=HTMLResponse, include_in_schema=False)
+    def registration_form(request: Request):
+        csrf = browser_context(request)
+        if csrf is not None:
+            # Keep valid contexts stable so opening another tab does not erase
+            # the form someone is already filling. GET does not extend expiry.
+            return form_response(csrf)
+        csrf = secrets.token_urlsafe(32)
+        expires = str(int(time()) + _FORM_LIFETIME)
+        page = form_response(csrf)
+        page.set_cookie(
+            _COOKIE,
+            f"{csrf}.{expires}.{signature(csrf, expires)}",
+            max_age=_FORM_LIFETIME,
+            path=_COOKIE_PATH,
+            secure=request.url.scheme == "https",
+            httponly=True,
+            samesite="strict",
+        )
+        return page
 
     @app.post(
         "/web/auth/register", response_class=HTMLResponse, include_in_schema=False
     )
     async def validate_registration(request: Request):
+        origin = request.headers.get("origin")
+        if request.headers.get("sec-fetch-site") == "cross-site" or (
+            origin not in {None, "null"}
+            and origin != f"{request.url.scheme}://{request.url.netloc}"
+        ):
+            return security_retry()
+        csrf = browser_context(request)
+        if csrf is None:
+            return security_retry()
         if (
             request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
             != "application/x-www-form-urlencoded"
         ):
-            return form_error()
+            return form_error(csrf)
         body = bytearray()
         async for chunk in request.stream():
             if len(body) + len(chunk) > 8192:
-                return form_error()
+                return form_error(csrf)
             body.extend(chunk)
         try:
             fields = parse_qs(
@@ -50,24 +130,27 @@ def register_registration_preview(app):
                 strict_parsing=True,
                 encoding="utf-8",
                 errors="strict",
-                max_num_fields=3,
+                max_num_fields=4,
             )
         except (ValueError, UnicodeError):
-            return form_error()
-        if not set(fields) <= {"name", "email", "password"} or any(
+            return form_error(csrf)
+        if not set(fields) <= {"name", "email", "password", "csrf"} or any(
             len(values) != 1 for values in fields.values()
         ):
-            return form_error()
+            return form_error(csrf)
+        submitted_csrf = fields.get("csrf", [""])[0]
+        if _TOKEN.fullmatch(submitted_csrf) is None or not hmac.compare_digest(
+            csrf, submitted_csrf
+        ):
+            return security_retry()
         checked = validate_registration_fields(
             fields.get("name", [""])[0],
             fields.get("email", [""])[0],
             fields.get("password", [""])[0],
         )
         if checked["errors"]:
-            return HTMLResponse(
-                render_registration_page(fields=checked, errors=checked["errors"]),
-                status_code=400,
-                headers=_HEADERS,
+            return form_response(
+                csrf, fields=checked, errors=checked["errors"], code=400
             )
         return HTMLResponse(
             render_registration_waiting_page(checked["email"]), headers=_HEADERS
