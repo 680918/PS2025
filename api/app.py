@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from api.public_pages import PUBLIC_STATIC_DIRECTORY, render_public_page
 from api.email_verification_pages import register_email_verification_pages
+from api.registration_pages import register_registration_preview
 from learning.session_service import (
     update_learning_session_feedback,
     get_or_create_learning_session,
@@ -104,6 +105,7 @@ def create_app(
 
     user_repository = SQLiteUserRepository(database_dir / "users.db")
     register_email_verification_pages(app, user_repository)
+    register_registration_preview(app)
 
     journey_repository = SQLiteLearningJourneyRepository(database_dir / "journeys.db")
 
@@ -333,15 +335,6 @@ def create_app(
     def web_login_unavailable():
         # Do not read credentials or imply a successful login before auth exists.
         return render_public_page("login")
-
-    @app.post(
-        "/web/auth/register",
-        response_class=HTMLResponse,
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        include_in_schema=False,
-    )
-    def web_email_register_unavailable():
-        return render_public_page("register")
 
     @app.post(
         "/web/register",

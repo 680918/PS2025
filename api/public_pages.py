@@ -16,9 +16,62 @@ _TITLES = {
 
 def render_public_page(page: str) -> str:
     """Render only known, local content; never interpolate submitted credentials."""
+    if page == "register":
+        return render_registration_page()
     title = _TITLES[page]
     content = (_TEMPLATES / f"{page}.html").read_text(encoding="utf-8")
     return _render_layout(title, content, page)
+
+
+def render_registration_page(*, fields=None, errors=None, form_error=""):
+    fields, errors = fields or {}, errors or {}
+    values = {
+        "name_value": escape(fields.get("name", ""), quote=True),
+        "email_value": escape(fields.get("email", ""), quote=True),
+    }
+    for field in ("name", "email", "password"):
+        message = errors.get(field)
+        values[f"{field}_error"] = (
+            f'<p id="register-{field}-error" class="field-error">{escape(message)}</p>'
+            if message
+            else ""
+        )
+        values[f"{field}_error_attributes"] = (
+            f'aria-invalid="true" aria-describedby="register-{field}-error"'
+            if message and field != "password"
+            else 'aria-invalid="true"'
+            if message
+            else ""
+        )
+    values["password_error_description"] = (
+        " register-password-error" if "password" in errors else ""
+    )
+    summary = ""
+    if errors or form_error:
+        summary = '<div class="form-error-summary" role="alert"><p>请调整后再继续</p>'
+        if form_error:
+            summary += f"<p>{escape(form_error)}</p>"
+        else:
+            summary += "<p>请查看下方提示，密码需要重新填写。</p><ul>"
+            for field, message in errors.items():
+                summary += f'<li><a href="#register-{field}">{escape(message)}</a></li>'
+            summary += "</ul>"
+        summary += "</div>"
+    values["error_summary"] = summary
+    template = Template((_TEMPLATES / "register.html").read_text(encoding="utf-8"))
+    return _render_layout(
+        _TITLES["register"], template.substitute(**values), "register"
+    )
+
+
+def render_registration_waiting_page(email):
+    from security.registration_validation import masked_registration_email
+
+    template = Template(
+        (_TEMPLATES / "registration_waiting.html").read_text(encoding="utf-8")
+    )
+    content = template.substitute(masked_email=escape(masked_registration_email(email)))
+    return _render_layout("准备验证邮箱 · 知行成长教练", content, "register")
 
 
 def _render_layout(title, content, page=""):

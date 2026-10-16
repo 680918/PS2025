@@ -56,7 +56,7 @@ def test_public_pages_have_working_local_navigation_and_styles(client, path):
 
 @pytest.mark.parametrize(
     ("path", "autocomplete"),
-    [("/web/login", "current-password"), ("/web/register", "new-password")],
+    [("/web/login", "current-password")],
 )
 def test_email_fields_and_submit_are_disabled_until_auth_is_ready(
     client, path, autocomplete
@@ -73,7 +73,7 @@ def test_email_fields_and_submit_are_disabled_until_auth_is_ready(
     assert 'type="tel"' not in response.text
 
 
-@pytest.mark.parametrize("path", ["/web/auth/login", "/web/auth/register"])
+@pytest.mark.parametrize("path", ["/web/auth/login"])
 def test_unavailable_auth_never_creates_account_or_returns_credentials(
     client, tmp_path, path
 ):
