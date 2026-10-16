@@ -116,6 +116,15 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .skip-link { position: absolute; top: 8px; left: 8px; padding: 8px 14px; background: var(--paper); border: 1px solid var(--green); transform: translateY(-150%); z-index: 2; }
 .skip-link:focus { transform: none; }
+.verification-layout { width: 100%; max-width: 590px; margin: 0 auto; padding: 50px 0 58px; }
+.verification-card { padding: 32px 38px 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); }
+.verification-topline { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.verification-step { color: var(--muted); font-size: 12px; }
+.verification-symbol { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; background: var(--tint); color: var(--green); font-size: 23px; margin: 8px 0 24px; }
+.verification-card h1 { font-size: clamp(23px, 3vw, 28px); font-weight: 500; margin: 10px 0 16px; line-height: 1.5; }
+.verification-description { font-size: 14px; color: var(--muted); }
+.verification-help { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 24px; color: var(--muted); font-size: 12px; }
+.verification-caption { text-align: center; font-size: 12px; color: var(--muted); margin-top: 22px; }
 @media (max-width: 1000px) {
     .site-shell { padding: 0 30px; }
     .hero { gap: 30px; }
@@ -158,6 +167,8 @@ input::placeholder { color: var(--muted); opacity: 1; }
     .section-heading h2 { font-size: 21px; }
     .auth-card { padding: 24px 20px; }
     .auth-card h2 { font-size: 21px; }
+    .verification-layout { padding: 30px 0 36px; }
+    .verification-card { padding: 24px 20px 18px; }
     .preview-notice { align-items: baseline; }
     .site-footer { display: grid; gap: 5px; }
 }

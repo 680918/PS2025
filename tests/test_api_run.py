@@ -105,7 +105,8 @@ def test_start_should_serve_homepage_without_api_key(tmp_path, monkeypatch, caps
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", None)
     observed = {}
 
-    def inspect_server(app, host, port, log_level):
+    def inspect_server(app, host, port, log_level, access_log):
+        assert access_log is False
         observed.update(host=host, port=port)
         response = TestClient(app).get("/")
         assert response.status_code == 200

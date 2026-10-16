@@ -36,3 +36,6 @@ data/conversations.db
 # Per-user runtime databases
 data/memory/
 data/memory_reliability/
+
+# Private local configuration backups
+/.env.example.local-backup*
