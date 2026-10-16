@@ -76,17 +76,36 @@ def render_registration_waiting_page(email):
 
 
 def render_registration_security_retry_page():
-    heading = "请重新打开注册页面"
+    return _render_registration_notice(
+        symbol="↻",
+        heading="请重新打开注册页面",
+        description="页面已过期，或浏览器未保留注册信息。请重新打开注册页，再填写并提交。",
+        help_text="为保护你的信息，本次没有继续处理填写内容，也没有创建账户或发送邮件。",
+        button="重新打开注册页 →",
+    )
+
+
+def render_registration_rate_limited_page(wait_seconds):
+    return _render_registration_notice(
+        symbol="…",
+        heading="操作有些频繁，请稍等一下",
+        description=f"请在 {wait_seconds} 秒后再打开注册页，继续填写。你可以按自己的节奏慢慢来。",
+        help_text="本次操作没有继续处理，也没有创建账户或发送邮件。稍后重试时，密码需要重新填写。",
+        button="稍后返回注册页 →",
+    )
+
+
+def _render_registration_notice(*, symbol, heading, description, help_text, button):
     content = Template(
         (_TEMPLATES / "verification.html").read_text(encoding="utf-8")
     ).substitute(
         step_label="注册填写",
-        symbol="↻",
+        symbol=symbol,
         eyebrow="LET’S START AGAIN",
         heading=heading,
-        description="页面已过期，或浏览器未保留注册信息。请重新打开注册页，再填写并提交。",
-        help="为保护你的信息，本次没有继续处理填写内容，也没有创建账户或发送邮件。",
-        action='<a class="button button-primary button-full" href="/web/register">重新打开注册页 →</a>',
+        description=description,
+        help=help_text,
+        action=f'<a class="button button-primary button-full" href="/web/register">{escape(button)}</a>',
     )
     return _render_layout(f"{heading} · 知行成长教练", content, "register")
 

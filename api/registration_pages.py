@@ -12,15 +12,21 @@ from fastapi.responses import HTMLResponse
 
 from api.public_pages import (
     render_registration_page,
+    render_registration_rate_limited_page,
     render_registration_security_retry_page,
     render_registration_waiting_page,
 )
 from security.registration_validation import validate_registration_fields
+from security.registration_rate_limit import RegistrationRateLimiter
 
 
 _COOKIE = "coach_registration_form"
 _COOKIE_PATH = "/web"
 _FORM_LIFETIME = 1800
+_GET_PER_CLIENT = 30
+_GET_TOTAL = 240
+_POST_PER_CLIENT = 10
+_POST_TOTAL = 120
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
 _HEADERS = {
     "Cache-Control": "no-store",
@@ -37,6 +43,25 @@ _HEADERS = {
 def register_registration_preview(app):
     # Single-process local development. Restarting requires reopening the form.
     signing_key = secrets.token_bytes(32)
+    page_limit = RegistrationRateLimiter(
+        per_client_limit=_GET_PER_CLIENT, total_limit=_GET_TOTAL
+    )
+    submit_limit = RegistrationRateLimiter(
+        per_client_limit=_POST_PER_CLIENT, total_limit=_POST_TOTAL
+    )
+
+    def limited_response(request, limiter):
+        # Use the transport peer, never arbitrary Forwarded/X-Forwarded-For
+        # headers or a resettable browser cookie. Local runner disables proxies.
+        client_key = request.client.host if request.client else "unknown"
+        wait = limiter.admit(client_key)
+        if wait:
+            return HTMLResponse(
+                render_registration_rate_limited_page(wait),
+                status_code=429,
+                headers={**_HEADERS, "Retry-After": str(wait)},
+            )
+        return None
 
     def signature(nonce, expires):
         payload = f"registration-form.{nonce}.{expires}".encode("ascii")
@@ -81,6 +106,9 @@ def register_registration_preview(app):
 
     @app.get("/web/register", response_class=HTMLResponse, include_in_schema=False)
     def registration_form(request: Request):
+        limited = limited_response(request, page_limit)
+        if limited is not None:
+            return limited
         csrf = browser_context(request)
         if csrf is not None:
             # Keep valid contexts stable so opening another tab does not erase
@@ -104,6 +132,10 @@ def register_registration_preview(app):
         "/web/auth/register", response_class=HTMLResponse, include_in_schema=False
     )
     async def validate_registration(request: Request):
+        # Count all attempts before parsing bodies or checking submitted fields.
+        limited = limited_response(request, submit_limit)
+        if limited is not None:
+            return limited
         origin = request.headers.get("origin")
         if request.headers.get("sec-fetch-site") == "cross-site" or (
             origin not in {None, "null"}

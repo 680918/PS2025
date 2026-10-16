@@ -83,7 +83,12 @@ def main(argv=None):
         # Query strings contain one-time verification links. Keep them out of
         # access logs; startup and application error logs remain available.
         uvicorn.run(
-            app, host="127.0.0.1", port=args.port, log_level="info", access_log=False
+            app,
+            host="127.0.0.1",
+            port=args.port,
+            log_level="info",
+            access_log=False,
+            proxy_headers=False,
         )
     except SystemExit as error:
         if error.code:
