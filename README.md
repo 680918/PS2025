@@ -2,6 +2,21 @@
 
 长期学习陪伴与个人知识积累工具。CI protected by GitHub Actions.
 
+## 最新入口：账户与持续对话
+
+统一对话、当前学习主题、讨论进度和“继续上次学习”已接入独立本机账户空间。模拟体验：
+
+```powershell
+Set-Location 'D:\Personal-Growth-Coach'
+python -m api.coach_run --simulate
+```
+
+打开 <http://127.0.0.1:8784/web/register>。模拟邮件从 <http://127.0.0.1:8784/web/trial-mailbox> 确认。模拟 AI 不收费、不调用外部服务，记录保留。真实本人注册和 AI 体验使用 `python -m api.coach_run --register --ai`，之后使用 `python -m api.coach_run --ai`；需要本机已有 AI 配置，仅发送时调用计费服务。此前临时工具的账户不会迁移，需要在持续数据空间注册一次。
+
+聊天、主题学习共用一个输入框；转题不清除学习位置。当前未接通资料上传、资料引用和知识库保存，页面如实标识。账户数据、对话均按用户隔离且保存在本机，默认数据目录已加入 Git 忽略。详见 [统一对话与启动说明](docs/coach-dialogue.md)。本步自动检验使用假 AI，真实 AI 回复质量仍需实际体验；尚未公开部署。
+
+**下方 `api.run` 是保留的旧开发入口，其禁用登录与旧学习页面描述不适用于以上新入口。**
+
 ## 启动网页
 
 使用 Python 3.12。下面以本机的项目目录为例；如果项目放在其他位置，请替换路径。

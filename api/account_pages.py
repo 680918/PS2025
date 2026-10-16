@@ -14,10 +14,11 @@ from time import time
 from urllib.parse import parse_qs
 
 from fastapi import Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.public_pages import _render_layout
+from coach.dialogue import send_dialogue
 from security.login_sessions import (
     SESSION_LIFETIME,
     sign_in,
@@ -39,6 +40,10 @@ _HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Content-Security-Policy": "default-src 'none'; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+}
+_DIALOGUE_HEADERS = {
+    **_HEADERS,
+    "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
 }
 
 
@@ -77,13 +82,23 @@ def _clear(response, name, request):
     )
 
 
-def register_account_pages(app, repository):
+def register_account_pages(
+    app,
+    repository,
+    *,
+    dialogue_repository=None,
+    dialogue_responder=None,
+    dialogue_label="",
+):
     key = secrets.token_bytes(32)
     # Do comparable Argon2 work for unknown addresses and legacy empty credentials.
     dummy_hash = hash_password(secrets.token_urlsafe(32))
     slots = BoundedSemaphore(2)
     submit_limit = RegistrationRateLimiter(per_client_limit=5, total_limit=50)
     view_limit = RegistrationRateLimiter(per_client_limit=60, total_limit=600)
+    dialogue_limit = RegistrationRateLimiter(per_client_limit=8, total_limit=80)
+    history_limit = RegistrationRateLimiter(per_client_limit=30, total_limit=300)
+    dialogue_slots = BoundedSemaphore(2)
 
     def signature(purpose, value):
         return hmac.new(
@@ -134,7 +149,7 @@ def register_account_pages(app, repository):
             or origin == f"{request.url.scheme}://{request.url.netloc}"
         )
 
-    async def fields(request, expected):
+    async def fields(request, expected, *, max_bytes=4096):
         if (
             request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
             != "application/x-www-form-urlencoded"
@@ -142,7 +157,7 @@ def register_account_pages(app, repository):
             return None
         body = bytearray()
         async for chunk in request.stream():
-            if len(body) + len(chunk) > 4096:
+            if len(body) + len(chunk) > max_bytes:
                 return None
             body.extend(chunk)
         try:
@@ -261,17 +276,216 @@ def register_account_pages(app, repository):
             page = redirect("/web/login")
             _clear(page, SESSION_COOKIE, request)
             return page
+        try:
+            view = (
+                dialogue_repository.view(account.user_id)
+                if dialogue_repository
+                else {"turns": [], "learning": None}
+            )
+        except sqlite3.Error:
+            return dialogue_problem("暂时无法读取对话记录，请稍后再试。", 503)
+        dialogue_body, learning_panel = workspace(view, token)
         body = Template(
             (_TEMPLATES / "account_welcome.html").read_text(encoding="utf-8")
         ).substitute(
             name=escape(account.name),
             email=escape(masked_registration_email(account.email)),
             csrf=signature("logout", token),
+            dialogue_body=dialogue_body,
+            learning_panel=learning_panel,
         )
         return HTMLResponse(
             _render_layout("我的成长空间 · 知行", body, signed_in=True),
+            headers=_DIALOGUE_HEADERS,
+        )
+
+    @app.get("/web/coach/history", include_in_schema=False)
+    def history_page(request: Request):
+        def problem(text, status):
+            return JSONResponse({"error": text}, status_code=status, headers=_HEADERS)
+
+        if not same_origin(request):
+            return problem("无法核对请求来源。", 403)
+        try:
+            account = signed_in_account(repository, request.cookies.get(SESSION_COOKIE))
+        except sqlite3.Error:
+            return problem("暂时无法读取登录状态。", 503)
+        if account is None:
+            return problem("登录已过期，请重新登录。", 401)
+        parameters = request.query_params
+        before = parameters.get("before", "")
+        if (
+            len(parameters.multi_items()) != 1
+            or set(parameters) != {"before"}
+            or re.fullmatch(r"[1-9][0-9]{0,18}", before) is None
+            or int(before) > 9223372036854775807
+        ):
+            return problem("无法读取历史位置。", 400)
+        wait = history_limit.admit(request.client.host if request.client else "unknown")
+        if wait:
+            page = problem("加载较频繁，请稍后重试。", 429)
+            page.headers["Retry-After"] = str(wait)
+            return page
+        try:
+            page = dialogue_repository.history_page(account.user_id, before=int(before))
+        except sqlite3.Error:
+            return problem("暂时无法读取历史对话。", 503)
+        return JSONResponse(page, headers=_HEADERS)
+
+    def dialogue_form(token, action, content):
+        nonce = secrets.token_urlsafe(32)
+        csrf = signature("dialogue", f"{token}.{nonce}.{action}")
+        return f'<form method="post" action="/web/coach/message"><input type="hidden" name="nonce" value="{nonce}"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="action" value="{action}">{content}</form>'
+
+    def workspace(view, token):
+        enabled = dialogue_responder is not None
+        pending = any(turn["status"] == "pending" for turn in view["turns"])
+        history = []
+        for index, turn in enumerate(view["turns"]):
+            latest = ' id="latest-reply"' if index == len(view["turns"]) - 1 else ""
+            history.append(
+                f'<article class="dialogue-message dialogue-user"><p class="message-author">你</p><div class="message-content">{escape(turn["user_content"])}</div></article>'
+            )
+            if turn["status"] == "complete":
+                history.append(
+                    f'<article{latest} class="dialogue-message dialogue-coach"><p class="message-author">知行 · 成长教练</p><div class="message-content">{escape(turn["assistant_content"])}</div></article>'
+                )
+            elif turn["status"] == "pending":
+                history.append(
+                    f'<p{latest} class="dialogue-state" role="status">教练正在回复。请稍后刷新查看，刷新不会重复发送。</p>'
+                )
+            else:
+                history.append(
+                    f'<p{latest} class="dialogue-state" role="status">这次未能取得回复。你的消息已保留；需要时可以重新输入发送。系统不会自动重试。</p>'
+                )
+        disabled = "" if enabled and not pending else " disabled"
+        composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="3" maxlength="2000" required placeholder="说说你的想法，或输入：我想学习…" aria-describedby="conversation-availability"{disabled}></textarea><div class="conversation-tools"><button class="button button-outline" type="button" disabled>＋ 添加资料</button><button class="button button-primary" type="submit"{disabled}>发送</button></div></div>'
+        if enabled:
+            composer = dialogue_form(token, "message", composer)
+        learning = view["learning"]
+        mobile_context = (
+            '<div class="mobile-learning-context" aria-label="学习位置速览"><p>当前学习主题 · <strong>'
+            + escape(learning["topic"] if learning else "尚未开始")
+            + '</strong></p><p class="mobile-learning-progress">学习进度 · '
+            + escape(learning["progress"] if learning else "尚无学习记录")
+            + '</p><p>引用资料 · 未关联资料</p><a class="text-link" href="#learning-title">查看学习详情与续学按钮 →</a></div>'
+        )
+        body = (
+            mobile_context
+            + f'<div id="dialogue-history" class="dialogue-history" role="region" aria-label="聊天记录" tabindex="0"><div class="history-loader"><button id="history-load" class="history-load" type="button" data-before="{view.get("before") or ""}"{"" if view.get("before") else " hidden"}>加载更早的对话</button><p id="history-load-status" role="status"></p></div><div id="dialogue-messages">'
+            + "".join(history)
+            + '</div></div><div id="conversation-input">'
+            + composer
+            + '</div><script src="/static/coach-dialogue.js" defer></script>'
+        )
+        if learning:
+            details = f'<h3>{escape(learning["topic"])}</h3><dl><dt>学习进度 · 已讨论</dt><dd>{escape(learning["progress"])}</dd><dt>下一步</dt><dd>{escape(learning["next_step"])}</dd></dl><p class="learning-record-note">由教练根据对话整理，供你核对；不代表已经掌握。</p>'
+        else:
+            details = "<h3>还没有开始主题学习</h3><p>在对话中说“我想学习……”即可开始。教练会在讨论后整理学习位置。</p><dl><dt>学习进度</dt><dd>尚无学习记录</dd><dt>下一步</dt><dd>选择一个你想了解的主题。</dd></dl>"
+        button = f'<button class="button button-primary button-full" type="submit"{"" if learning and enabled and not pending else " disabled"}>继续上次学习</button>'
+        if enabled and learning:
+            button = dialogue_form(
+                token,
+                "continue",
+                '<input type="hidden" name="message" value="">' + button,
+            )
+        else:
+            button = button.replace('type="submit"', 'type="button"')
+        panel = (
+            '<section class="learning-status" aria-labelledby="learning-title"><p class="eyebrow">LEARNING COMPANION</p><h2 id="learning-title">当前学习主题</h2>'
+            + details
+            + button
+            + '<p class="learning-return-note">临时聊别的，也会保留这里的学习位置。</p><div class="learning-sources"><h3>正在引用的书籍资料</h3><p class="source-empty">未关联资料</p><p>资料上传与检索准备中，当前没有调用你上传的书籍。</p></div><details class="workspace-help"><summary>对话记录与使用说明</summary><p>每批加载 40 轮（一问一答为一轮），上滑可继续加载更早记录。记录按账户保存在本机，不因超过 40 轮自动删除；实际容量取决于磁盘空间。每次可输入 2000 字。</p><p>学习进度记录已讨论内容，由教练整理供你核对。知识成果保存功能准备中，后续由你确认后收入知识库。</p><p id="conversation-availability">'
+            + escape(
+                dialogue_label
+                or ("对话已启用。" if enabled else "对话准备中，当前暂不能发送消息。")
+            )
+            + "</p></details></section>"
+        )
+        return body, panel
+
+    def dialogue_problem(message, code):
+        body = f'<main id="main-content" class="verification-layout"><section class="verification-card"><h1>对话暂未完成</h1><p role="alert">{escape(message)}</p><a class="button button-primary" href="/web/welcome#conversation-input">返回对话</a></section></main>'
+        return HTMLResponse(
+            _render_layout("对话提示 · 知行", body, signed_in=True),
+            status_code=code,
             headers=_HEADERS,
         )
+
+    def perform_dialogue(user_id, message, nonce, action):
+        if not dialogue_slots.acquire(blocking=False):
+            return "busy"
+        try:
+            return send_dialogue(
+                dialogue_repository,
+                user_id,
+                message,
+                nonce,
+                responder=dialogue_responder,
+                action=action,
+            )
+        finally:
+            dialogue_slots.release()
+
+    @app.post(
+        "/web/coach/message", response_class=HTMLResponse, include_in_schema=False
+    )
+    async def message(request: Request):
+        try:
+            account = await run_in_threadpool(
+                signed_in_account, repository, request.cookies.get(SESSION_COOKIE)
+            )
+        except sqlite3.Error:
+            return dialogue_problem("暂时无法核对账户，请稍后再试。", 503)
+        if account is None:
+            return redirect("/web/login")
+        if not same_origin(request):
+            return dialogue_problem("页面无法核对，请返回对话后重新发送。", 403)
+        values = await fields(
+            request, {"csrf", "nonce", "action", "message"}, max_bytes=24576
+        )
+        if values is None:
+            return dialogue_problem("消息格式无法读取，请返回对话重新填写。", 400)
+        if (
+            re.fullmatch(r"[A-Za-z0-9_-]{43}", values["nonce"]) is None
+            or values["action"] not in {"message", "continue"}
+            or re.fullmatch(r"[0-9a-f]{64}", values["csrf"]) is None
+        ):
+            return dialogue_problem("页面无法核对，请返回对话后重新发送。", 403)
+        token = request.cookies.get(SESSION_COOKIE)
+        expected = signature(
+            "dialogue", f"{token}.{values['nonce']}.{values['action']}"
+        )
+        if not hmac.compare_digest(expected, values["csrf"]):
+            return dialogue_problem("页面无法核对，请返回对话后重新发送。", 403)
+        if dialogue_responder is None:
+            return dialogue_problem("对话服务尚未启用。", 503)
+        wait = dialogue_limit.admit(
+            request.client.host if request.client else "unknown"
+        )
+        if wait:
+            page = dialogue_problem(f"消息发送较频繁，请 {wait} 秒后再试。", 429)
+            page.headers["Retry-After"] = str(wait)
+            return page
+        try:
+            outcome = await run_in_threadpool(
+                perform_dialogue,
+                account.user_id,
+                values["message"],
+                values["nonce"],
+                values["action"],
+            )
+        except ValueError:
+            return dialogue_problem(
+                "请输入 1 到 2000 字的消息；续学需要已有学习主题。", 400
+            )
+        except sqlite3.Error:
+            return dialogue_problem(
+                "对话记录暂时无法保存，请先返回查看，避免重复发送。", 503
+            )
+        if outcome == "busy":
+            return dialogue_problem("还有回复正在处理中，请稍后返回查看。", 409)
+        return redirect("/web/welcome#coach-dialog")
 
     @app.post("/web/auth/logout", response_class=HTMLResponse, include_in_schema=False)
     async def logout(request: Request):

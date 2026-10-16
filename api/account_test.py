@@ -22,6 +22,8 @@ def create_trial_app(
     settings=None,
     simulated=False,
     activation_url="http://127.0.0.1:8782/web/verify-registration",
+    dialogue_responder=None,
+    dialogue_label="",
 ):
     from fastapi import Request
     from fastapi.responses import HTMLResponse
@@ -50,7 +52,12 @@ def create_trial_app(
             settings,
             allowed_recipient=settings.username.strip().lower(),
         )
-    app = create_account_app(directory, registration_mail=config)
+    app = create_account_app(
+        directory,
+        registration_mail=config,
+        dialogue_responder=dialogue_responder,
+        dialogue_label=dialogue_label,
+    )
     if not simulated:
         return app
     repository = SQLiteUserRepository(Path(directory) / "users.db")

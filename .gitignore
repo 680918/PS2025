@@ -39,3 +39,6 @@ data/memory_reliability/
 
 # Private local configuration backups
 /.env.example.local-backup*
+# Private account/dialogue data for the persistent local entry.
+/data/coach-local/
+/data/coach-simulated/

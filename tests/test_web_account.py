@@ -92,7 +92,7 @@ def test_login_private_welcome_logout_and_old_cookie_replay(setup):
     welcome = client.get("/web/welcome")
     assert "欢迎回来，测试成长者。" in welcome.text
     assert "l***@example.com" in welcome.text
-    assert "账户已经准备好" in welcome.text
+    assert "账户已经准备好" not in welcome.text
     assert "准备中" in welcome.text
     for value in (token, user.user_id, user.email, PASSWORD, "$argon2id$"):
         assert value not in welcome.text
