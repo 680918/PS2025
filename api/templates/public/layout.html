@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="知行，一个陪你学习、阅读和思考的 AI 成长教练。">
+    <title>$title</title>
+    <link rel="stylesheet" href="/static/public.css">
+</head>
+<body>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <div class="site-shell">
+        <header class="site-header">
+            <a class="brand" href="/" aria-label="知行成长教练首页" $home_current>
+                <span class="brand-mark" aria-hidden="true">知</span>
+                <span class="brand-name">知行<span class="brand-subtitle">AI 成长教练</span></span>
+            </a>
+            <nav class="header-actions" aria-label="主要导航">
+                <a class="text-link about-link" href="/#how-it-works">了解知行</a>
+                <a class="button button-quiet" href="/web/login" $login_current>登录</a>
+                <a class="button button-primary" href="/web/register" $register_current>开始使用<span aria-hidden="true"> ↗</span></a>
+            </nav>
+        </header>
+        <div class="preview-notice" role="status">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span>页面预览 · 注册与登录尚未开放，请勿填写真实密码。</span>
+        </div>
+        $content
+        <footer class="site-footer">
+            <span>知行 · 为每一次想要成长的你</span>
+            <span>按自己的节奏，一点一点积累。</span>
+        </footer>
+    </div>
+</body>
+</html>

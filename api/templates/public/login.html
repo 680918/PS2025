@@ -1,0 +1,35 @@
+<main id="main-content" class="auth-layout">
+    <section class="auth-story" aria-labelledby="login-story-title">
+        <p class="eyebrow"><span class="small-line" aria-hidden="true"></span>WELCOME BACK</p>
+        <h1 id="login-story-title">欢迎回来。<br>接着自己的节奏走。</h1>
+        <p class="auth-description">使用邮箱和密码，回到自己的<br class="desktop-break">学习、阅读与知识空间。</p>
+        <ul class="story-list">
+            <li><span aria-hidden="true">聊</span>从上次的问题，继续一次交流</li>
+            <li><span aria-hidden="true">学</span>保留学习位置，不必从头开始</li>
+            <li><span aria-hidden="true">存</span>让笔记和教案，慢慢积累</li>
+        </ul>
+        <p class="story-footnote">今天可以走得慢一点，也可以换个方向。</p>
+    </section>
+    <section class="auth-card" aria-labelledby="login-title">
+        <span class="card-mark" aria-hidden="true">知</span>
+        <h2 id="login-title">登录知行</h2>
+        <p class="auth-intro">还没有账户？<a class="text-link" href="/web/register">创建账户</a></p>
+        <form method="post" action="/web/auth/login" aria-describedby="auth-availability">
+            <fieldset disabled>
+                <legend class="visually-hidden">邮箱与密码登录</legend>
+                <label for="login-email">邮箱</label>
+                <input id="login-email" type="email" name="email" autocomplete="username" placeholder="你的常用邮箱" required>
+                <label for="login-password">密码</label>
+                <input id="login-password" type="password" name="password" autocomplete="current-password" placeholder="输入密码" required>
+                <div class="form-options"><label class="check-label"><input type="checkbox" name="remember">在这台设备保持登录</label></div>
+                <button class="button button-primary button-full" type="submit" disabled>登录 · 即将开放</button>
+            </fieldset>
+        </form>
+        <p id="auth-availability" class="availability-note">邮箱登录正在准备中，当前不能提交账号或密码。</p>
+        <details class="account-help">
+            <summary>忘记密码，或需要激活旧账户？</summary>
+            <p>后续可通过注册邮箱验证身份，再设置新密码。旧账户会保留原来的学习记录；这项功能尚未开放。</p>
+        </details>
+        <a class="back-link" href="/">← 返回首页</a>
+    </section>
+</main>

@@ -16,7 +16,7 @@ def test_home_page_should_render_learning_coach_title(
     assert "AI Learning Coach" in response.text
 
 
-def test_home_page_should_render_registration_form(
+def test_home_page_should_offer_registration_and_existing_user_login(
     tmp_path,
 ):
     app = create_app(database_dir=tmp_path)
@@ -27,7 +27,8 @@ def test_home_page_should_render_registration_form(
 
     assert response.status_code == 200
 
-    assert '<form method="post" action="/web/register">' in response.text
-    assert 'name="name"' in response.text
-    assert 'name="email"' in response.text
-    assert "注册" in response.text
+    assert 'href="/web/register"' in response.text
+    assert 'href="/web/login"' in response.text
+    assert "我已有账户" in response.text
+    assert "有问题，慢慢聊。" in response.text
+    assert '<form method="post" action="/web/register">' not in response.text

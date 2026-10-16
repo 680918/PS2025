@@ -1,0 +1,33 @@
+<main id="main-content" class="auth-layout">
+    <section class="auth-story" aria-labelledby="register-story-title">
+        <p class="eyebrow"><span class="small-line" aria-hidden="true"></span>YOUR GROWTH STARTS HERE</p>
+        <h1 id="register-story-title">给成长，留一个<br>可以回来的地方。</h1>
+        <p class="auth-description">用常用邮箱创建账户，<br class="desktop-break">留住每次交流中的收获。</p>
+        <ul class="story-list">
+            <li><span aria-hidden="true">聊</span>不必先填长问卷，从一个问题开始</li>
+            <li><span aria-hidden="true">学</span>聊清楚一点，再继续探索一点</li>
+            <li><span aria-hidden="true">存</span>把零散理解，整理成自己的知识</li>
+        </ul>
+        <p class="story-footnote">成长空间，应该适合你的节奏。</p>
+    </section>
+    <section class="auth-card" aria-labelledby="register-title">
+        <span class="card-mark" aria-hidden="true">知</span>
+        <h2 id="register-title">创建你的成长空间</h2>
+        <p class="auth-intro">已有账户？<a class="text-link" href="/web/login">去登录</a></p>
+        <form method="post" action="/web/auth/register" aria-describedby="auth-availability">
+            <fieldset disabled>
+                <legend class="visually-hidden">邮箱与密码注册</legend>
+                <label for="register-name">如何称呼你<span class="optional-label">选填</span></label>
+                <input id="register-name" type="text" name="name" autocomplete="nickname" placeholder="你喜欢的称呼">
+                <label for="register-email">邮箱</label>
+                <input id="register-email" type="email" name="email" autocomplete="username" placeholder="用于登录和找回账户的邮箱" required>
+                <label for="register-password">设置密码</label>
+                <input id="register-password" type="password" name="password" autocomplete="new-password" placeholder="设置你的登录密码" required>
+                <button class="button button-primary button-full" type="submit" disabled>创建账户 · 即将开放</button>
+            </fieldset>
+        </form>
+        <p id="auth-availability" class="availability-note">注册尚未开放，当前不会创建账户或发送邮件。</p>
+        <div class="registration-next"><h3>注册后，会发生什么？</h3><p>验证邮箱 → 进入欢迎页 → 选择想聊的问题。</p><p>开放注册时，将提供用户协议和隐私说明，供你阅读和确认。</p></div>
+        <a class="back-link" href="/">← 返回首页</a>
+    </section>
+</main>

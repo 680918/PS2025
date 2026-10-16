@@ -23,6 +23,8 @@ from learning.continuity import (
     build_learning_continuity_context,
 )
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from api.public_pages import PUBLIC_STATIC_DIRECTORY, render_public_page
 from learning.session_service import (
     update_learning_session_feedback,
     get_or_create_learning_session,
@@ -88,6 +90,7 @@ def create_app(
     learning_feedback_extractor=_DEFAULT_LEARNING_FEEDBACK_EXTRACTOR,
 ):
     app = FastAPI()
+    app.mount("/static", StaticFiles(directory=PUBLIC_STATIC_DIRECTORY), name="static")
 
     if curriculum_generator is _DEFAULT_CURRICULUM_GENERATOR:
         curriculum_generator = LLMCurriculumGenerator()
@@ -309,49 +312,34 @@ def create_app(
         response_class=HTMLResponse,
     )
     def home():
-        return """
-        <!DOCTYPE html>
-        <html lang="zh-CN">
-        <head>
-            <meta charset="UTF-8">
-            <title>AI Learning Coach</title>
-        </head>
-        <body>
-            <h1>AI Learning Coach</h1>
-            <p>你的长期学习伙伴</p>
+        return render_public_page("home")
 
-            <h2>注册</h2>
+    @app.get("/web/login", response_class=HTMLResponse)
+    def web_login_page():
+        return render_public_page("login")
 
-            <form method="post" action="/web/register">
-                <label>
-                    姓名：
-                    <input
-                        type="text"
-                        name="name"
-                        required
-                    >
-                </label>
+    @app.get("/web/register", response_class=HTMLResponse)
+    def web_register_page():
+        return render_public_page("register")
 
-                <br>
+    @app.post(
+        "/web/auth/login",
+        response_class=HTMLResponse,
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        include_in_schema=False,
+    )
+    def web_login_unavailable():
+        # Do not read credentials or imply a successful login before auth exists.
+        return render_public_page("login")
 
-                <label>
-                    邮箱：
-                    <input
-                        type="email"
-                        name="email"
-                        required
-                    >
-                </label>
-
-                <br>
-
-                <button type="submit">
-                    注册
-                </button>
-            </form>
-        </body>
-        </html>
-        """
+    @app.post(
+        "/web/auth/register",
+        response_class=HTMLResponse,
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        include_in_schema=False,
+    )
+    def web_email_register_unavailable():
+        return render_public_page("register")
 
     @app.post(
         "/web/register",
