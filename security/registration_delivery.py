@@ -28,6 +28,7 @@ from security.verification_mailer import (
 @dataclass(frozen=True)
 class RegistrationDeliveryStatus:
     state: str
+    retry_after_seconds: int = 0
 
 
 def _owner_hash(request_id, browser_secret):
@@ -48,10 +49,17 @@ def get_registration_delivery_status(
         digest = _owner_hash(request_id, browser_secret)
     except ValueError:
         return None
-    state = repository.get_registration_delivery_status(
-        request_id, digest, _timestamp(now)
+    timestamp = _timestamp(now)
+    row = repository.get_registration_delivery_status(request_id, digest, timestamp)
+    if row is None:
+        return None
+    state, issued_at = row
+    wait = (
+        max(0, issued_at + RESEND_INTERVAL_SECONDS - timestamp)
+        if state == "failed"
+        else 0
     )
-    return RegistrationDeliveryStatus(state) if state is not None else None
+    return RegistrationDeliveryStatus(state, wait)
 
 
 def send_registration_verification(
@@ -63,6 +71,7 @@ def send_registration_verification(
     browser_secret,
     retry_failed: bool = False,
     now: datetime | None = None,
+    sender=None,
 ) -> RegistrationDeliveryStatus:
     """Claim before SMTP; only an explicit retry of a definite failure is allowed.
 
@@ -74,6 +83,8 @@ def send_registration_verification(
         raise MailConfigurationError("邮件发送尚未启用，请先完成本机配置。")
     if not isinstance(retry_failed, bool):
         raise ValueError("registration verification unavailable")
+    if sender is not None and not callable(sender):
+        raise MailConfigurationError("邮件发送配置无效。")
     digest = _owner_hash(request_id, browser_secret)
     parsed = _trusted_activation_url(activation_url)
     issued_at = _timestamp(now)
@@ -98,7 +109,9 @@ def send_registration_verification(
     )
     try:
         # No database transaction is held while waiting for the mail server.
-        send_verification_email(message, settings, now=now)
+        (sender if sender is not None else send_verification_email)(
+            message, settings, now=now
+        )
     except MailConfigurationError:
         state = "failed"  # Message validation fails before any SMTP connection.
     except MailDeliveryError as error:
@@ -118,4 +131,9 @@ def send_registration_verification(
     except sqlite3.Error:
         saved = False
     # An interrupted final write leaves 'sending' durable and blocks duplicates.
-    return RegistrationDeliveryStatus(state if saved else "unknown")
+    wait = (
+        max(0, issued_at + RESEND_INTERVAL_SECONDS - _timestamp(now))
+        if saved and state == "failed"
+        else 0
+    )
+    return RegistrationDeliveryStatus(state if saved else "unknown", wait)

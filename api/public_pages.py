@@ -66,17 +66,140 @@ def render_registration_page(*, fields=None, errors=None, form_error="", csrf=""
     )
 
 
-def render_registration_waiting_page(masked_email, expires_at):
+def render_registration_waiting_page(
+    masked_email,
+    expires_at,
+    *,
+    delivery_state="not_sent",
+    retry_after_seconds=0,
+    mail_enabled=False,
+    simulated=False,
+    csrf="",
+):
     template = Template(
         (_TEMPLATES / "registration_waiting.html").read_text(encoding="utf-8")
     )
     expires = expires_at.astimezone(timezone(timedelta(hours=8))).strftime(
         "%m月%d日 %H:%M"
     )
+    heading, symbol, step_title, step_description, help_text = {
+        "not_sent": (
+            "申请已保存，等待验证邮箱",
+            "信",
+            "准备验证邮箱",
+            "本次尚未发送邮件，也未创建账户",
+            "发送后，请打开注册邮箱，点击验证邮件中的链接，并在页面上确认。",
+        ),
+        "sending": (
+            "正在确认邮件发送结果",
+            "…",
+            "发送处理中，结果待确认",
+            "请先查看邮箱，再刷新申请进度",
+            "发送可能仍在处理，也可能在连接中断后等待确认。系统不会因刷新或等待时间较长而重复发送。",
+        ),
+        "accepted": (
+            "验证邮件已提交，请查收邮箱",
+            "✓",
+            "邮件服务器已接收",
+            "尚需打开邮件，确认邮箱归属",
+            "服务器接收不代表已经到达收件箱。若没看到邮件，请检查垃圾邮件；已有有效链接仍可使用。",
+        ),
+        "failed": (
+            "邮件暂未发出，可以稍后重试",
+            "!",
+            "本次邮件未成功提交",
+            "申请仍然保留，账户尚未创建",
+            "本次发送已明确失败。准备好后，可主动重试；重试不会延长申请的有效期。",
+        ),
+        "unknown": (
+            "发送结果暂未确认",
+            "…",
+            "邮件可能已经提交",
+            "请先查看收件箱和垃圾邮件",
+            "当前无法确定邮件是否已提交，暂不提供重复发送。若收到邮件，已有有效链接仍可继续确认。",
+        ),
+    }[delivery_state]
+    action = ""
+    if mail_enabled and delivery_state in {"not_sent", "failed"}:
+        action_name = "retry" if delivery_state == "failed" else "send"
+        button = "重试发送验证邮件" if action_name == "retry" else "发送验证邮件"
+        if simulated:
+            button = "模拟重试发送" if action_name == "retry" else "模拟发送验证邮件"
+        if retry_after_seconds > 0:
+            action = (
+                '<p class="mail-cooldown" role="status">'
+                f"请在 {int(retry_after_seconds)} 秒后刷新本页，再重试。</p>"
+                '<button class="button button-primary button-full" type="button" disabled>等待后可重试</button>'
+            )
+        else:
+            action = (
+                '<form method="post" action="/web/register/send-verification" class="registration-mail-form">'
+                f'<input type="hidden" name="csrf" value="{escape(csrf, quote=True)}">'
+                f'<input type="hidden" name="action" value="{action_name}">'
+                f'<button class="button button-primary button-full" type="submit">{button} →</button></form>'
+            )
+    if mail_enabled or delivery_state != "not_sent":
+        action += '<a class="button button-outline button-full" href="/web/register/pending">刷新申请进度</a>'
+    if delivery_state == "not_sent" and not mail_enabled:
+        help_text = "请保留当前浏览器的申请信息，后续查询或重发时会用到。正式账户仍须验证邮箱后才能创建。"
+        note = "邮件发送尚未接通，本次没有发送邮件，无需等待邮件。"
+    elif mail_enabled:
+        note = "刷新页面只查询状态，不会重复发送邮件。"
+    else:
+        note = "当前环境未启用发送或重试，请先查看已有邮件与申请状态。"
+    if simulated:
+        step_description = {
+            "not_sent": "点击模拟按钮，检验邮件提交后的页面效果",
+            "sending": "模拟请求正在处理，请刷新进度查看结果",
+            "accepted": "仅模拟服务器接收，未发送真实邮件",
+            "failed": "模拟发送未成功，可等待后检验重试",
+            "unknown": "模拟请求结果待确认，不会自动重发",
+        }[delivery_state]
+        if delivery_state == "accepted":
+            heading = "验证邮件已模拟提交"
+            step_title = "已完成模拟提交"
+        help_text = "这是本机模拟流程，没有发送真实邮件。页面用于检验发送、失败重试和状态变化；不会据此自动验证邮箱。"
     content = template.substitute(
-        masked_email=escape(masked_email), expires_at=escape(expires)
+        masked_email=escape(masked_email),
+        expires_at=escape(expires),
+        heading=escape(heading),
+        symbol=escape(symbol),
+        step_title=escape(step_title),
+        step_description=escape(step_description),
+        help_text=escape(help_text),
+        delivery_action=action,
+        delivery_note=escape(note),
+        simulation_notice='<p class="mail-simulation-notice" role="note">本机模拟 · 不会发送真实邮件</p>'
+        if simulated
+        else "",
     )
-    return _render_layout("申请已保存 · 知行成长教练", content, "register")
+    return _render_layout(f"{heading} · 知行成长教练", content, "register")
+
+
+def render_registration_mail_problem_page(kind, *, wait_seconds=0):
+    heading, description = {
+        "security": (
+            "请刷新申请页面后再操作",
+            "页面已过期或操作无法核对。请在原申请浏览器中刷新进度，再使用页面上的按钮。",
+        ),
+        "unavailable": (
+            "暂时无法处理邮件操作",
+            "请稍后刷新申请进度。如果你已发起过发送，请先查看状态和收件箱。",
+        ),
+        "disabled": ("邮件发送暂未启用", "当前环境尚未配置网页发信，请返回申请进度。"),
+        "limited": (
+            "邮件操作有些频繁",
+            f"请在 {int(wait_seconds)} 秒后刷新申请进度，再决定是否继续。",
+        ),
+    }[kind]
+    return _render_registration_notice(
+        symbol="…",
+        heading=heading,
+        description=description,
+        help_text="刷新进度不会触发发送，也不会修改已保存的邮箱或密码。",
+        button="返回申请进度 →",
+        href="/web/register/pending",
+    )
 
 
 def render_registration_problem_page(kind):
@@ -127,7 +250,9 @@ def render_registration_rate_limited_page(wait_seconds):
     )
 
 
-def _render_registration_notice(*, symbol, heading, description, help_text, button):
+def _render_registration_notice(
+    *, symbol, heading, description, help_text, button, href="/web/register"
+):
     content = Template(
         (_TEMPLATES / "verification.html").read_text(encoding="utf-8")
     ).substitute(
@@ -137,7 +262,7 @@ def _render_registration_notice(*, symbol, heading, description, help_text, butt
         heading=heading,
         description=description,
         help=help_text,
-        action=f'<a class="button button-primary button-full" href="/web/register">{escape(button)}</a>',
+        action=f'<a class="button button-primary button-full" href="{escape(href, quote=True)}">{escape(button)}</a>',
     )
     return _render_layout(f"{heading} · 知行成长教练", content, "register")
 

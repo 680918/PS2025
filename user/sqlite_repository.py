@@ -317,16 +317,18 @@ class SQLiteUserRepository:
             return cursor.rowcount == 1
 
     def get_registration_delivery_status(self, request_id, browser_token_hash, now):
-        """Return only a state, with the same owner and lifetime checks as the draft."""
+        """Read delivery metadata with the draft's owner and lifetime checks."""
         with closing(self._connect()) as connection:
             row = connection.execute(
                 """
-                SELECT coalesce(delivery.state, 'not_sent')
+                SELECT coalesce(delivery.state, 'not_sent'), coalesce(verification.issued_at, 0)
                 FROM pending_registrations AS draft
                 JOIN registration_browser_bindings AS binding
                     ON binding.request_id = draft.request_id
                 LEFT JOIN registration_mail_deliveries AS delivery
                     ON delivery.request_id = draft.request_id
+                LEFT JOIN registration_email_verifications AS verification
+                    ON verification.request_id = draft.request_id
                 WHERE draft.request_id = ? AND binding.token_hash = ?
                     AND draft.created_at <= ? AND draft.expires_at > ?
                     AND NOT EXISTS (
@@ -335,7 +337,7 @@ class SQLiteUserRepository:
                 """,
                 (request_id, browser_token_hash, now, now),
             ).fetchone()
-            return row[0] if row is not None else None
+            return row
 
     def consume_registration_verification_token(self, *, token_hash, now, user_id):
         """Create user, credentials and verified flag together, or roll back all."""

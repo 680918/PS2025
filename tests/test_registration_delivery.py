@@ -111,7 +111,7 @@ def token(message):
 
 def test_saved_application_starts_not_sent_and_status_is_minimal(repository, receipt):
     result = status(repository, receipt)
-    assert asdict(result) == {"state": "not_sent"}
+    assert asdict(result) == {"state": "not_sent", "retry_after_seconds": 0}
     assert rows(repository, "registration_mail_deliveries") == []
     assert rows(repository, "registration_email_verifications") == []
 
@@ -385,7 +385,7 @@ def test_unexpected_sender_error_is_sanitized_and_locked(
 
     monkeypatch.setattr(delivery, "send_verification_email", fail)
     result = send(repository, receipt)
-    assert asdict(result) == {"state": "unknown"}
+    assert asdict(result) == {"state": "unknown", "retry_after_seconds": 0}
     captured = capsys.readouterr()
     assert captured.out == captured.err == ""
 

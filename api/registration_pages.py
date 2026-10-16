@@ -1,10 +1,12 @@
-"""Protected registration applications; mail and login remain unavailable."""
+"""Protected registration applications and explicitly configured mail actions."""
 
 import hashlib
 import hmac
 import re
 import secrets
 import sqlite3
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import BoundedSemaphore
 from time import time
@@ -20,7 +22,14 @@ from api.public_pages import (
     render_registration_rate_limited_page,
     render_registration_security_retry_page,
     render_registration_waiting_page,
+    render_registration_mail_problem_page,
 )
+from security.email_verification import _trusted_activation_url
+from security.registration_delivery import (
+    get_registration_delivery_status,
+    send_registration_verification,
+)
+from security.verification_mailer import SMTPSettings, MailConfigurationError
 from security.registration_validation import validate_registration_fields
 from security.registration_rate_limit import RegistrationRateLimiter
 from security.pending_registration import (
@@ -35,6 +44,8 @@ _COOKIE_PATH = "/web"
 _APPLICATION_COOKIE = "coach_registration_application"
 _PENDING_PATH = "/web/register/pending"
 _FORM_LIFETIME = 1800
+_MAIL_FORM_LIFETIME = 600
+_MAIL_PATH = "/web/register/send-verification"
 _GET_PER_CLIENT = 30
 _GET_TOTAL = 240
 _POST_PER_CLIENT = 10
@@ -52,10 +63,40 @@ _HEADERS = {
 }
 
 
-def register_registration_pages(app, repository):
+@dataclass(frozen=True)
+class RegistrationMailConfig:
+    """Trusted server composition only. Never built from form data or Host headers.
+
+    Simulation must inject its own sender and use a disposable test database.
+    Normal startup leaves this configuration absent and cannot send mail.
+    """
+
+    activation_url: str = field(repr=False)
+    settings: SMTPSettings = field(repr=False)
+    simulated: bool = False
+    sender: Callable | None = field(default=None, repr=False)
+
+    def __post_init__(self):
+        _trusted_activation_url(self.activation_url)
+        if (
+            not isinstance(self.settings, SMTPSettings)
+            or type(self.simulated) is not bool
+        ):
+            raise MailConfigurationError("邮件发送配置无效。")
+        if (self.simulated and not callable(self.sender)) or (
+            not self.simulated and self.sender is not None
+        ):
+            raise MailConfigurationError("模拟发送需要单独的模拟发信器。")
+
+
+def register_registration_pages(app, repository, *, mail_config=None):
+    if mail_config is not None and not isinstance(mail_config, RegistrationMailConfig):
+        raise MailConfigurationError("邮件发送配置无效。")
     # Single-process local development. Restarting requires reopening the form.
     signing_key = secrets.token_bytes(32)
     hash_slots = BoundedSemaphore(2)
+    mail_slots = BoundedSemaphore(2)
+    mail_limit = RegistrationRateLimiter(per_client_limit=3, total_limit=30)
     page_limit = RegistrationRateLimiter(
         per_client_limit=_GET_PER_CLIENT, total_limit=_GET_TOTAL
     )
@@ -66,14 +107,16 @@ def register_registration_pages(app, repository):
         per_client_limit=_POST_PER_CLIENT, total_limit=_POST_TOTAL
     )
 
-    def limited_response(request, limiter):
+    def limited_response(request, limiter, *, mail=False):
         # Use the transport peer, never arbitrary Forwarded/X-Forwarded-For
         # headers or a resettable browser cookie. Local runner disables proxies.
         client_key = request.client.host if request.client else "unknown"
         wait = limiter.admit(client_key)
         if wait:
             return HTMLResponse(
-                render_registration_rate_limited_page(wait),
+                render_registration_mail_problem_page("limited", wait_seconds=wait)
+                if mail
+                else render_registration_rate_limited_page(wait),
                 status_code=429,
                 headers={**_HEADERS, "Retry-After": str(wait)},
             )
@@ -128,12 +171,89 @@ def register_registration_pages(app, repository):
             render_registration_problem_page(kind), status_code=code, headers=headers
         )
 
-    def application_status(request):
+    def application_credentials(request):
         value = request.cookies.get(_APPLICATION_COOKIE, "")
         if len(value) != 89 or value.count(".") != 1:
             return None
         request_id, secret = value.split(".")
-        return get_browser_registration_status(repository, request_id, secret)
+        if (
+            re.fullmatch(r"registration_[0-9a-f]{32}", request_id) is None
+            or _TOKEN.fullmatch(secret) is None
+        ):
+            return None
+        return request_id, secret
+
+    def application_status(request):
+        credentials = application_credentials(request)
+        return (
+            get_browser_registration_status(repository, *credentials)
+            if credentials
+            else None
+        )
+
+    def pending_data(request):
+        credentials = application_credentials(request)
+        if credentials is None:
+            return None
+        status = get_browser_registration_status(repository, *credentials)
+        if status is None:
+            return None
+        delivery = get_registration_delivery_status(repository, *credentials)
+        if delivery is None:
+            return None
+        return status, delivery, credentials
+
+    def mail_signature(credentials, action, expires):
+        # Bind the operation to this application and its HttpOnly owner cookie.
+        payload = f"registration-mail.{credentials[0]}.{credentials[1]}.{action}.{expires}".encode(
+            "ascii"
+        )
+        return hmac.new(signing_key, payload, hashlib.sha256).hexdigest()
+
+    def mail_token(credentials, status, action):
+        expires = str(
+            min(int(time()) + _MAIL_FORM_LIFETIME, int(status.expires_at.timestamp()))
+        )
+        return f"{expires}.{mail_signature(credentials, action, expires)}"
+
+    def valid_mail_token(credentials, action, value):
+        if (
+            not isinstance(value, str)
+            or re.fullmatch(r"[0-9]{10}\.[0-9a-f]{64}", value) is None
+        ):
+            return False
+        expires, signed = value.split(".")
+        now = int(time())
+        return now < int(expires) <= now + _MAIL_FORM_LIFETIME and hmac.compare_digest(
+            mail_signature(credentials, action, expires), signed
+        )
+
+    def mail_problem(kind, code, *, wait=0):
+        headers = dict(_HEADERS)
+        if wait:
+            headers["Retry-After"] = str(wait)
+        return HTMLResponse(
+            render_registration_mail_problem_page(kind, wait_seconds=wait),
+            status_code=code,
+            headers=headers,
+        )
+
+    def perform_delivery(credentials, action):
+        if not mail_slots.acquire(blocking=False):
+            return False
+        try:
+            send_registration_verification(
+                repository,
+                credentials[0],
+                mail_config.activation_url,
+                mail_config.settings,
+                browser_secret=credentials[1],
+                retry_failed=action == "retry",
+                sender=mail_config.sender,
+            )
+            return True
+        finally:
+            mail_slots.release()
 
     def save_application(fields, password):
         # Never queue an unbounded number of memory-intensive password hashes.
@@ -158,10 +278,12 @@ def register_registration_pages(app, repository):
         if limited is not None:
             return limited
         try:
-            status = application_status(request)
+            data = pending_data(request)
         except sqlite3.Error:
+            if mail_config is not None:
+                return mail_problem("unavailable", 503)
             return problem("unavailable", 503)
-        if status is None:
+        if data is None:
             page = problem("missing", 403)
             page.delete_cookie(
                 _APPLICATION_COOKIE,
@@ -171,10 +293,84 @@ def register_registration_pages(app, repository):
                 samesite="strict",
             )
             return page
+        status, delivery, credentials = data
+        action = "retry" if delivery.state == "failed" else "send"
         return HTMLResponse(
-            render_registration_waiting_page(status.masked_email, status.expires_at),
+            render_registration_waiting_page(
+                status.masked_email,
+                status.expires_at,
+                delivery_state=delivery.state,
+                retry_after_seconds=delivery.retry_after_seconds,
+                mail_enabled=mail_config is not None,
+                simulated=mail_config.simulated if mail_config is not None else False,
+                csrf=mail_token(credentials, status, action)
+                if mail_config is not None
+                else "",
+            ),
             headers=_HEADERS,
         )
+
+    @app.post(_MAIL_PATH, response_class=HTMLResponse, include_in_schema=False)
+    async def send_registration_mail(request: Request):
+        limited = limited_response(request, mail_limit, mail=True)
+        if limited is not None:
+            return limited
+        origin = request.headers.get("origin")
+        if request.headers.get("sec-fetch-site") == "cross-site" or (
+            origin not in {None, "null"}
+            and origin != f"{request.url.scheme}://{request.url.netloc}"
+        ):
+            return mail_problem("security", 403)
+        if (
+            request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            != "application/x-www-form-urlencoded"
+        ):
+            return mail_problem("security", 400)
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > 2048:
+                return mail_problem("security", 400)
+            body.extend(chunk)
+        try:
+            fields = parse_qs(
+                body.decode("ascii"),
+                keep_blank_values=True,
+                strict_parsing=True,
+                encoding="utf-8",
+                errors="strict",
+                max_num_fields=2,
+            )
+        except (ValueError, UnicodeError):
+            return mail_problem("security", 400)
+        if set(fields) != {"csrf", "action"} or any(
+            len(values) != 1 for values in fields.values()
+        ):
+            return mail_problem("security", 400)
+        action = fields["action"][0]
+        if action not in {"send", "retry"}:
+            return mail_problem("security", 400)
+        try:
+            data = await run_in_threadpool(pending_data, request)
+        except sqlite3.Error:
+            return mail_problem("unavailable", 503)
+        if data is None:
+            return mail_problem("security", 403)
+        _, _, credentials = data
+        if not valid_mail_token(credentials, action, fields["csrf"][0]):
+            return mail_problem("security", 403)
+        if mail_config is None:
+            return mail_problem("disabled", 503)
+        try:
+            completed = await run_in_threadpool(perform_delivery, credentials, action)
+        except ValueError:
+            # A stale form, concurrent claim, or cooldown cannot trigger resend.
+            return pending_redirect()
+        except sqlite3.Error:
+            return mail_problem("unavailable", 503)
+        if not completed:
+            return mail_problem("unavailable", 503, wait=2)
+        # Refreshing the result never replays the POST or changes the token.
+        return pending_redirect()
 
     @app.get("/web/register", response_class=HTMLResponse, include_in_schema=False)
     def registration_form(request: Request):

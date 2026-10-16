@@ -141,6 +141,15 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .registration-progress strong { font-size: 14px; font-weight: 500; }
 .registration-progress p { color: var(--muted); font-size: 12px; margin-top: 3px; }
 .registration-preview-note { background: var(--warm); color: var(--gold); padding: 13px; border-radius: 9px; font-size: 12px; }
+.mail-simulation-notice { margin: 18px 0 4px; padding: 9px 12px; border-radius: 8px; color: var(--green); background: var(--tint); font-size: 12px; }
+.registration-mail-form .button-full { margin-top: 18px; }
+.registration-mail-form + .button-full { margin-top: 10px; }
+.registration-mail-help { margin-top: 18px; }
+.mail-cooldown { margin: 16px 0 -12px; color: var(--gold); font-size: 12px; }
+.registration-waiting-links { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.registration-waiting-card h1 { margin-top: 24px; }
+.registration-waiting-card .registration-email { margin-bottom: 16px; }
+.registration-waiting-card .registration-progress { margin-bottom: 0; border-top: 1px solid var(--line); padding-top: 20px; }
 @media (max-width: 1000px) {
     .site-shell { padding: 0 30px; }
     .hero { gap: 30px; }

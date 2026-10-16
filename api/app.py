@@ -93,6 +93,8 @@ def create_app(
     curriculum_generator=_DEFAULT_CURRICULUM_GENERATOR,
     completion_commentary_generator=_DEFAULT_COMPLETION_COMMENTARY_GENERATOR,
     learning_feedback_extractor=_DEFAULT_LEARNING_FEEDBACK_EXTRACTOR,
+    *,
+    registration_mail=None,
 ):
     app = FastAPI()
     app.mount("/static", StaticFiles(directory=PUBLIC_STATIC_DIRECTORY), name="static")
@@ -109,7 +111,7 @@ def create_app(
     user_repository = SQLiteUserRepository(database_dir / "users.db")
     register_email_verification_pages(app, user_repository)
     register_registration_verification_pages(app, user_repository)
-    register_registration_pages(app, user_repository)
+    register_registration_pages(app, user_repository, mail_config=registration_mail)
 
     journey_repository = SQLiteLearningJourneyRepository(database_dir / "journeys.db")
 
