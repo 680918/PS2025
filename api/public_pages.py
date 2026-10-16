@@ -267,11 +267,20 @@ def _render_registration_notice(
     return _render_layout(f"{heading} · 知行成长教练", content, "register")
 
 
-def _render_layout(title, content, page=""):
+def _render_layout(title, content, page="", *, signed_in=False):
     layout = Template((_TEMPLATES / "layout.html").read_text(encoding="utf-8"))
+    login_current = 'aria-current="page"' if page == "login" else ""
+    register_current = 'aria-current="page"' if page == "register" else ""
+    navigation = (
+        '<a class="button button-primary" href="/web/welcome" aria-current="page">我的成长空间</a>'
+        if signed_in
+        else f'<a class="button button-quiet" href="/web/login" {login_current}>登录</a>'
+        f'<a class="button button-primary" href="/web/register" {register_current}>开始使用<span aria-hidden="true"> ↗</span></a>'
+    )
     return layout.substitute(
         title=title,
         content=content,
+        auth_navigation=navigation,
         home_current='aria-current="page"' if page == "home" else "",
         login_current='aria-current="page"' if page == "login" else "",
         register_current='aria-current="page"' if page == "register" else "",
@@ -322,7 +331,9 @@ def render_verification_page(state, *, token="", csrf=""):
     )
 
 
-def render_registration_verification_page(state, *, token="", csrf=""):
+def render_registration_verification_page(
+    state, *, token="", csrf="", login_enabled=False
+):
     copy = {
         "confirm": (
             "信",
@@ -360,6 +371,11 @@ def render_registration_verification_page(state, *, token="", csrf=""):
             "本次操作没有完成账户创建。你可以在链接有效期内稍后重试，重新打开页面不会延长期限。",
         ),
     }
+    if login_enabled:
+        copy["success"] = (
+            *copy["success"][:4],
+            "现在可以使用注册邮箱和密码登录。本次确认不会自动登录，也不会修改你设置的密码。",
+        )
     return _render_confirmation_page(
         state, copy, "/web/verify-registration", "确认邮箱并创建账户 →", token, csrf
     )

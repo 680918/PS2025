@@ -33,7 +33,7 @@ def test_public_pages_have_working_local_navigation_and_styles(client, path):
     response = client.get(path)
     assert response.status_code == 200
     assert '<meta name="viewport"' in response.text
-    assert "注册与登录尚未开放" in response.text
+    assert "尚未公开开放" in response.text
     assert "手机号" not in response.text
     assert "短信" not in response.text
 

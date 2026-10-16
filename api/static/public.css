@@ -150,6 +150,51 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .registration-waiting-card h1 { margin-top: 24px; }
 .registration-waiting-card .registration-email { margin-bottom: 16px; }
 .registration-waiting-card .registration-progress { margin-bottom: 0; border-top: 1px solid var(--line); padding-top: 20px; }
+.account-space { padding: 56px 0 66px; }
+.account-greeting { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.account-greeting h1 { font-size: clamp(25px, 3vw, 36px); font-weight: 500; margin: 15px 0; overflow-wrap: anywhere; }
+.account-greeting p { color: var(--muted); }
+.account-greeting .account-status { margin-top: 14px; font-size: 12px; }
+.account-ready-note { margin: 30px 0; padding: 20px 24px; border-radius: 12px; background: var(--tint); }
+.account-ready-note p { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.coach-workspace { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 20px; align-items: start; }
+.workspace-sidebar { border: 1px solid var(--line); border-radius: 14px; padding: 19px 14px; background: var(--paper); }
+.workspace-nav-title { padding: 0 10px; font-size: 12px; color: var(--muted); margin-bottom: 13px; }
+.workspace-nav { display: grid; gap: 8px; }
+.workspace-nav-item { display: block; width: 100%; border: 0; background: transparent; border-radius: 8px; padding: 11px 12px; text-align: left; color: var(--muted); font: inherit; font-size: 14px; }
+.workspace-nav-current { background: var(--tint); color: var(--green); font-weight: 600; }
+.workspace-nav-item:disabled { cursor: not-allowed; }
+.workspace-sidebar-caption { margin: 25px 10px 2px; font-size: 11px; color: var(--muted); line-height: 1.9; }
+.workspace-conversation { min-width: 0; border: 1px solid var(--line); border-radius: 14px; padding: 27px; background: var(--paper); scroll-margin-top: 20px; }
+.conversation-heading { display: flex; align-items: center; gap: 13px; }
+.conversation-heading h2 { font-size: 18px; font-weight: 500; margin-top: 3px; }
+.conversation-heading .eyebrow { font-size: 9px; letter-spacing: 1.5px; }
+.conversation-start { padding: 35px 0 30px; max-width: 560px; }
+.conversation-start h3 { font-size: 25px; font-weight: 500; margin-bottom: 13px; }
+.conversation-start p { font-size: 14px; color: var(--muted); line-height: 1.9; }
+.conversation-start .conversation-continuity { font-size: 12px; margin-top: 12px; }
+.conversation-composer { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: #fafbf8; }
+.conversation-composer textarea { width: 100%; display: block; min-height: 90px; resize: none; border: 0; outline: 0; padding: 0; background: transparent; color: var(--ink); font: inherit; font-size: 14px; line-height: 1.8; }
+.conversation-composer textarea:disabled { cursor: not-allowed; opacity: 1; -webkit-text-fill-color: var(--muted); }
+.conversation-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.conversation-tools .button { min-height: 37px; padding: 6px 13px; font-size: 12px; }
+.conversation-tools .button-outline:disabled { background: transparent; color: var(--muted); opacity: .8; }
+.conversation-availability { margin-top: 12px; font-size: 11px; color: var(--gold); }
+.conversation-knowledge-note { margin-top: 23px; border-top: 1px solid var(--line); padding-top: 17px; font-size: 12px; color: var(--muted); line-height: 1.9; }
+.account-space-footnote { color: var(--muted); font-size: 12px; margin-top: 25px; }
+@media (max-width: 720px) {
+    .account-space { padding-top: 32px; }
+    .account-greeting { flex-direction: column; }
+    .coach-workspace { grid-template-columns: 1fr; gap: 13px; }
+    .workspace-sidebar { padding: 12px; }
+    .workspace-nav-title { padding-left: 7px; margin-bottom: 8px; }
+    .workspace-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+    .workspace-nav-item { text-align: center; font-size: 12px; padding: 10px 3px; }
+    .workspace-sidebar-caption { display: none; }
+    .workspace-conversation { padding: 20px; }
+    .conversation-start { padding: 28px 0 24px; }
+    .conversation-start h3 { font-size: 22px; }
+}
 @media (max-width: 1000px) {
     .site-shell { padding: 0 30px; }
     .hero { gap: 30px; }

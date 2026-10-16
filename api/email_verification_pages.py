@@ -53,12 +53,14 @@ def register_email_verification_pages(app, repository):
     )
 
 
-def register_registration_verification_pages(app, repository):
+def register_registration_verification_pages(app, repository, *, login_enabled=False):
     _register_confirmation_pages(
         app,
         path=_REGISTRATION_PATH,
         cookie_name=_REGISTRATION_COOKIE,
-        render_page=render_registration_verification_page,
+        render_page=lambda state, **fields: render_registration_verification_page(
+            state, login_enabled=login_enabled, **fields
+        ),
         confirm=lambda token: confirm_registration_verification(repository, token),
     )
 

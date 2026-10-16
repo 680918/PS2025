@@ -113,6 +113,67 @@ class SQLiteUserRepository:
                 """
             )
 
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS login_sessions (
+                    token_hash TEXT PRIMARY KEY NOT NULL CHECK (length(token_hash) = 64),
+                    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    issued_at INTEGER NOT NULL,
+                    expires_at INTEGER NOT NULL CHECK (expires_at > issued_at),
+                    revoked_at INTEGER
+                )
+                """
+            )
+
+    def save_login_session(
+        self, token_hash, user_id, issued_at, expires_at, previous_hash=None
+    ):
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "DELETE FROM login_sessions WHERE expires_at <= ?", (issued_at,)
+            )
+            allowed = connection.execute(
+                """SELECT 1 FROM users AS account
+                   JOIN user_email_verifications AS verified ON verified.user_id = account.user_id
+                   JOIN user_passwords AS password ON password.user_id = account.user_id
+                   WHERE account.user_id = ? AND verified.email = account.email
+                     AND verified.verified_at IS NOT NULL""",
+                (user_id,),
+            ).fetchone()
+            if allowed is None:
+                raise ValueError("login unavailable")
+            connection.execute(
+                "INSERT INTO login_sessions (token_hash, user_id, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+                (token_hash, user_id, issued_at, expires_at),
+            )
+            if previous_hash is not None:
+                connection.execute(
+                    "UPDATE login_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL",
+                    (issued_at, previous_hash),
+                )
+
+    def get_login_session(self, token_hash, now):
+        with closing(self._connect()) as connection:
+            return connection.execute(
+                """SELECT account.user_id, account.name, account.email, session.expires_at
+                   FROM login_sessions AS session
+                   JOIN users AS account ON account.user_id = session.user_id
+                   JOIN user_email_verifications AS verified ON verified.user_id = account.user_id
+                   JOIN user_passwords AS password ON password.user_id = account.user_id
+                   WHERE session.token_hash = ? AND session.issued_at <= ? AND session.expires_at > ?
+                     AND session.revoked_at IS NULL AND verified.verified_at IS NOT NULL
+                     AND verified.email = account.email""",
+                (token_hash, now, now),
+            ).fetchone()
+
+    def revoke_login_session(self, token_hash, now):
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                "UPDATE login_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL",
+                (now, token_hash),
+            )
+
     def save_pending_registration(
         self,
         *,

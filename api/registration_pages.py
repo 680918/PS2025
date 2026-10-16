@@ -75,6 +75,7 @@ class RegistrationMailConfig:
     settings: SMTPSettings = field(repr=False)
     simulated: bool = False
     sender: Callable | None = field(default=None, repr=False)
+    allowed_recipient: str | None = field(default=None, repr=False)
 
     def __post_init__(self):
         _trusted_activation_url(self.activation_url)
@@ -87,6 +88,11 @@ class RegistrationMailConfig:
             not self.simulated and self.sender is not None
         ):
             raise MailConfigurationError("模拟发送需要单独的模拟发信器。")
+        if (
+            self.allowed_recipient is not None
+            and self.allowed_recipient != self.settings.username.strip().lower()
+        ):
+            raise MailConfigurationError("本人邮箱测试配置无效。")
 
 
 def register_registration_pages(app, repository, *, mail_config=None):
@@ -250,6 +256,7 @@ def register_registration_pages(app, repository, *, mail_config=None):
                 browser_secret=credentials[1],
                 retry_failed=action == "retry",
                 sender=mail_config.sender,
+                allowed_recipient=mail_config.allowed_recipient,
             )
             return True
         finally:

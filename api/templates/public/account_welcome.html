@@ -1,0 +1,34 @@
+<main id="main-content" class="account-space">
+    <section class="account-greeting" aria-labelledby="welcome-title">
+        <div><p class="eyebrow">YOUR GROWTH SPACE</p><h1 id="welcome-title">欢迎回来，$name。</h1><p>不用急着完成什么，从今天的一个想法开始。</p><p class="account-status">邮箱已验证 · $email</p></div>
+        <form method="post" action="/web/auth/logout"><input type="hidden" name="csrf" value="$csrf"><button class="button button-outline" type="submit">退出登录</button></form>
+    </section>
+    <div class="account-ready-note" role="status"><strong>你的账户已经准备好。</strong><p>注册、邮箱验证、登录与退出已可试用。统一对话、资料管理和知识库功能仍在准备中。</p></div>
+    <div class="coach-workspace">
+        <aside class="workspace-sidebar" aria-label="成长空间导航">
+            <p class="workspace-nav-title">我的空间</p>
+            <nav class="workspace-nav" aria-label="工作区入口">
+                <a class="workspace-nav-item workspace-nav-current" href="#coach-dialog" aria-current="location">对话</a>
+                <button class="workspace-nav-item" type="button" disabled>知识库</button>
+                <button class="workspace-nav-item" type="button" disabled>资料与书籍</button>
+            </nav>
+            <p class="workspace-sidebar-caption">资料提供讨论依据。<br>知识库留住整理后的成果。</p>
+        </aside>
+        <section id="coach-dialog" class="workspace-conversation" aria-labelledby="conversation-title">
+            <div class="conversation-heading"><span class="card-mark" aria-hidden="true">知</span><div><p class="eyebrow">YOUR GROWTH COACH</p><h2 id="conversation-title">和成长教练对话</h2></div></div>
+            <div class="conversation-start">
+                <h3>今天，想聊些什么？</h3>
+                <p>聊聊近况、学习一个主题，或围绕一本书提问，都从这里开始。</p>
+                <p class="conversation-continuity">话题可以自然展开，也可以暂时转个方向，再回来继续。</p>
+            </div>
+            <div class="conversation-composer" aria-label="统一对话输入区">
+                <label class="visually-hidden" for="coach-message">发送给成长教练的消息</label>
+                <textarea id="coach-message" rows="3" placeholder="说说你的想法，或围绕一个主题、一本书提问…" aria-describedby="conversation-availability" disabled></textarea>
+                <div class="conversation-tools"><button class="button button-outline" type="button" disabled><span aria-hidden="true">＋</span> 添加资料</button><button class="button button-primary" type="button" disabled>发送</button></div>
+            </div>
+            <p id="conversation-availability" class="conversation-availability">对话功能准备中，当前暂不能发送消息或上传资料。</p>
+            <p class="conversation-knowledge-note">对话中的笔记、教案和学习成果，经你确认后，可以收进知识库，成为自己的长期积累。</p>
+        </section>
+    </div>
+    <p class="account-space-footnote">一个持续交流的地方，一份不断积累的个人知识库。</p>
+</main>

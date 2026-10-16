@@ -72,6 +72,7 @@ def send_registration_verification(
     retry_failed: bool = False,
     now: datetime | None = None,
     sender=None,
+    allowed_recipient=None,
 ) -> RegistrationDeliveryStatus:
     """Claim before SMTP; only an explicit retry of a definite failure is allowed.
 
@@ -108,6 +109,8 @@ def send_registration_verification(
         expires_at=datetime.fromtimestamp(expires_at, timezone.utc),
     )
     try:
+        if allowed_recipient is not None and recipient != allowed_recipient:
+            raise MailConfigurationError("本次测试仅允许向已确认的本人邮箱发送。")
         # No database transaction is held while waiting for the mail server.
         (sender if sender is not None else send_verification_email)(
             message, settings, now=now
