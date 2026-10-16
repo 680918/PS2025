@@ -5,3 +5,4 @@ fastapi==0.141.1
 uvicorn
 python-multipart
 markdown-it-py==4.2.0
+argon2-cffi==25.1.0
