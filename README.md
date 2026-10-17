@@ -151,3 +151,7 @@ python -m pytest tests/test_api_run.py tests/test_web_home.py tests/test_web_pub
 ### 我的学习与多主题续学
 
 统一对话支持按主题分别保存进度和关联资料。左侧“我的学习”可新建、查找、切换与明确点击继续学习。目录和切换不调用 AI，续学沿用已有 AI 服务。旧的最后学习位置兼容保留，详细行为见 [多主题学习](docs/multi-topic-learning.md)。
+
+### 已保存教案的修订与版本
+
+已保存教案支持修改标题和正文、查看版本记录，以及明确恢复旧版。每次修订保留原文，重温和导出使用当前版本；编辑不调用 AI。操作、冲突处理与存储边界见 [教案持续修订](docs/lesson-revision.md)。

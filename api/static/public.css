@@ -484,3 +484,12 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .study-space select { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; }
 .study-directory-link { display: inline-flex; margin-top: 12px; font-size: 12px; }
 @media(max-width:520px) { .study-actions { align-items: stretch; } .study-actions form, .study-actions .button { width: 100%; } .study-search input, .study-search .button { width: 100%; } }
+
+/* Revision history stays in the existing personal knowledge space. */
+.lesson-version-notice { padding: 13px 17px; border-radius: 9px; background: var(--tint); color: var(--green); font-size: 13px; line-height: 1.9; }
+.lesson-revision-note { color: var(--muted); font-size: 12px; line-height: 1.9; overflow-wrap: anywhere; }
+.lesson-current-comparison { margin: 20px 0; padding: 16px; border: 1px solid var(--line); border-radius: 9px; }
+.lesson-current-comparison summary { cursor: pointer; font-size: 13px; color: var(--green); }
+.lesson-version-list { margin: 24px 0; }
+.lesson-revision-editor textarea { min-height: 360px; font-family: inherit; }
+@media(max-width:520px) { .lesson-revision-editor { padding: 16px; } .lesson-revision-editor .library-actions > * { width: 100%; text-align: center; } }

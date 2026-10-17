@@ -49,6 +49,11 @@ class CoachRepository:
                     created_at INTEGER NOT NULL, saved_at INTEGER, UNIQUE(user_id,turn_id)
                 );
                 CREATE TABLE IF NOT EXISTS coach_review (user_id TEXT PRIMARY KEY, knowledge_id TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS coach_knowledge_versions (
+                    user_id TEXT NOT NULL, knowledge_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0),
+                    title TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL,
+                    restored_from INTEGER, PRIMARY KEY(user_id,knowledge_id,revision)
+                );
                 CREATE TABLE IF NOT EXISTS coach_topics (
                     topic_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, topic_key TEXT NOT NULL,
                     title TEXT NOT NULL, progress TEXT NOT NULL, next_step TEXT NOT NULL,
@@ -517,7 +522,7 @@ class CoachRepository:
     def knowledge(self, user_id, knowledge_id, *, saved_only=False):
         with closing(self._connect()) as db:
             row = db.execute(
-                "SELECT * FROM coach_knowledge WHERE user_id=? AND knowledge_id=? AND status<> 'dismissed'",
+                "SELECT lesson.*, COALESCE((SELECT MAX(revision) FROM coach_knowledge_versions WHERE user_id=lesson.user_id AND knowledge_id=lesson.knowledge_id),1) AS revision, COALESCE((SELECT created_at FROM coach_knowledge_versions WHERE user_id=lesson.user_id AND knowledge_id=lesson.knowledge_id ORDER BY revision DESC LIMIT 1),lesson.saved_at) AS revised_at FROM coach_knowledge AS lesson WHERE user_id=? AND knowledge_id=? AND status<> 'dismissed'",
                 (user_id, knowledge_id),
             ).fetchone()
         if not row or (saved_only and row["status"] != "saved"):
@@ -558,6 +563,150 @@ class CoachRepository:
                 ),
             )
         return self.knowledge(user_id, knowledge_id)
+
+    def knowledge_versions(self, user_id, knowledge_id, *, offset=0, limit=21):
+        with closing(self._connect()) as db:
+            db.execute("BEGIN")
+            item = db.execute(
+                "SELECT title,saved_at FROM coach_knowledge WHERE user_id=? AND knowledge_id=? AND status='saved'",
+                (user_id, knowledge_id),
+            ).fetchone()
+            if item is None:
+                return []
+            rows = db.execute(
+                "SELECT revision,title,created_at,restored_from FROM coach_knowledge_versions WHERE user_id=? AND knowledge_id=? ORDER BY revision DESC LIMIT ? OFFSET ?",
+                (user_id, knowledge_id, limit, offset),
+            ).fetchall()
+            if not rows and offset == 0:
+                return [
+                    {
+                        "revision": 1,
+                        "title": item["title"],
+                        "created_at": item["saved_at"],
+                        "restored_from": None,
+                    }
+                ]
+            return [dict(row) for row in rows]
+
+    def knowledge_version(self, user_id, knowledge_id, revision):
+        with closing(self._connect()) as db:
+            db.execute("BEGIN")
+            item = db.execute(
+                "SELECT title,content,saved_at FROM coach_knowledge WHERE user_id=? AND knowledge_id=? AND status='saved'",
+                (user_id, knowledge_id),
+            ).fetchone()
+            if item is None:
+                return None
+            row = db.execute(
+                "SELECT revision,title,content,created_at,restored_from FROM coach_knowledge_versions WHERE user_id=? AND knowledge_id=? AND revision=?",
+                (user_id, knowledge_id, revision),
+            ).fetchone()
+            if row:
+                return dict(row)
+            if (
+                revision == 1
+                and not db.execute(
+                    "SELECT 1 FROM coach_knowledge_versions WHERE user_id=? AND knowledge_id=? LIMIT 1",
+                    (user_id, knowledge_id),
+                ).fetchone()
+            ):
+                return {
+                    "revision": 1,
+                    "title": item["title"],
+                    "content": item["content"],
+                    "created_at": item["saved_at"],
+                    "restored_from": None,
+                }
+            return None
+
+    def revise_knowledge(
+        self,
+        user_id,
+        knowledge_id,
+        revision,
+        *,
+        title=None,
+        content=None,
+        restore=None,
+        now=None,
+    ):
+        if type(revision) is not int or not 1 <= revision <= 1000000000:
+            raise ValueError("invalid revision")
+        if restore is not None:
+            if (
+                type(restore) is not int
+                or not 1 <= restore <= 1000000000
+                or title is not None
+                or content is not None
+            ):
+                raise ValueError("invalid restore")
+        elif (
+            not isinstance(title, str)
+            or not 1 <= len(title.strip()) <= 120
+            or not isinstance(content, str)
+            or not 1 <= len(content.strip()) <= 12000
+            or any(c in title for c in "\r\n\x00")
+            or "\x00" in content
+            or any(0xD800 <= ord(c) <= 0xDFFF for c in title + content)
+        ):
+            raise ValueError("invalid lesson")
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            item = db.execute(
+                "SELECT * FROM coach_knowledge WHERE user_id=? AND knowledge_id=? AND status='saved'",
+                (user_id, knowledge_id),
+            ).fetchone()
+            if item is None:
+                return "missing"
+            current = (
+                db.execute(
+                    "SELECT MAX(revision) FROM coach_knowledge_versions WHERE user_id=? AND knowledge_id=?",
+                    (user_id, knowledge_id),
+                ).fetchone()[0]
+                or 1
+            )
+            if current != revision:
+                return "conflict"
+            if restore is not None:
+                source = db.execute(
+                    "SELECT title,content FROM coach_knowledge_versions WHERE user_id=? AND knowledge_id=? AND revision=?",
+                    (user_id, knowledge_id, restore),
+                ).fetchone()
+                if source is None:
+                    if restore != 1 or current != 1:
+                        return "missing"
+                    source = item
+                title, content = source["title"], source["content"]
+            else:
+                title, content = title.strip(), content.strip()
+            if title == item["title"] and content == item["content"]:
+                return "unchanged"
+            if db.execute(
+                "SELECT 1 FROM coach_review WHERE user_id=? AND knowledge_id=?",
+                (user_id, knowledge_id),
+            ).fetchone():
+                self._require_idle(db, user_id, now)
+            if current == 1:
+                db.execute(
+                    "INSERT OR IGNORE INTO coach_knowledge_versions VALUES(?,?,1,?,?,?,NULL)",
+                    (
+                        user_id,
+                        knowledge_id,
+                        item["title"],
+                        item["content"],
+                        item["saved_at"],
+                    ),
+                )
+            db.execute(
+                "INSERT INTO coach_knowledge_versions VALUES(?,?,?,?,?,?,?)",
+                (user_id, knowledge_id, current + 1, title, content, now, restore),
+            )
+            db.execute(
+                "UPDATE coach_knowledge SET title=?,content=? WHERE user_id=? AND knowledge_id=? AND status='saved'",
+                (title, content, user_id, knowledge_id),
+            )
+            return "updated"
 
     def select_review(self, user_id, knowledge_id=None, *, material_id=None):
         lesson = (

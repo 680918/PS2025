@@ -5,6 +5,7 @@ import hmac
 import re
 import secrets
 import sqlite3
+from datetime import datetime, timezone, timedelta
 from html import escape
 from threading import BoundedSemaphore, Lock
 from urllib.parse import parse_qs, quote
@@ -627,7 +628,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             + (
                 '">预览与保存教案 →</a></article>'
                 if status == "pending"
-                else '">调阅、重温与导出 →</a></article>'
+                else '">调阅、修订与重温 →</a></article>'
             )
             for item in items[:20]
         )
@@ -696,7 +697,13 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             )
         else:
             controls = (
-                '<p class="library-intro">已由你确认保存。</p><div class="library-actions">'
+                '<p class="library-intro">已由你确认保存。当前为第 '
+                + str(item["revision"])
+                + " 版 · "
+                + lesson_time(item["revised_at"])
+                + "</p>"
+                + lesson_notice(request.query_params.get("notice"))
+                + '<div class="library-actions">'
                 + action(
                     request,
                     f"/web/knowledge/{identity}/review",
@@ -704,7 +711,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
                     identity,
                     "在对话中重温",
                 )
-                + f'<a class="button button-outline" href="/web/knowledge/{identity}/download">导出教案</a></div><article class="lesson-document markdown-content">'
+                + f'<a class="button button-outline" href="/web/knowledge/{identity}/download">导出教案</a><a class="button button-outline" href="/web/knowledge/{identity}/edit">修改教案</a><a class="text-link" href="/web/knowledge/{identity}/versions">版本记录</a></div><article class="lesson-document markdown-content">'
                 + lesson_html(item["content"])
                 + "</article>"
             )
@@ -718,16 +725,340 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
         )
         return page(
             item["title"],
-            '<section class="library-card">' + controls + citations + "</section>",
+            '<section class="library-card">'
+            + controls
+            + citations
+            + (
+                '<p class="lesson-revision-note">修订由你维护；引用记录最初整理时的参考，不代表新增内容已由原书核实。重温和导出使用当前版本。</p>'
+                if item["status"] == "saved"
+                else ""
+            )
+            + "</section>",
         )
+
+    def lesson_time(timestamp):
+        return datetime.fromtimestamp(timestamp, timezone(timedelta(hours=8))).strftime(
+            "%Y-%m-%d %H:%M · 北京时间"
+        )
+
+    def lesson_notice(notice):
+        message = {
+            "revised": "修订已保存，旧版本已保留。",
+            "restored": "所选内容已恢复为新的当前版本，原有版本均保留。",
+            "unchanged": "内容与当前版本相同，没有重复创建版本。",
+        }.get(notice)
+        return (
+            '<p class="lesson-version-notice" role="status">' + message + "</p>"
+            if message
+            else ""
+        )
+
+    def revision_number(text):
+        return (
+            int(text)
+            if re.fullmatch(r"[1-9][0-9]{0,9}", text) and int(text) <= 1000000000
+            else None
+        )
+
+    def lesson_editor(request, item, values=None, *, message="", code=200):
+        values = values or item
+        identity, revision = item["knowledge_id"], str(item["revision"])
+        body = (
+            '<p class="library-intro">修改第 '
+            + revision
+            + " 版教案，保存后会保留旧版。普通编辑不调用 AI。</p>"
+        )
+        if message:
+            body += (
+                '<p class="form-error-summary" role="alert">'
+                + escape(message)
+                + '</p><details class="lesson-current-comparison"><summary>查看当前已保存内容，再决定如何合并</summary><h2>'
+                + escape(item["title"])
+                + '</h2><article class="lesson-document markdown-content">'
+                + lesson_html(item["content"])
+                + "</article></details>"
+            )
+        body += (
+            '<section class="library-card lesson-revision-editor"><form method="post" action="/web/knowledge/'
+            + identity
+            + '/revise">'
+            + input_csrf(request, "revise", identity + "." + revision)
+        )
+        body += (
+            '<input type="hidden" name="revision" value="'
+            + revision
+            + '"><label for="revision-title">教案标题</label><input id="revision-title" name="title" maxlength="120" required value="'
+            + escape(values["title"], quote=True)
+            + '"><label for="revision-content">教案正文（支持 Markdown）</label><textarea id="revision-content" name="content" rows="24" maxlength="12000" required>'
+            + escape(values["content"])
+            + '</textarea><p class="lesson-revision-note">保存前请核对内容；引用继续保留为最初整理时的参考。未保存的修改不会自动保留，离开前请先保存或自行复制。</p><div class="library-actions"><button class="button button-primary" type="submit">'
+            + ("再次确认并保存修订" if code == 409 else "保存修订")
+            + '</button><a class="button button-outline" href="/web/knowledge/'
+            + identity
+            + '">取消，回到教案</a></div></form></section>'
+        )
+        return page("修改教案", body, code=code)
+
+    def version_reading(request, item, version, *, message="", code=200):
+        identity = item["knowledge_id"]
+        current, target = str(item["revision"]), str(version["revision"])
+        body = (
+            '<p class="library-intro">第 '
+            + target
+            + " 版 · "
+            + lesson_time(version["created_at"])
+            + (" · 当前版本" if current == target else " · 历史版本")
+            + "</p>"
+        )
+        if message:
+            body += (
+                '<p class="form-error-summary" role="alert">' + escape(message) + "</p>"
+            )
+        body += (
+            '<div class="library-actions"><a class="button button-outline" href="/web/knowledge/'
+            + identity
+            + '">回到当前教案</a><a class="text-link" href="/web/knowledge/'
+            + identity
+            + '/versions">全部版本记录</a></div><article class="library-card lesson-document markdown-content">'
+            + lesson_html(version["content"])
+            + "</article>"
+        )
+        if current != target:
+            body += (
+                '<section class="library-card"><h2>恢复为当前内容</h2><p class="lesson-revision-note">当前是第 '
+                + current
+                + " 版。确认后将以第 "
+                + target
+                + ' 版的标题和正文建立新版，之后的版本仍然保留；恢复本身不调用 AI。若内容相同，不重复建立版本。</p><form method="post" action="/web/knowledge/'
+                + identity
+                + '/restore">'
+                + input_csrf(
+                    request, "restore", identity + "." + current + "." + target
+                )
+                + '<input type="hidden" name="revision" value="'
+                + current
+                + '"><input type="hidden" name="target" value="'
+                + target
+                + '"><button class="button button-primary" type="submit">确认恢复第 '
+                + target
+                + " 版内容</button></form></section>"
+            )
+        return page(version["title"], body, code=code)
+
+    @app.get("/web/knowledge/{identity}/edit", include_in_schema=False)
+    def edit_lesson(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            item = dialogue.knowledge(account.user_id, identity, saved_only=True)
+        except sqlite3.Error:
+            return problem("暂时无法读取教案。", 503)
+        return (
+            lesson_editor(request, item)
+            if item
+            else problem("找不到已保存的教案。", 404)
+        )
+
+    @app.get("/web/knowledge/{identity}/versions", include_in_schema=False)
+    def lesson_versions(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        number = revision_number(request.query_params.get("page", "1"))
+        if number is None or number > 100000:
+            return problem("请检查版本页码。")
+        try:
+            item = dialogue.knowledge(account.user_id, identity, saved_only=True)
+            if not item:
+                return problem("找不到已保存的教案。", 404)
+            versions = dialogue.knowledge_versions(
+                account.user_id, identity, offset=(number - 1) * 20
+            )
+        except sqlite3.Error:
+            return problem("暂时无法读取版本记录。", 503)
+        body = (
+            '<p class="library-intro">'
+            + escape(item["title"])
+            + " · 当前为第 "
+            + str(item["revision"])
+            + ' 版。每次修订都留一份记录，恢复旧版会建立新版。</p><a class="text-link" href="/web/knowledge/'
+            + identity
+            + '">← 回到当前教案</a><div class="lesson-version-list">'
+        )
+        for version in versions[:20]:
+            revision = str(version["revision"])
+            label = (
+                "首次保存"
+                if version["revision"] == 1
+                else (
+                    "恢复自第 " + str(version["restored_from"]) + " 版"
+                    if version["restored_from"]
+                    else "手动修订"
+                )
+            )
+            body += (
+                '<article class="library-item"><span class="library-badge">第 '
+                + revision
+                + " 版"
+                + (" · 当前版本" if version["revision"] == item["revision"] else "")
+                + '</span><h2><a href="/web/knowledge/'
+                + identity
+                + "/versions/"
+                + revision
+                + '">'
+                + escape(version["title"])
+                + "</a></h2><p>"
+                + label
+                + " · "
+                + lesson_time(version["created_at"])
+                + '</p><a class="text-link" href="/web/knowledge/'
+                + identity
+                + "/versions/"
+                + revision
+                + '">查看本版内容 →</a></article>'
+            )
+        body += '</div><nav class="library-paging" aria-label="教案版本分页">'
+        if number > 1:
+            body += '<a href="?page=' + str(number - 1) + '">← 上一页</a>'
+        if len(versions) > 20:
+            body += '<a href="?page=' + str(number + 1) + '">下一页 →</a>'
+        return page("版本记录", body + "</nav>")
+
+    @app.get("/web/knowledge/{identity}/versions/{version}", include_in_schema=False)
+    def read_lesson_version(request: Request, identity: str, version: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        number = revision_number(version)
+        if number is None:
+            return problem("找不到这个教案版本。", 404)
+        try:
+            item = dialogue.knowledge(account.user_id, identity, saved_only=True)
+            record = dialogue.knowledge_version(account.user_id, identity, number)
+        except sqlite3.Error:
+            return problem("暂时无法读取教案版本。", 503)
+        return (
+            version_reading(request, item, record)
+            if item and record
+            else problem("找不到这个教案版本。", 404)
+        )
+
+    async def revision_action(request, user_id, identity, operation):
+        expected = (
+            {"csrf", "revision", "title", "content"}
+            if operation == "revise"
+            else {"csrf", "revision", "target"}
+        )
+        values = await fields(request, expected)
+        if values is None:
+            return problem("修订内容格式无法读取或过长，请返回教案重新填写。")
+        revision = revision_number(values["revision"])
+        target = revision_number(values["target"]) if operation == "restore" else None
+        binding = (
+            identity
+            + "."
+            + values["revision"]
+            + ("." + values["target"] if operation == "restore" else "")
+        )
+        if (
+            revision is None
+            or (operation == "restore" and target is None)
+            or not valid_csrf(request, values, operation, binding)
+            or (
+                request.headers.get("origin") == "null"
+                and request.headers.get("sec-fetch-site") != "same-origin"
+            )
+        ):
+            return problem("页面无法核对，请重新打开教案。", 403)
+        try:
+            item = dialogue.knowledge(user_id, identity, saved_only=True)
+            if not item:
+                return problem("找不到已保存的教案。", 404)
+            record = (
+                dialogue.knowledge_version(user_id, identity, target)
+                if target
+                else None
+            )
+            if target and not record:
+                return problem("找不到这个教案版本。", 404)
+            try:
+                result = await run_in_threadpool(
+                    dialogue.revise_knowledge,
+                    user_id,
+                    identity,
+                    revision,
+                    **(
+                        {"restore": target}
+                        if target
+                        else {"title": values["title"], "content": values["content"]}
+                    ),
+                )
+            except TopicBusy:
+                message = "教练正在重温这份教案，请等本轮回复结束后再保存。你的填写内容仍在下方。"
+                return (
+                    lesson_editor(request, item, values, message=message, code=409)
+                    if operation == "revise"
+                    else version_reading(
+                        request,
+                        item,
+                        record,
+                        message="教练正在重温这份教案，请等回复结束后再恢复。",
+                        code=409,
+                    )
+                )
+            except ValueError:
+                return (
+                    lesson_editor(
+                        request,
+                        item,
+                        values,
+                        message="标题需要 1–120 字，正文需要 1–12000 字；标题不含换行，内容不含无效字符。",
+                    )
+                    if operation == "revise"
+                    else problem("恢复信息无法读取。")
+                )
+            if result == "missing":
+                return problem("找不到这个教案或版本。", 404)
+            if result == "conflict":
+                latest = dialogue.knowledge(user_id, identity, saved_only=True)
+                return (
+                    lesson_editor(
+                        request,
+                        latest,
+                        values,
+                        message="另一页面已经保存了新版。本次填写尚未保存，已保留在下方，请先展开当前内容核对，合并后再确认。",
+                        code=409,
+                    )
+                    if operation == "revise"
+                    else version_reading(
+                        request,
+                        latest,
+                        record,
+                        message="另一页面已经保存了新版。请核对当前版本后，再决定是否恢复。",
+                        code=409,
+                    )
+                )
+        except sqlite3.Error:
+            return problem("教案暂时无法保存，请先查看当前版本，避免重复操作。", 503)
+        notice = (
+            "unchanged"
+            if result == "unchanged"
+            else "restored"
+            if operation == "restore"
+            else "revised"
+        )
+        return redirect("/web/knowledge/" + identity + "?notice=" + notice)
 
     @app.post("/web/knowledge/{identity}/{operation}", include_in_schema=False)
     async def knowledge_action(request: Request, identity: str, operation: str):
         account, denied = await run_in_threadpool(auth, request, write=True)
         if denied is not None:
             return denied
-        if operation not in {"save", "dismiss", "review"}:
+        if operation not in {"save", "dismiss", "review", "revise", "restore"}:
             return problem("找不到这项操作。", 404)
+        if operation in {"revise", "restore"}:
+            return await revision_action(request, account.user_id, identity, operation)
         values = await fields(
             request, {"csrf", "title", "content"} if operation == "save" else {"csrf"}
         )

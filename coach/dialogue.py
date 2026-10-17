@@ -121,8 +121,16 @@ def send_dialogue(
         declines = bool(
             re.search(r"(不用|不要|不需要|先别|暂不|取消).{0,12}(教案|整理|保存)", text)
         )
+        reviewing = bool(
+            re.search(
+                r"(重温|复习|回顾|阅读|讲解|解释).{0,12}教案|教案.{0,12}(重温|复习|回顾|阅读|讲解|解释)",
+                text,
+            )
+        )
+        writing = bool(re.search(r"整理|编写|生成|制作|起草|另写|总结", text))
         requested = action == "lesson" or (
             not declines
+            and (not reviewing or writing)
             and bool(
                 re.search(
                     r"教案|整理成册|学习手册|整理.{0,20}知识点|知识点.{0,20}整理", text
@@ -155,6 +163,7 @@ def send_dialogue(
             else None,
             "draft_requested": requested,
             "can_suggest_draft": not declines
+            and (not reviewing or writing)
             and not repository.list_knowledge(user_id, status="pending", limit=1)
             and bool(view["learning"] or len(view["turns"]) >= 2),
         }
