@@ -2,6 +2,7 @@
 
 import argparse
 import getpass
+import importlib
 import socket
 import sqlite3
 import sys
@@ -13,6 +14,82 @@ from security.verification_mailer import MailConfigurationError, SMTPSettings
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def check_ready(directory, port, *, simulated=False, ai=False, register=False):
+    """Read-only local checks: never create an app, prompt, or call a provider."""
+    print("启动前检查：不启动服务、不创建账户、不发邮件、不调用 AI。")
+    ready = True
+    missing = []
+    for module in (
+        "fastapi",
+        "uvicorn",
+        "jinja2",
+        "python_multipart",
+        "argon2",
+        "markdown_it",
+        "pypdf",
+        "requests",
+        "dotenv",
+    ):
+        try:
+            importlib.import_module(module)
+        except Exception:
+            # Never print import exceptions, which can contain local configuration.
+            missing.append(module)
+    if missing:
+        ready = False
+        print("[需处理] 运行依赖无法加载：" + "、".join(missing))
+        print("使用同一个 Python 执行：python -m pip install -r requirements.txt")
+    else:
+        print("[通过] 网页、密码、资料和 PDF 运行依赖可加载。")
+
+    try:
+        if directory.exists() and not directory.is_dir():
+            raise ValueError
+        marker = directory / ".coach-mode"
+        if marker.exists():
+            with marker.open(encoding="utf-8") as stream:
+                mode = stream.read(16)
+            if mode != ("simulated" if simulated else "real"):
+                raise ValueError
+        print("[通过] 数据目录路径与已有模式兼容；实际写入权限在启动时确认。")
+    except (OSError, ValueError, UnicodeError):
+        ready = False
+        print("[需处理] 数据目录不可读取或模式冲突；模拟与真实数据请使用不同目录。")
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", port))
+        print(f"[通过] 本机端口 {port} 当前可用；正式启动时会再次检查。")
+    except OSError:
+        ready = False
+        print(f"[需处理] 本机端口 {port} 无法使用；可用 --port 指定其他端口。")
+
+    if ai:
+        try:
+            from coach.dialogue import real_responder
+
+            real_responder()  # Builds a callable only; does not send an API request.
+            print("[通过] AI 密钥已配置，超时配置可用；密钥值不显示。")
+        except Exception:
+            ready = False
+            print("[需处理] AI 配置无法加载；在本机检查 .env 中的密钥和 1–60 秒超时。")
+        print("未联网验证密钥有效性、账户余额、模型可用性或回答质量。")
+    else:
+        print(
+            "[说明] 模拟模式不读取 AI 配置。"
+            if simulated
+            else "[说明] 未指定 --ai，本次不读取 AI 配置。"
+        )
+    if register:
+        print("[说明] 本次不索取 163 授权码；正式启动 --register 时再于终端隐藏输入。")
+    print(
+        "本机检查通过，可以按同一参数去掉 --check 启动。"
+        if ready
+        else "检查尚未通过，请先处理上述提示，再运行同一检查。"
+    )
+    return 0 if ready else 1
 
 
 def build_app(directory, port, *, simulated=False, settings=None, responder=None):
@@ -92,6 +169,11 @@ def main(argv=None):
     parser.add_argument("--port", type=parse_port, default=8784)
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument(
+        "--check",
+        action="store_true",
+        help="仅检查本机依赖、目录、端口和所选 AI 配置；不启动或调用外部服务",
+    )
+    parser.add_argument(
         "--simulate", action="store_true", help="仅模拟邮件与 AI，使用独立数据"
     )
     parser.add_argument(
@@ -115,6 +197,14 @@ def main(argv=None):
         .expanduser()
         .resolve()
     )
+    if args.check:
+        return check_ready(
+            directory,
+            args.port,
+            simulated=args.simulate,
+            ai=args.ai,
+            register=args.register,
+        )
     try:
         settings, responder = None, None
         if args.simulate:

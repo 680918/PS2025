@@ -15,6 +15,8 @@ python -m api.coach_run --simulate
 
 聊天、主题学习共用一个输入框；转题不清除学习位置。现已接通资料上传与引用、教案草稿确认保存及知识库查阅重温；用户可以要求整理教案，Coach 也可以提出草稿，始终经用户预览确认后保存。参见 [资料与知识库说明](docs/materials-and-knowledge.md)。更新后先安装 requirements.txt，以使用新增 PDF 依赖。账户数据、对话均按用户隔离且保存在本机，默认数据目录已加入 Git 忽略。详见 [统一对话与启动说明](docs/coach-dialogue.md)。本步自动检验使用假 AI，真实 AI 回复质量仍需实际体验；尚未公开部署。
 
+真实试用前可运行 `python -m api.coach_run --check --ai --register --port 8785`；仅检查本机条件，不发信、不调用 AI。通过后去掉 `--check` 启动。端口可更换，记录仍保存在同一本机账户空间。详见 [本人真实 AI 试用步骤](docs/real-ai-local-trial.md)。
+
 **下方 `api.run` 是保留的旧开发入口，其禁用登录与旧学习页面描述不适用于以上新入口。**
 
 ## 启动网页

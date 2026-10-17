@@ -17,6 +17,7 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
+from api.coach_markdown import coach_markdown
 from api.public_pages import _render_layout
 from api.library_pages import register_library_pages, library_csrf
 from coach.dialogue import send_dialogue
@@ -288,7 +289,9 @@ def register_account_pages(
                 if dialogue_repository
                 else {"turns": [], "learning": None}
             )
-            dialogue_body, learning_panel = workspace(view, token, account.user_id)
+            dialogue_body, learning_panel, assets_panel = workspace(
+                view, token, account.user_id
+            )
         except sqlite3.Error:
             return dialogue_problem("暂时无法读取对话记录，请稍后再试。", 503)
         body = Template(
@@ -299,6 +302,7 @@ def register_account_pages(
             csrf=signature("logout", token),
             dialogue_body=dialogue_body,
             learning_panel=learning_panel,
+            assets_panel=assets_panel,
         )
         return HTMLResponse(
             _render_layout("我的成长空间 · 知行", body, signed_in=True),
@@ -336,6 +340,9 @@ def register_account_pages(
             page = dialogue_repository.history_page(account.user_id, before=int(before))
         except sqlite3.Error:
             return problem("暂时无法读取历史对话。", 503)
+        for turn in page["turns"]:
+            if turn["status"] == "complete":
+                turn["assistant_html"] = coach_markdown(turn["assistant_content"])
         return JSONResponse(page, headers=_HEADERS)
 
     def dialogue_form(token, action, content):
@@ -362,18 +369,18 @@ def register_account_pages(
                     for source in turn.get("citations", [])
                 )
                 history.append(
-                    f'<article{latest} class="dialogue-message dialogue-coach"><p class="message-author">知行 · 成长教练</p><div class="message-content">{escape(turn["assistant_content"])}</div>{citations_html}</article>'
+                    f'<article{latest} class="dialogue-message dialogue-coach"><p class="message-author">知行 · 成长教练</p><div class="message-content markdown-content">{coach_markdown(turn["assistant_content"])}</div>{citations_html}</article>'
                 )
             elif turn["status"] == "pending":
                 history.append(
-                    f'<p{latest} class="dialogue-state" role="status">教练正在回复。请稍后刷新查看，刷新不会重复发送。</p>'
+                    f'<p{latest} class="dialogue-state" role="status"><span class="waiting-dots" aria-hidden="true"><i></i><i></i><i></i></span>教练正在回复。请稍后刷新查看，刷新不会重复发送。</p>'
                 )
             else:
                 history.append(
                     f'<p{latest} class="dialogue-state" role="status">这次未能取得回复。你的消息已保留；需要时可以重新输入发送。系统不会自动重试。</p>'
                 )
         disabled = "" if enabled and not pending else " disabled"
-        composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="3" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability"{disabled}></textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials#add-material">＋ 添加资料</a><button class="button button-primary" type="submit"{disabled}>发送</button></div></div>'
+        composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability"{disabled}></textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials#add-material">＋ 添加资料</a><button class="button button-primary" type="submit"{disabled}>发送</button></div></div>'
         if enabled:
             composer = dialogue_form(token, "message", composer)
         learning = view["learning"]
@@ -381,7 +388,7 @@ def register_account_pages(
             materials_repository.selected(user_id) if materials_repository else None
         )
         draft_items = dialogue_repository.list_knowledge(
-            user_id, status="pending", limit=3
+            user_id, status="pending", limit=1
         )
         review = dialogue_repository.review(user_id)
         mobile_context = (
@@ -391,7 +398,7 @@ def register_account_pages(
             + escape(learning["progress"] if learning else "尚无学习记录")
             + "</p><p>讨论资料 · "
             + escape(selected["title"] if selected else "未关联资料")
-            + '</p><a class="text-link" href="#learning-title">查看学习详情、教案与续学 →</a></div>'
+            + '</p><a class="text-link" href="#learning-title">查看学习详情与续学 →</a></div>'
         )
         body = (
             mobile_context
@@ -450,16 +457,14 @@ def register_account_pages(
             + "</p></details>"
             for source in latest_sources
         )
-        draft_content = "".join(
-            '<article class="draft-card"><span>教案草稿 · 待你确认</span><p>'
-            + escape(item["title"])
-            + '</p><a class="button button-outline button-full" href="/web/knowledge/'
-            + item["knowledge_id"]
-            + '">预览与确认保存</a></article>'
-            for item in draft_items
+        assets_panel = (
+            '<section class="workspace-assets" aria-label="知识资产沉淀"><h2><a href="/web/knowledge">知识资产沉淀</a></h2>'
+            '<nav class="asset-nav" aria-label="教案收集与保存"><a href="/web/knowledge?status=pending">教案草稿 · 预览与保存'
+            + ('<span class="asset-pending">待你确认</span>' if draft_items else "")
+            + '</a><a href="/web/knowledge">已保存的教案目录</a></nav>'
+            + lesson_button
+            + "</section>"
         )
-        if draft_items:
-            draft_content += '<a class="text-link" href="/web/knowledge?status=pending">查看全部待确认草稿 →</a>'
         review_content = (
             '<div class="review-note"><p>正在重温教案</p><a class="text-link" href="/web/knowledge/'
             + review["knowledge_id"]
@@ -477,9 +482,6 @@ def register_account_pages(
             + '<div class="learning-sources"><h3>正在引用的书籍资料</h3>'
             + source_content
             + "</div>"
-            + review_content
-            + lesson_button
-            + draft_content
             + '<details class="workspace-help"><summary>对话记录与使用说明</summary><p>每批加载 40 轮（一问一答为一轮），上滑可继续加载更早记录。记录按账户保存在本机，不因超过 40 轮自动删除；实际容量取决于磁盘空间。每次可输入 2000 字。</p><p>学习进度由教练整理供你核对。教案先形成草稿，经你确认后保存到知识库。</p><p id="conversation-availability">'
             + escape(
                 dialogue_label
@@ -487,7 +489,8 @@ def register_account_pages(
             )
             + "</p></details></section>"
         )
-        return body, panel
+        assets_panel += review_content
+        return body, panel, assets_panel
 
     def dialogue_problem(message, code):
         body = f'<main id="main-content" class="verification-layout"><section class="verification-card"><h1>对话暂未完成</h1><p role="alert">{escape(message)}</p><a class="button button-primary" href="/web/welcome#conversation-input">返回对话</a></section></main>'
@@ -571,6 +574,10 @@ def register_account_pages(
             )
         if outcome == "busy":
             return dialogue_problem("还有回复正在处理中，请稍后返回查看。", 409)
+        if request.headers.get("accept") == "application/json":
+            return JSONResponse(
+                {"redirect": "/web/welcome#coach-dialog"}, headers=_HEADERS
+            )
         return redirect("/web/welcome#coach-dialog")
 
     @app.post("/web/auth/logout", response_class=HTMLResponse, include_in_schema=False)

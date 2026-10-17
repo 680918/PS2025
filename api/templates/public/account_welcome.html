@@ -1,22 +1,28 @@
 <main id="main-content" class="account-space">
-    <section class="account-greeting" aria-labelledby="welcome-title">
-        <div><p class="eyebrow">YOUR GROWTH SPACE</p><h1 id="welcome-title">欢迎回来，$name。</h1><p>不用急着完成什么，从今天的一个想法开始。</p><p class="account-status">邮箱已验证 · $email</p></div>
-        <form method="post" action="/web/auth/logout"><input type="hidden" name="csrf" value="$csrf"><button class="button button-outline" type="submit">退出登录</button></form>
-    </section>
+    <script src="/static/workspace-layout.js" defer></script>
     <div class="coach-workspace">
-        <aside class="workspace-sidebar" aria-label="成长空间导航">
+        <aside class="workspace-sidebar" id="workspace-sidebar" aria-label="成长空间导航">
+            <div class="workspace-sidebar-content">
+            <section class="account-greeting" aria-labelledby="welcome-title">
+                <div><h1 id="welcome-title">欢迎回来，$name。</h1><p class="greeting-intro">从今天的一个想法开始。</p><p class="account-status">邮箱已验证 · $email</p></div>
+                <form method="post" action="/web/auth/logout"><input type="hidden" name="csrf" value="$csrf"><button class="history-load" type="submit">退出登录</button></form>
+            </section>
             <p class="workspace-nav-title">我的空间</p>
             <nav class="workspace-nav" aria-label="工作区入口">
                 <a class="workspace-nav-item workspace-nav-current" href="#coach-dialog" aria-current="location">对话</a>
-                <a class="workspace-nav-item" href="/web/knowledge">知识库</a>
                 <a class="workspace-nav-item" href="/web/materials">资料与书籍</a>
             </nav>
-            <p class="workspace-sidebar-caption">资料提供讨论依据。<br>知识库留住整理后的成果。</p>
+            $assets_panel
+            <p class="workspace-sidebar-caption">资料提供讨论依据。<br>知识资产留住学习成果。</p>
+            </div>
+            <div class="workspace-layout-actions"><button class="history-load workspace-layout-reset" type="button" hidden>恢复默认布局</button><span class="visually-hidden workspace-layout-status" role="status"></span></div>
         </aside>
+        <div class="workspace-resizer" data-side="left" role="separator" aria-label="调整左栏和对话区宽度" aria-orientation="vertical" aria-controls="workspace-sidebar" tabindex="0" title="拖动调整；方向键微调，双击恢复默认"></div>
         <section id="coach-dialog" class="workspace-conversation" aria-label="和成长教练对话">
             $dialogue_body
         </section>
-        <aside class="workspace-learning" aria-label="学习位置与引用资料">$learning_panel</aside>
+        <div class="workspace-resizer" data-side="right" role="separator" aria-label="调整对话区和学习栏宽度" aria-orientation="vertical" aria-controls="workspace-learning" tabindex="0" title="拖动调整；方向键微调，双击恢复默认"></div>
+        <aside class="workspace-learning" id="workspace-learning" aria-label="学习位置与引用资料">$learning_panel</aside>
     </div>
     <p class="account-space-footnote">一个持续交流的地方，一份不断积累的个人知识库。</p>
 </main>

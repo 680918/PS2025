@@ -8,8 +8,9 @@
 
     let loading = false;
     let autoLoadBlocked = false;
+    let sending = false;
 
-    function message(role, content) {
+    function message(role, content, rendered) {
         const article = document.createElement("article");
         article.className = `dialogue-message dialogue-${role}`;
         const author = document.createElement("p");
@@ -17,14 +18,21 @@
         author.textContent = role === "user" ? "你" : "知行 · 成长教练";
         const body = document.createElement("div");
         body.className = "message-content";
-        body.textContent = content;
+        if (role === "coach" && typeof rendered === "string") {
+            // Only the same-origin history endpoint supplies this server-rendered,
+            // HTML-disabled Markdown. User messages always remain plain text.
+            body.classList.add("markdown-content");
+            body.innerHTML = rendered;
+        } else {
+            body.textContent = content;
+        }
         article.append(author, body);
         return article;
     }
 
     async function older() {
         const before = load.dataset.before;
-        if (loading || !before) return;
+        if (loading || sending || !before) return;
         loading = true;
         load.disabled = true;
         status.textContent = "正在加载…";
@@ -47,12 +55,12 @@
             const fragment = document.createDocumentFragment();
             for (const turn of page.turns) {
                 if (typeof turn.user_content !== "string" || !["complete", "failed", "pending"].includes(turn.status) ||
-                    (turn.status === "complete" && typeof turn.assistant_content !== "string")) {
+                    (turn.status === "complete" && (typeof turn.assistant_content !== "string" || typeof turn.assistant_html !== "string"))) {
                     throw new Error("invalid history turn");
                 }
                 fragment.append(message("user", turn.user_content));
                 if (turn.status === "complete") {
-                    const reply = message("coach", turn.assistant_content);
+                    const reply = message("coach", turn.assistant_content, turn.assistant_html);
                     for (const source of (turn.citations || [])) {
                         const details = document.createElement("details");
                         details.className = "citation";
@@ -98,6 +106,73 @@
     history.addEventListener("scroll", () => {
         if (history.scrollTop <= 24 && !autoLoadBlocked) older();
     }, {passive: true});
-    // New visits and full-page form submissions open at the newest message.
-    requestAnimationFrame(() => { history.scrollTop = history.scrollHeight; });
+    function showBeginning(element) {
+        if (!element) return;
+        history.scrollTop += element.getBoundingClientRect().top - history.getBoundingClientRect().top - 8;
+    }
+
+    for (const form of document.querySelectorAll('form[action="/web/coach/message"]')) {
+        form.addEventListener("submit", async event => {
+            event.preventDefault();
+            if (sending) {
+                return;
+            }
+            sending = true;
+            // Keep the existing form fields, nonce, CSRF and server protections.
+            // Stay on this page while awaiting the one request, so waiting is visible.
+            const fields = new URLSearchParams(new FormData(form));
+            const input = form.querySelector('textarea[name="message"]');
+            if (input) {
+                input.readOnly = true;
+                messages.append(message("user", input.value));
+            }
+            for (const button of document.querySelectorAll('form[action="/web/coach/message"] button')) {
+                button.disabled = true;
+            }
+            const waiting = document.createElement("article");
+            waiting.className = "dialogue-message dialogue-coach dialogue-waiting";
+            waiting.setAttribute("role", "status");
+            const dots = document.createElement("span");
+            dots.className = "waiting-dots";
+            dots.setAttribute("aria-hidden", "true");
+            for (let index = 0; index < 3; index++) dots.append(document.createElement("i"));
+            waiting.append(dots, document.createTextNode("成长教练正在思考，请稍候…"));
+            messages.append(waiting);
+            history.setAttribute("aria-busy", "true");
+            showBeginning(waiting);
+            try {
+                // The hidden field named "action" shadows form.action in browsers.
+                const response = await fetch(form.getAttribute("action"), {
+                    method: "POST",
+                    credentials: "same-origin",
+                    cache: "no-store",
+                    headers: {"Accept": "application/json"},
+                    body: fields,
+                });
+                if (response.redirected && new URL(response.url).pathname === "/web/login") {
+                    window.location.assign("/web/login");
+                    return;
+                }
+                if (!response.ok) throw new Error("request not completed");
+                const result = await response.json();
+                if (result.redirect !== "/web/welcome#coach-dialog") throw new Error("invalid response");
+                // The current URL may already have this fragment. Assigning it
+                // again would keep the old waiting page, so reload the GET view.
+                window.location.reload();
+            } catch (_) {
+                history.removeAttribute("aria-busy");
+                waiting.classList.remove("dialogue-waiting");
+                waiting.classList.add("dialogue-state");
+                waiting.textContent = "本次请求结果尚未确认。请先刷新查看已有记录，避免重复发送；若已退出，请重新登录。";
+                const link = document.createElement("a");
+                link.className = "text-link";
+                link.href = "/web/welcome#coach-dialog";
+                link.textContent = " 刷新查看记录 →";
+                waiting.append(link);
+                showBeginning(waiting);
+            }
+        });
+    }
+    // Start reading each newest reply from its first line, including long replies.
+    requestAnimationFrame(() => { showBeginning(document.getElementById("latest-reply")); });
 })();

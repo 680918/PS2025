@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartParser, MultiPartException
-from markdown_it import MarkdownIt
+from api.coach_markdown import coach_markdown
 
 from api.public_pages import _render_layout
 from coach.materials import MaterialError, MAX_FILE_BYTES
@@ -38,11 +38,7 @@ def library_csrf(key, token, purpose, identity=""):
 
 
 def lesson_html(content):
-    return (
-        MarkdownIt("commonmark", {"html": False})
-        .disable(["image", "link", "autolink"])
-        .render(content)
-    )
+    return coach_markdown(content)
 
 
 def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
@@ -52,7 +48,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
 
     def page(title, content, *, code=200):
         body = (
-            '<main id="main-content" class="library-space"><nav class="library-tabs" aria-label="工作区入口"><a href="/web/welcome">← 回到对话</a><a href="/web/materials">资料与书籍</a><a href="/web/knowledge">知识库</a></nav><h1>'
+            '<main id="main-content" class="library-space"><nav class="library-tabs" aria-label="工作区入口"><a href="/web/welcome">← 回到对话</a><a href="/web/materials">资料与书籍</a><a href="/web/knowledge">知识资产沉淀</a></nav><h1>'
             + escape(title)
             + "</h1>"
             + content
@@ -413,7 +409,11 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             + escape(item["topic"])
             + '</p><a class="text-link" href="/web/knowledge/'
             + item["knowledge_id"]
-            + '">查看与重温 →</a></article>'
+            + (
+                '">预览与保存教案 →</a></article>'
+                if status == "pending"
+                else '">调阅、重温与导出 →</a></article>'
+            )
             for item in items[:20]
         )
         paging = (
@@ -434,13 +434,13 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             + '"><button class="button button-outline">查找</button></form>'
         )
         return page(
-            "我的知识库",
-            '<p class="library-intro">经你确认的教案、知识点和学习册，留在这里，随时可以重温。</p><nav class="library-tabs"><a href="/web/knowledge">已保存</a><a href="/web/knowledge?status=pending">待确认草稿</a></nav>'
+            "知识资产沉淀",
+            '<p class="library-intro">经你确认的教案、知识点和学习册，留在这里，随时可以重温。</p><nav class="library-tabs"><a href="/web/knowledge">已保存的教案目录</a><a href="/web/knowledge?status=pending">教案草稿 · 预览与保存</a></nav>'
             + search
             + '<div class="library-list">'
             + (
                 cards
-                or '<p class="library-empty">这里还没有内容。可以在对话中说“把这个知识点整理成教案”。</p>'
+                or '<p class="library-empty">这里还没有内容。可以在对话中说“把这个知识点整理成教案”。草稿先在这里预览、修改并确认保存，之后进入已保存目录。</p>'
             )
             + '</div><nav class="library-paging">'
             + paging
@@ -460,7 +460,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             return problem("找不到这份教案。", 404)
         if item["status"] == "pending":
             controls = (
-                '<p class="library-intro">这是待确认草稿，尚未进入已保存知识库。可以修改后确认，也可以暂不保存。</p><article class="lesson-document">'
+                '<p class="library-intro">这是待确认草稿，尚未进入已保存知识库。可以修改后确认，也可以暂不保存。</p><article class="lesson-document markdown-content">'
                 + lesson_html(item["content"])
                 + '</article><form method="post" action="/web/knowledge/'
                 + identity
@@ -489,7 +489,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
                     identity,
                     "在对话中重温",
                 )
-                + f'<a class="button button-outline" href="/web/knowledge/{identity}/download">导出教案</a></div><article class="lesson-document">'
+                + f'<a class="button button-outline" href="/web/knowledge/{identity}/download">导出教案</a></div><article class="lesson-document markdown-content">'
                 + lesson_html(item["content"])
                 + "</article>"
             )
