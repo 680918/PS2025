@@ -26,6 +26,11 @@ from api.coach_markdown import coach_markdown
 
 from api.public_pages import _render_layout
 from coach.materials import MaterialError, MAX_FILE_BYTES
+from coach.learning_topics import (
+    discussion_material,
+    select_discussion_material,
+    TopicBusy,
+)
 from security.login_sessions import signed_in_account
 from security.registration_rate_limit import RegistrationRateLimiter
 
@@ -58,7 +63,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
 
     def page(title, content, *, code=200, interactive=False):
         body = (
-            '<main id="main-content" class="library-space"><nav class="library-tabs" aria-label="工作区入口"><a href="/web/welcome">← 回到对话</a><a href="/web/materials">资料与书籍</a><a href="/web/knowledge">知识资产沉淀</a><a href="/web/memories">我的学习记忆</a><a href="/web/export">导出学习资料</a></nav><h1>'
+            '<main id="main-content" class="library-space"><nav class="library-tabs" aria-label="工作区入口"><a href="/web/welcome">← 回到对话</a><a href="/web/studies">我的学习</a><a href="/web/materials">资料与书籍</a><a href="/web/knowledge">知识资产沉淀</a><a href="/web/memories">我的学习记忆</a><a href="/web/export">导出学习资料</a></nav><h1>'
             + escape(title)
             + "</h1>"
             + content
@@ -208,7 +213,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             "saved": "已经由你确认保存的教案，包含阅读版、Markdown 文本与引用说明。",
             "memories": "你明确保存的学习目标、基础和偏好，包含阅读版与文本。",
             "drafts": "尚未确认的教案草稿；导出后仍保留草稿状态。",
-            "chat": "你的提问、教练回复、实际引用说明，以及当前学习位置。",
+            "chat": "你的提问、教练回复、实际引用说明，以及当前学习位置和其他主题的学习位置。",
             "materials": f"你上传或粘贴的原始内容，合计约 {material_size}。",
         }
         for scope, label in SCOPES.items():
@@ -240,7 +245,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             + input_csrf(request, "export")
             + "<fieldset><legend>选择导出的内容</legend>"
             + options
-            + '</fieldset><div class="export-period"><label for="export-period">聊天记录时间范围</label><select id="export-period" name="period"><option value="all">全部时间</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select><p class="export-note">只影响聊天记录；教案、资料和当前学习位置不受此选项影响。</p></div>'
+            + '</fieldset><div class="export-period"><label for="export-period">聊天记录时间范围</label><select id="export-period" name="period"><option value="all">全部时间</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select><p class="export-note">只影响聊天记录；教案、资料、学习记忆和各主题学习位置不受此选项影响。</p></div>'
             '<p class="export-note">下载 ZIP 压缩包后，请先完整解压，再打开“打开这里.html”。资料较多时可按类型分别导出，单次内容上限 100 MB。</p>'
             '<button class="button button-primary" type="submit">下载所选学习资料</button><p id="asset-export-status" role="status" aria-live="polite"></p></form></section>'
             '<p class="library-intro">下载的是当前内容副本。本地修改不会自动同步到 Coach；账户恢复和整库备份会在后续单独提供。</p><script src="/static/asset-export.js" defer></script>'
@@ -359,7 +364,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             return denied
         try:
             selected, items = (
-                materials.selected(account.user_id),
+                discussion_material(dialogue, materials, account.user_id),
                 materials.list(account.user_id),
             )
         except sqlite3.Error:
@@ -557,9 +562,16 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
         if not valid_csrf(request, values, "select", identity):
             return problem("页面无法核对。", 403)
         try:
-            await run_in_threadpool(materials.select, account.user_id, identity)
-            await run_in_threadpool(dialogue.select_review, account.user_id, None)
+            await run_in_threadpool(
+                select_discussion_material,
+                dialogue,
+                materials,
+                account.user_id,
+                identity,
+            )
             return redirect("/web/welcome#coach-dialog")
+        except TopicBusy as error:
+            return problem(str(error), 409)
         except (ValueError, sqlite3.Error):
             return problem("这份资料当前无法选用。", 404)
 
@@ -572,8 +584,12 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
         if not valid_csrf(request, values, "clear"):
             return problem("页面无法核对。", 403)
         try:
-            await run_in_threadpool(materials.select, account.user_id, None)
+            await run_in_threadpool(
+                select_discussion_material, dialogue, materials, account.user_id, None
+            )
             return redirect("/web/welcome#coach-dialog")
+        except TopicBusy as error:
+            return problem(str(error), 409)
         except sqlite3.Error:
             return problem("暂时无法更新资料选择。", 503)
 
@@ -724,13 +740,17 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             if not item:
                 return problem("找不到这份教案。", 404)
             if operation == "review":
-                await run_in_threadpool(
-                    dialogue.select_review, account.user_id, identity
-                )
                 source = (
                     item["citations"][0]["material_id"] if item["citations"] else None
                 )
-                await run_in_threadpool(materials.select, account.user_id, source)
+                if source and materials.get(account.user_id, source) is None:
+                    source = None
+                await run_in_threadpool(
+                    dialogue.select_review,
+                    account.user_id,
+                    identity,
+                    material_id=source or "",
+                )
                 return redirect("/web/welcome#coach-dialog")
             await run_in_threadpool(
                 dialogue.confirm_knowledge,
@@ -745,6 +765,8 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
                 if operation == "save"
                 else "/web/knowledge?status=pending"
             )
+        except TopicBusy as error:
+            return problem(str(error), 409)
         except ValueError:
             return problem("请检查标题和正文长度，或确认教案已经保存。")
         except sqlite3.Error:

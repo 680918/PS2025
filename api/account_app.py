@@ -25,8 +25,10 @@ def create_account_app(
     register_registration_pages(app, repository, mail_config=registration_mail)
     register_password_reset_pages(app, repository, mail_config=registration_mail)
     register_registration_verification_pages(app, repository, login_enabled=True)
-    dialogue = CoachRepository(Path(database_dir) / "coach_conversations.db")
     materials = MaterialRepository(Path(database_dir) / "coach_library.db")
+    dialogue = CoachRepository(
+        Path(database_dir) / "coach_conversations.db", materials=materials
+    )
     register_account_pages(
         app,
         repository,

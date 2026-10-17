@@ -3,6 +3,7 @@
 import json
 import re
 from dataclasses import dataclass, field
+from coach.learning_topics import discussion_material
 from time import time
 from coach.learning_memory import memory_request, validate_memory, MemoryInputError
 
@@ -68,6 +69,7 @@ def send_dialogue(
     action="message",
     now=None,
     materials=None,
+    study_id=None,
 ):
     if not isinstance(nonce, str) or re.fullmatch(r"[A-Za-z0-9_-]{43}", nonce) is None:
         raise ValueError("invalid request")
@@ -75,6 +77,19 @@ def send_dialogue(
         raise ValueError("invalid action")
     clock = (lambda: int(time())) if now is None else (lambda: now)
     view = repository.view(user_id, now=clock())
+    if study_id is None and action in {"continue", "lesson"}:
+        active = repository.active_topic(user_id)
+        study_id = active["topic_id"] if active else None
+    if study_id is not None:
+        target = repository.topic(user_id, study_id)
+        if target is None:
+            raise ValueError("missing study")
+        view["learning"] = {
+            "topic": target["title"],
+            "progress": target["progress"],
+            "next_step": target["next_step"],
+            "updated_at": target["updated_at"],
+        }
     if action == "continue":
         if not view["learning"]:
             raise ValueError("no learning anchor")
@@ -84,7 +99,7 @@ def send_dialogue(
     if not isinstance(text, str) or not 1 <= len(text.strip()) <= 2000:
         raise ValueError("invalid message")
     text = text.strip()
-    claimed = repository.claim(user_id, nonce, text, now=clock())
+    claimed = repository.claim(user_id, nonce, text, now=clock(), study_id=study_id)
     if claimed != "claimed":
         return claimed
     try:
@@ -117,7 +132,14 @@ def send_dialogue(
         source_query = text + (
             " " + str((view["learning"] or {}).get("topic", "")) if requested else ""
         )
-        sources = materials.retrieve(user_id, source_query) if materials else []
+        selected = discussion_material(repository, materials, user_id)
+        sources = (
+            materials.retrieve(
+                user_id, source_query, material_id=selected["material_id"]
+            )
+            if selected
+            else []
+        )
         review = repository.review(user_id)
         personal_memories = repository.list_memories(user_id)
         context = {
@@ -125,7 +147,7 @@ def send_dialogue(
                 {"content": item["content"]} for item in personal_memories
             ],
             "sources": sources,
-            "material": materials.selected(user_id) if materials else None,
+            "material": selected,
             "review": {
                 key: review[key] for key in ("title", "topic", "content", "citations")
             }
@@ -136,10 +158,16 @@ def send_dialogue(
             and not repository.list_knowledge(user_id, status="pending", limit=1)
             and bool(view["learning"] or len(view["turns"]) >= 2),
         }
+        active = repository.active_topic(user_id)
+        recent_turns = (
+            repository.topic_turns(user_id, active["topic_id"])
+            if active
+            else view["turns"]
+        )
         answer = (
-            responder(_history(view["turns"]), text, view["learning"], context=context)
+            responder(_history(recent_turns), text, view["learning"], context=context)
             if materials is not None or personal_memories
-            else responder(_history(view["turns"]), text, view["learning"])
+            else responder(_history(recent_turns), text, view["learning"])
         )
         if (
             not isinstance(answer, CoachAnswer)
@@ -170,12 +198,16 @@ def send_dialogue(
                 "\n\n本次没有生成可保存的教案草稿，你可以补充想整理的知识点后再次请求。"
             )
             content = content[: 12000 - len(notice)] + notice
+        learning_update = _learning(answer.learning_update)
+        if learning_update and action in {"continue", "lesson"} and view["learning"]:
+            learning_update["topic"] = view["learning"]["topic"]
         completed = repository.finish(
             user_id,
             nonce,
             content,
-            _learning(answer.learning_update),
+            learning_update,
             now=clock(),
+            material_id=selected["material_id"] if selected else "",
             citations=citations,
             draft=draft,
         )
@@ -199,7 +231,7 @@ learning_memories 是用户明确保留的学习自述（目标、基础、讲�
 只返回JSON对象：{"reply":"给用户的完整回复","learning_update":null,"used_source_ids":[],"knowledge_draft":null}。
 只有明确开始主题学习、继续学习或取得新的学习讨论进展时，learning_update改为
 {"topic":"当前学习主题，最多120字","progress":"已经讨论的具体内容，最多800字","next_step":"下一步建议，最多800字"}。
-这是讨论记录，不是掌握程度评价。保留有用的已有进度；闲聊和临时转题时 learning_update 必须为null。
+这是讨论记录，不是掌握程度评价。同一主题后续讨论时，topic 名称必须与 learning_record.topic 完全相同；只更新真实讨论的进展。只有用户明确开启另一个正式学习主题时才用新的 topic，不把临时提问或话题插曲另建主题。新主题只记录本主题内容，不复制旧主题进度。闲聊和临时转题时 learning_update 必须为null。
 用户要求整理教案或成册时，生成可直接重温的完整草稿，knowledge_draft 为 {"title":"标题","topic":"主题","content":"教案正文"}，正文包含学习目标、核心知识点、具体例子、练习建议、重温提纲，可用 Markdown，最多12000字。
 can_suggest_draft 为真且已形成有价值的知识点时，你也可以主动整理草稿并问用户是否保存。已有待确认草稿时不要反复主动建议。不要为了保存而强迫用户评分或反馈。
 草稿生成后，reply 简短告知“教案草稿已放到左侧知识资产沉淀的教案草稿中，待你确认”，不要把完整教案重复塞进聊天回复。完整正文只放在 knowledge_draft.content。不能声称已经保存。只有网页的确认保存操作才能入库；对话中出现“保存”字样也不能替用户执行确认。

@@ -23,7 +23,7 @@ def register_memory_pages(app, accounts, dialogue, *, csrf_key):
     def page(title, body, *, code=200):
         content = (
             '<main id="main-content" class="library-space memory-space"><nav class="library-tabs" aria-label="工作区入口">'
-            '<a href="/web/welcome">← 回到对话</a><a href="/web/materials">资料与书籍</a>'
+            '<a href="/web/welcome">← 回到对话</a><a href="/web/studies">我的学习</a><a href="/web/materials">资料与书籍</a>'
             '<a href="/web/knowledge">知识资产沉淀</a><a href="/web/memories" aria-current="page">我的学习记忆</a><a href="/web/export">导出学习资料</a></nav>'
             f"<h1>{escape(title)}</h1>{body}</main>"
         )

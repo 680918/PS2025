@@ -7,6 +7,7 @@ from contextlib import closing
 from pathlib import Path
 from coach.learning_memory import MAX_MEMORIES, validate_memory
 from time import time
+from coach.learning_topics import topic_key, validate_topic_title, TopicBusy
 
 
 PENDING_LIFETIME = 180
@@ -14,7 +15,7 @@ HISTORY_PAGE_SIZE = 40
 
 
 class CoachRepository:
-    def __init__(self, database_path):
+    def __init__(self, database_path, *, materials=None):
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection, connection:
@@ -48,6 +49,15 @@ class CoachRepository:
                     created_at INTEGER NOT NULL, saved_at INTEGER, UNIQUE(user_id,turn_id)
                 );
                 CREATE TABLE IF NOT EXISTS coach_review (user_id TEXT PRIMARY KEY, knowledge_id TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS coach_topics (
+                    topic_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, topic_key TEXT NOT NULL,
+                    title TEXT NOT NULL, progress TEXT NOT NULL, next_step TEXT NOT NULL,
+                    material_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+                    UNIQUE(user_id,topic_key)
+                );
+                CREATE TABLE IF NOT EXISTS coach_active_topic (user_id TEXT PRIMARY KEY, topic_id TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS coach_turn_topics (turn_id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, topic_id TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS coach_topic_history ON coach_turn_topics(user_id,topic_id,turn_id);
                 CREATE TABLE IF NOT EXISTS coach_memories (
                     memory_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                     content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 300),
@@ -61,6 +71,27 @@ class CoachRepository:
             }:
                 connection.execute(
                     "ALTER TABLE coach_turns ADD COLUMN citations_json TEXT NOT NULL DEFAULT '[]'"
+                )
+
+            # Copy only the last reliably known learning position. Old chat stays
+            # intact; do not guess a topic for earlier, unclassified dialogue.
+            old_positions = connection.execute(
+                "SELECT * FROM coach_learning WHERE user_id NOT IN (SELECT user_id FROM coach_active_topic)"
+            ).fetchall()
+            for old in old_positions:
+                selected = (
+                    materials.selected(old["user_id"])
+                    if materials is not None
+                    else None
+                )
+                self._store_topic(
+                    connection,
+                    old["user_id"],
+                    dict(old),
+                    old["updated_at"],
+                    selected["material_id"]
+                    if selected
+                    else ("" if materials is not None else None),
                 )
 
     def list_memories(self, user_id):
@@ -176,6 +207,181 @@ class CoachRepository:
             )
             return True
 
+    @staticmethod
+    def _store_topic(db, user_id, learning, now, material_id=None):
+        key = topic_key(learning["topic"])
+        row = db.execute(
+            "SELECT * FROM coach_topics WHERE user_id=? AND topic_key=?", (user_id, key)
+        ).fetchone()
+        current = db.execute(
+            "SELECT topic_id FROM coach_active_topic WHERE user_id=?", (user_id,)
+        ).fetchone()
+        if row is None:
+            identity = uuid4().hex
+            title = learning["topic"]
+            db.execute(
+                "INSERT INTO coach_topics VALUES(?,?,?,?,?,?,?,?,?)",
+                (
+                    identity,
+                    user_id,
+                    key,
+                    title,
+                    learning["progress"],
+                    learning["next_step"],
+                    material_id,
+                    now,
+                    now,
+                ),
+            )
+        else:
+            identity, title = row["topic_id"], row["title"]
+            db.execute(
+                "UPDATE coach_topics SET progress=?,next_step=?,material_id=?,updated_at=? WHERE user_id=? AND topic_id=?",
+                (
+                    learning["progress"],
+                    learning["next_step"],
+                    row["material_id"] if material_id is None else material_id,
+                    now,
+                    user_id,
+                    identity,
+                ),
+            )
+        if current is not None and current[0] != identity:
+            db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
+        db.execute(
+            "INSERT INTO coach_active_topic VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET topic_id=excluded.topic_id",
+            (user_id, identity),
+        )
+        db.execute(
+            "INSERT INTO coach_learning VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET topic=excluded.topic,progress=excluded.progress,next_step=excluded.next_step,updated_at=excluded.updated_at",
+            (user_id, title, learning["progress"], learning["next_step"], now),
+        )
+        return identity
+
+    @staticmethod
+    def _activate_topic(db, user_id, identity):
+        row = db.execute(
+            "SELECT * FROM coach_topics WHERE user_id=? AND topic_id=?",
+            (user_id, identity),
+        ).fetchone()
+        if row is None:
+            raise ValueError("找不到这个学习主题。")
+        current = db.execute(
+            "SELECT topic_id FROM coach_active_topic WHERE user_id=?", (user_id,)
+        ).fetchone()
+        db.execute(
+            "INSERT INTO coach_active_topic VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET topic_id=excluded.topic_id",
+            (user_id, identity),
+        )
+        db.execute(
+            "INSERT INTO coach_learning VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET topic=excluded.topic,progress=excluded.progress,next_step=excluded.next_step,updated_at=excluded.updated_at",
+            (
+                user_id,
+                row["title"],
+                row["progress"],
+                row["next_step"],
+                row["updated_at"],
+            ),
+        )
+        if current is None or current[0] != identity:
+            db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
+        return dict(row)
+
+    def _require_idle(self, db, user_id, now):
+        self._expire(db, user_id, now)
+        if db.execute(
+            "SELECT 1 FROM coach_turns WHERE user_id=? AND status='pending'", (user_id,)
+        ).fetchone():
+            raise TopicBusy("教练还在回复，请等本轮完成后再切换主题或资料。")
+
+    def active_topic(self, user_id):
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT topic.* FROM coach_topics AS topic JOIN coach_active_topic AS active ON active.topic_id=topic.topic_id AND active.user_id=topic.user_id WHERE topic.user_id=?",
+                (user_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def topic(self, user_id, identity):
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT * FROM coach_topics WHERE user_id=? AND topic_id=?",
+                (user_id, identity),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_topics(self, user_id, *, query="", offset=0, limit=11):
+        with closing(self._connect()) as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT * FROM coach_topics WHERE user_id=? AND instr(topic_key,?)>0 ORDER BY updated_at DESC,topic_id LIMIT ? OFFSET ?",
+                    (user_id, topic_key(query), limit, offset),
+                )
+            ]
+
+    def create_topic(self, user_id, title, material_id="", *, now=None):
+        title = validate_topic_title(title)
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_idle(db, user_id, now)
+            existing = db.execute(
+                "SELECT topic_id FROM coach_topics WHERE user_id=? AND topic_key=?",
+                (user_id, topic_key(title)),
+            ).fetchone()
+            if existing:
+                self._activate_topic(db, user_id, existing[0])
+                return "existing"
+            self._store_topic(
+                db,
+                user_id,
+                {
+                    "topic": title,
+                    "progress": "尚未开始讨论。",
+                    "next_step": "从你最想理解的一个问题开始。",
+                },
+                now,
+                material_id,
+            )
+            db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
+            return "created"
+
+    def activate_topic(self, user_id, identity, *, now=None):
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_idle(db, user_id, now)
+            return self._activate_topic(db, user_id, identity)
+
+    def bind_topic_material(self, user_id, material_id, *, default_selector):
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            now = int(time())
+            self._require_idle(db, user_id, now)
+            active = db.execute(
+                "SELECT topic_id FROM coach_active_topic WHERE user_id=?", (user_id,)
+            ).fetchone()
+            if active:
+                db.execute(
+                    "UPDATE coach_topics SET material_id=?,updated_at=? WHERE user_id=? AND topic_id=?",
+                    (material_id, now, user_id, active[0]),
+                )
+            else:
+                default_selector()
+            db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
+
+    def topic_turns(self, user_id, identity):
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT turn.* FROM coach_turns AS turn JOIN coach_turn_topics AS tag ON tag.turn_id=turn.turn_id AND tag.user_id=turn.user_id WHERE turn.user_id=? AND tag.topic_id=? ORDER BY turn.turn_id DESC LIMIT 40",
+                (user_id, identity),
+            ).fetchall()
+        turns = [dict(row) for row in reversed(rows)]
+        for turn in turns:
+            turn["citations"] = json.loads(turn.pop("citations_json"))
+        return turns
+
     def _connect(self):
         connection = sqlite3.connect(self.database_path, timeout=5)
         connection.row_factory = sqlite3.Row
@@ -226,7 +432,7 @@ class CoachRepository:
             ).fetchone()
         return {**page, "learning": dict(learning) if learning else None}
 
-    def claim(self, user_id, nonce, text, *, now):
+    def claim(self, user_id, nonce, text, *, now, study_id=None):
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             self._expire(connection, user_id, now)
@@ -241,15 +447,30 @@ class CoachRepository:
                 (user_id,),
             ).fetchone():
                 return "busy"
+            if study_id is not None:
+                self._activate_topic(connection, user_id, study_id)
             connection.execute(
                 "INSERT INTO coach_turns(user_id,nonce,user_content,status,created_at) "
                 "VALUES(?,?,?,'pending',?)",
                 (user_id, nonce, text, now),
             )
+            connection.execute(
+                "INSERT INTO coach_turn_topics SELECT turn.turn_id,turn.user_id,active.topic_id FROM coach_turns AS turn JOIN coach_active_topic AS active ON active.user_id=turn.user_id WHERE turn.user_id=? AND turn.nonce=?",
+                (user_id, nonce),
+            )
         return "claimed"
 
     def finish(
-        self, user_id, nonce, answer, learning, *, now, citations=None, draft=None
+        self,
+        user_id,
+        nonce,
+        answer,
+        learning,
+        *,
+        now,
+        citations=None,
+        draft=None,
+        material_id=None,
     ):
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -266,18 +487,12 @@ class CoachRepository:
                 ),
             ).rowcount
             if changed and learning is not None:
+                identity = self._store_topic(
+                    connection, user_id, learning, now, material_id
+                )
                 connection.execute(
-                    "INSERT INTO coach_learning(user_id,topic,progress,next_step,updated_at) "
-                    "VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET "
-                    "topic=excluded.topic,progress=excluded.progress,"
-                    "next_step=excluded.next_step,updated_at=excluded.updated_at",
-                    (
-                        user_id,
-                        learning["topic"],
-                        learning["progress"],
-                        learning["next_step"],
-                        now,
-                    ),
+                    "INSERT INTO coach_turn_topics SELECT turn_id,user_id,? FROM coach_turns WHERE user_id=? AND nonce=? ON CONFLICT(turn_id) DO UPDATE SET topic_id=excluded.topic_id",
+                    (identity, user_id, nonce),
                 )
             if changed and draft is not None:
                 turn_id = connection.execute(
@@ -344,7 +559,7 @@ class CoachRepository:
             )
         return self.knowledge(user_id, knowledge_id)
 
-    def select_review(self, user_id, knowledge_id=None):
+    def select_review(self, user_id, knowledge_id=None, *, material_id=None):
         lesson = (
             self.knowledge(user_id, knowledge_id, saved_only=True)
             if knowledge_id
@@ -353,22 +568,26 @@ class CoachRepository:
         if knowledge_id is not None and lesson is None:
             raise ValueError("saved lesson unavailable")
         with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            now = int(time())
+            self._require_idle(db, user_id, now)
             if knowledge_id is None:
                 db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
             else:
+                self._store_topic(
+                    db,
+                    user_id,
+                    {
+                        "topic": lesson["topic"],
+                        "progress": "已打开教案《" + lesson["title"] + "》，准备重温。",
+                        "next_step": "从教案的核心知识点开始，结合具体例子回顾。",
+                    },
+                    now,
+                    material_id,
+                )
                 db.execute(
                     "INSERT INTO coach_review VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET knowledge_id=excluded.knowledge_id",
                     (user_id, knowledge_id),
-                )
-                db.execute(
-                    "INSERT INTO coach_learning VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET topic=excluded.topic,progress=excluded.progress,next_step=excluded.next_step,updated_at=excluded.updated_at",
-                    (
-                        user_id,
-                        lesson["topic"],
-                        "已打开教案《" + lesson["title"] + "》，准备重温。",
-                        "从教案的核心知识点开始，结合具体例子回顾。",
-                        int(time()),
-                    ),
                 )
 
     def review(self, user_id):

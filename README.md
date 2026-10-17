@@ -147,3 +147,7 @@ python -m pytest tests/test_api_run.py tests/test_web_home.py tests/test_web_pub
 ### 我的学习记忆
 
 统一对话支持明确“请记住……”保存学习目标或偏好，后续交流可参考；左侧可查看、修改和确认删除，资料导出支持选择记忆。原话保存不调用 AI，不从聊天或书籍中自动推断画像。详情见 [长期学习记忆](docs/learning-memory.md)。
+
+### 我的学习与多主题续学
+
+统一对话支持按主题分别保存进度和关联资料。左侧“我的学习”可新建、查找、切换与明确点击继续学习。目录和切换不调用 AI，续学沿用已有 AI 服务。旧的最后学习位置兼容保留，详细行为见 [多主题学习](docs/multi-topic-learning.md)。

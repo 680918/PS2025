@@ -19,6 +19,8 @@ from starlette.concurrency import run_in_threadpool
 
 from api.coach_markdown import coach_markdown
 from api.memory_pages import register_memory_pages
+from api.study_pages import register_study_pages
+from coach.learning_topics import discussion_material
 from api.public_pages import _render_layout
 from api.library_pages import register_library_pages, library_csrf
 from coach.dialogue import send_dialogue
@@ -110,6 +112,17 @@ def register_account_pages(
 
     if dialogue_repository is not None:
         register_memory_pages(app, repository, dialogue_repository, csrf_key=key)
+        register_study_pages(
+            app,
+            repository,
+            dialogue_repository,
+            materials_repository,
+            csrf_key=key,
+            enabled=dialogue_responder is not None,
+            resume=lambda uid, identity, nonce: perform_dialogue(
+                uid, "", nonce, "continue", study_id=identity
+            ),
+        )
 
     def signature(purpose, value):
         return hmac.new(
@@ -160,7 +173,7 @@ def register_account_pages(
             or origin == f"{request.url.scheme}://{request.url.netloc}"
         )
 
-    async def fields(request, expected, *, max_bytes=4096):
+    async def fields(request, expected, *, max_bytes=4096, optional=frozenset()):
         if (
             request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
             != "application/x-www-form-urlencoded"
@@ -178,11 +191,13 @@ def register_account_pages(
                 strict_parsing=True,
                 encoding="utf-8",
                 errors="strict",
-                max_num_fields=len(expected),
+                max_num_fields=len(expected) + len(optional),
             )
         except (UnicodeError, ValueError):
             return None
-        if set(values) != expected or any(len(value) != 1 for value in values.values()):
+        if not expected <= set(values) <= expected | optional or any(
+            len(value) != 1 for value in values.values()
+        ):
             return None
         return {name: value[0] for name, value in values.items()}
 
@@ -349,13 +364,20 @@ def register_account_pages(
                 turn["assistant_html"] = coach_markdown(turn["assistant_content"])
         return JSONResponse(page, headers=_HEADERS)
 
-    def dialogue_form(token, action, content):
+    def dialogue_form(token, action, content, study_id=""):
         nonce = secrets.token_urlsafe(32)
-        csrf = signature("dialogue", f"{token}.{nonce}.{action}")
+        payload = f"{token}.{nonce}.{action}" + (f".{study_id}" if study_id else "")
+        csrf = signature("dialogue", payload)
+        if study_id:
+            content = (
+                f'<input type="hidden" name="study_id" value="{study_id}">' + content
+            )
         return f'<form method="post" action="/web/coach/message"><input type="hidden" name="nonce" value="{nonce}"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="action" value="{action}">{content}</form>'
 
     def workspace(view, token, user_id):
         enabled = dialogue_responder is not None
+        active_topic = dialogue_repository.active_topic(user_id)
+        study_id = active_topic["topic_id"] if active_topic else ""
         pending = any(turn["status"] == "pending" for turn in view["turns"])
         history = []
         for index, turn in enumerate(view["turns"]):
@@ -386,10 +408,10 @@ def register_account_pages(
         disabled = "" if enabled and not pending else " disabled"
         composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability"{disabled}></textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials#add-material">＋ 添加资料</a><button class="button button-primary" type="submit"{disabled}>发送</button></div></div>'
         if enabled:
-            composer = dialogue_form(token, "message", composer)
+            composer = dialogue_form(token, "message", composer, study_id)
         learning = view["learning"]
-        selected = (
-            materials_repository.selected(user_id) if materials_repository else None
+        selected = discussion_material(
+            dialogue_repository, materials_repository, user_id
         )
         draft_items = dialogue_repository.list_knowledge(
             user_id, status="pending", limit=1
@@ -422,6 +444,7 @@ def register_account_pages(
                 token,
                 "continue",
                 '<input type="hidden" name="message" value="">' + button,
+                study_id,
             )
         else:
             button = button.replace('type="submit"', 'type="button"')
@@ -430,6 +453,7 @@ def register_account_pages(
                 token,
                 "lesson",
                 '<input type="hidden" name="message" value=""><button class="button button-outline button-full" type="submit">把本次知识点整理成教案</button>',
+                study_id,
             )
             if enabled and not pending and (view["turns"] or selected)
             else ""
@@ -445,10 +469,15 @@ def register_account_pages(
                 + library_csrf(key, token, "clear")
                 + '"><button class="history-load" type="submit">取消当前资料</button></form>'
             )
+        source_turns = (
+            dialogue_repository.topic_turns(user_id, active_topic["topic_id"])
+            if active_topic
+            else view["turns"]
+        )
         latest_sources = next(
             (
                 turn.get("citations", [])
-                for turn in reversed(view["turns"])
+                for turn in reversed(source_turns)
                 if turn["status"] == "complete"
             ),
             [],
@@ -482,6 +511,7 @@ def register_account_pages(
             '<section class="learning-status" aria-labelledby="learning-title"><p class="eyebrow">LEARNING COMPANION</p><h2 id="learning-title">当前学习主题</h2>'
             + details
             + button
+            + '<a class="text-link study-directory-link" href="/web/studies">查看全部学习主题 →</a>'
             + '<p class="learning-return-note">临时聊别的，也会保留这里的学习位置。</p>'
             + '<div class="learning-sources"><h3>正在引用的书籍资料</h3>'
             + source_content
@@ -504,7 +534,7 @@ def register_account_pages(
             headers=_HEADERS,
         )
 
-    def perform_dialogue(user_id, message, nonce, action):
+    def perform_dialogue(user_id, message, nonce, action, *, study_id=None):
         if not dialogue_slots.acquire(blocking=False):
             return "busy"
         try:
@@ -516,6 +546,7 @@ def register_account_pages(
                 responder=dialogue_responder,
                 action=action,
                 materials=materials_repository,
+                study_id=study_id,
             )
         finally:
             dialogue_slots.release()
@@ -535,7 +566,10 @@ def register_account_pages(
         if not same_origin(request):
             return dialogue_problem("页面无法核对，请返回对话后重新发送。", 403)
         values = await fields(
-            request, {"csrf", "nonce", "action", "message"}, max_bytes=24576
+            request,
+            {"csrf", "nonce", "action", "message"},
+            max_bytes=24576,
+            optional={"study_id"},
         )
         if values is None:
             return dialogue_problem("消息格式无法读取，请返回对话重新填写。", 400)
@@ -543,11 +577,17 @@ def register_account_pages(
             re.fullmatch(r"[A-Za-z0-9_-]{43}", values["nonce"]) is None
             or values["action"] not in {"message", "continue", "lesson"}
             or re.fullmatch(r"[0-9a-f]{64}", values["csrf"]) is None
+            or (
+                "study_id" in values
+                and re.fullmatch(r"[0-9a-f]{32}", values["study_id"]) is None
+            )
         ):
             return dialogue_problem("页面无法核对，请返回对话后重新发送。", 403)
         token = request.cookies.get(SESSION_COOKIE)
         expected = signature(
-            "dialogue", f"{token}.{values['nonce']}.{values['action']}"
+            "dialogue",
+            f"{token}.{values['nonce']}.{values['action']}"
+            + ("." + values["study_id"] if values.get("study_id") else ""),
         )
         if not hmac.compare_digest(expected, values["csrf"]):
             return dialogue_problem("页面无法核对，请返回对话后重新发送。", 403)
@@ -567,6 +607,7 @@ def register_account_pages(
                 values["message"],
                 values["nonce"],
                 values["action"],
+                study_id=values.get("study_id") or None,
             )
         except ValueError:
             return dialogue_problem(

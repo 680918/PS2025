@@ -361,6 +361,72 @@ def build_export(
                         + '">当前学习位置</a></li>'
                     )
 
+            if (
+                "chat" in scopes
+                and coach.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_topics'"
+                ).fetchone()
+            ):
+                topic_query = "SELECT title,progress,next_step,material_id,updated_at FROM coach_topics WHERE user_id=? ORDER BY updated_at DESC,topic_id"
+
+                def topic_lines(row):
+                    book = (
+                        materials.execute(
+                            "SELECT title FROM materials WHERE user_id=? AND material_id=?",
+                            (user_id, row["material_id"]),
+                        ).fetchone()
+                        if row["material_id"]
+                        else None
+                    )
+                    return (
+                        row["title"]
+                        + "\n已讨论："
+                        + row["progress"]
+                        + "\n下一步："
+                        + row["next_step"]
+                        + "\n关联资料："
+                        + (
+                            book[0]
+                            if book
+                            else "资料已不可用"
+                            if row["material_id"]
+                            else "未关联资料"
+                        )
+                        + "\n更新于："
+                        + _date(row["updated_at"])
+                    )
+
+                if coach.execute(
+                    "SELECT 1 FROM coach_topics WHERE user_id=? LIMIT 1", (user_id,)
+                ).fetchone():
+                    has_learning = True
+
+                    def topic_html():
+                        yield _html(
+                            "学习主题目录",
+                            '<p class="note">各主题当前的学习位置，不受聊天时间范围影响。</p>',
+                        )[: -len("</main></body></html>")]
+                        for row in coach.execute(topic_query, (user_id,)):
+                            yield (
+                                '<article class="plain">'
+                                + escape(topic_lines(row))
+                                + "</article>"
+                            )
+                        yield "</main></body></html>"
+
+                    def topic_text():
+                        yield "学习主题目录\n"
+                        for row in coach.execute(topic_query, (user_id,)):
+                            yield "\n\n" + topic_lines(row)
+
+                    writer.add("学习主题/记录/学习主题目录.html", topic_html())
+                    writer.add("学习主题/记录/学习主题目录.txt", topic_text())
+                    listing["chat"].append(
+                        '<li><a href="'
+                        + quote("学习主题/记录/学习主题目录.html", safe="/")
+                        + '">全部学习主题与位置</a></li>'
+                    )
+
             if "memories" in scopes and _has_memories(coach):
                 notes = list(
                     coach.execute(
