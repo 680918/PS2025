@@ -22,6 +22,7 @@ SCOPES = {
     "drafts": "教案草稿",
     "chat": "聊天记录与学习位置",
     "materials": "原始资料",
+    "memories": "学习记忆",
 }
 PERIODS = {"all": "全部时间", "30": "最近 30 天", "90": "最近 90 天"}
 MAX_BYTES = 100 * 1024**2
@@ -122,6 +123,16 @@ def _citation_text(sources):
     )
 
 
+def _has_memories(database):
+    # Read-only exports can still inspect pre-memory snapshots without migrating them.
+    return (
+        database.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_memories'"
+        ).fetchone()
+        is not None
+    )
+
+
 def export_summary(dialogue_path, materials_path, user_id):
     with _read(dialogue_path) as coach, _read(materials_path) as materials:
         counts = {key: 0 for key in SCOPES}
@@ -130,6 +141,10 @@ def export_summary(dialogue_path, materials_path, user_id):
             (user_id,),
         ):
             counts["saved" if row["status"] == "saved" else "drafts"] = row["n"]
+        if _has_memories(coach):
+            counts["memories"] = coach.execute(
+                "SELECT COUNT(*) FROM coach_memories WHERE user_id=?", (user_id,)
+            ).fetchone()[0]
         counts["chat"] = coach.execute(
             "SELECT COUNT(*) FROM coach_turns WHERE user_id=?", (user_id,)
         ).fetchone()[0]
@@ -345,6 +360,43 @@ def build_export(
                         + quote("对话/当前学习位置.txt", safe="/")
                         + '">当前学习位置</a></li>'
                     )
+
+            if "memories" in scopes and _has_memories(coach):
+                notes = list(
+                    coach.execute(
+                        "SELECT content,updated_at FROM coach_memories WHERE user_id=? ORDER BY created_at,memory_id",
+                        (user_id,),
+                    )
+                )
+                if notes:
+                    reading = "".join(
+                        '<article><p class="plain">'
+                        + escape(row["content"])
+                        + '</p><p class="meta">更新于 '
+                        + _date(row["updated_at"])
+                        + "</p></article>"
+                        for row in notes
+                    )
+                    writer.text(
+                        "学习记忆/记录/我的学习记忆.html",
+                        _html("我的学习记忆", reading),
+                    )
+                    writer.text(
+                        "学习记忆/记录/我的学习记忆.txt",
+                        "我的学习记忆\n\n"
+                        + "\n\n".join(
+                            str(i) + ". " + row["content"]
+                            for i, row in enumerate(notes, 1)
+                        ),
+                    )
+                    listing["memories"].append(
+                        '<li><a href="'
+                        + quote("学习记忆/记录/我的学习记忆.html", safe="/")
+                        + '">阅读学习记忆</a> · <a href="'
+                        + quote("学习记忆/记录/我的学习记忆.txt", safe="/")
+                        + '">文本副本</a></li>'
+                    )
+                    counts["memories"] = len(notes)
 
             if "materials" in scopes:
                 for index, row in enumerate(

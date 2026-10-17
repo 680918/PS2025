@@ -5,6 +5,7 @@ import json
 from uuid import uuid4
 from contextlib import closing
 from pathlib import Path
+from coach.learning_memory import MAX_MEMORIES, validate_memory
 from time import time
 
 
@@ -47,6 +48,13 @@ class CoachRepository:
                     created_at INTEGER NOT NULL, saved_at INTEGER, UNIQUE(user_id,turn_id)
                 );
                 CREATE TABLE IF NOT EXISTS coach_review (user_id TEXT PRIMARY KEY, knowledge_id TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS coach_memories (
+                    memory_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                    content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 300),
+                    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),
+                    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+                    UNIQUE(user_id,content)
+                );
             """)
             if "citations_json" not in {
                 row[1] for row in connection.execute("PRAGMA table_info(coach_turns)")
@@ -54,6 +62,119 @@ class CoachRepository:
                 connection.execute(
                     "ALTER TABLE coach_turns ADD COLUMN citations_json TEXT NOT NULL DEFAULT '[]'"
                 )
+
+    def list_memories(self, user_id):
+        with closing(self._connect()) as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT memory_id,content,revision,created_at,updated_at FROM coach_memories WHERE user_id=? ORDER BY created_at,memory_id",
+                    (user_id,),
+                )
+            ]
+
+    def memory(self, user_id, memory_id):
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT memory_id,content,revision,created_at,updated_at FROM coach_memories WHERE user_id=? AND memory_id=?",
+                (user_id, memory_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    @staticmethod
+    def _insert_memory(db, user_id, content, now):
+        if db.execute(
+            "SELECT 1 FROM coach_memories WHERE user_id=? AND content=?",
+            (user_id, content),
+        ).fetchone():
+            return "existing"
+        if (
+            db.execute(
+                "SELECT COUNT(*) FROM coach_memories WHERE user_id=?", (user_id,)
+            ).fetchone()[0]
+            >= MAX_MEMORIES
+        ):
+            return "full"
+        db.execute(
+            "INSERT INTO coach_memories VALUES(?,?,?,1,?,?)",
+            (uuid4().hex, user_id, content, now, now),
+        )
+        return "created"
+
+    def add_memory(self, user_id, content, *, now=None):
+        content = validate_memory(content)
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            return self._insert_memory(db, user_id, content, now)
+
+    def update_memory(self, user_id, memory_id, content, revision, *, now=None):
+        content = validate_memory(content)
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT revision FROM coach_memories WHERE user_id=? AND memory_id=?",
+                (user_id, memory_id),
+            ).fetchone()
+            if row is None:
+                return "missing"
+            if row[0] != revision:
+                return "conflict"
+            if db.execute(
+                "SELECT 1 FROM coach_memories WHERE user_id=? AND memory_id<>? AND content=?",
+                (user_id, memory_id, content),
+            ).fetchone():
+                return "existing"
+            db.execute(
+                "UPDATE coach_memories SET content=?,revision=revision+1,updated_at=? WHERE user_id=? AND memory_id=?",
+                (content, now, user_id, memory_id),
+            )
+            return "updated"
+
+    def delete_memory(self, user_id, memory_id, revision):
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT revision FROM coach_memories WHERE user_id=? AND memory_id=?",
+                (user_id, memory_id),
+            ).fetchone()
+            if row is None:
+                return "missing"
+            if row[0] != revision:
+                return "conflict"
+            db.execute(
+                "DELETE FROM coach_memories WHERE user_id=? AND memory_id=?",
+                (user_id, memory_id),
+            )
+            return "deleted"
+
+    def finish_memory_request(self, user_id, nonce, content, *, now):
+        content = validate_memory(content)
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            active = db.execute(
+                "SELECT 1 FROM coach_turns WHERE user_id=? AND nonce=? AND status='pending' AND created_at>?",
+                (user_id, nonce, now - PENDING_LIFETIME),
+            ).fetchone()
+            if active is None:
+                return False
+            result = self._insert_memory(db, user_id, content, now)
+            if result == "full":
+                answer = "这次还没有保存：学习记忆已达到 20 条。请到左侧‘我的学习记忆’整理已有内容，再重新发送。"
+            elif result == "existing":
+                answer = "这条学习记忆已经保存，无需重复添加。你可以在左侧‘我的学习记忆’查看、修改或删除。"
+            else:
+                answer = (
+                    "已记住："
+                    + content
+                    + "\n\n以后的交流会参考这条学习记忆。你可以在左侧‘我的学习记忆’查看、修改或删除。"
+                )
+            db.execute(
+                "UPDATE coach_turns SET assistant_content=?,status='complete',completed_at=? WHERE user_id=? AND nonce=?",
+                (answer, now, user_id, nonce),
+            )
+            return True
 
     def _connect(self):
         connection = sqlite3.connect(self.database_path, timeout=5)

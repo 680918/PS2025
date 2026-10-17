@@ -143,3 +143,7 @@ python -m pytest tests/test_api_run.py tests/test_web_home.py tests/test_web_pub
 ### 本机邮箱找回密码
 
 登录页已接入邮箱找回与一次性链接重置，成功后撤销旧登录状态并保留学习资产。发信仍需本机显式 `--register`，不保存授权码。操作、冷却与异常提示见 [邮箱找回密码](docs/password-recovery.md)。
+
+### 我的学习记忆
+
+统一对话支持明确“请记住……”保存学习目标或偏好，后续交流可参考；左侧可查看、修改和确认删除，资料导出支持选择记忆。原话保存不调用 AI，不从聊天或书籍中自动推断画像。详情见 [长期学习记忆](docs/learning-memory.md)。

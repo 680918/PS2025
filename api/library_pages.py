@@ -58,7 +58,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
 
     def page(title, content, *, code=200, interactive=False):
         body = (
-            '<main id="main-content" class="library-space"><nav class="library-tabs" aria-label="工作区入口"><a href="/web/welcome">← 回到对话</a><a href="/web/materials">资料与书籍</a><a href="/web/knowledge">知识资产沉淀</a><a href="/web/export">导出学习资料</a></nav><h1>'
+            '<main id="main-content" class="library-space"><nav class="library-tabs" aria-label="工作区入口"><a href="/web/welcome">← 回到对话</a><a href="/web/materials">资料与书籍</a><a href="/web/knowledge">知识资产沉淀</a><a href="/web/memories">我的学习记忆</a><a href="/web/export">导出学习资料</a></nav><h1>'
             + escape(title)
             + "</h1>"
             + content
@@ -206,6 +206,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
         )
         descriptions = {
             "saved": "已经由你确认保存的教案，包含阅读版、Markdown 文本与引用说明。",
+            "memories": "你明确保存的学习目标、基础和偏好，包含阅读版与文本。",
             "drafts": "尚未确认的教案草稿；导出后仍保留草稿状态。",
             "chat": "你的提问、教练回复、实际引用说明，以及当前学习位置。",
             "materials": f"你上传或粘贴的原始内容，合计约 {material_size}。",
@@ -268,7 +269,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
                 body.decode("ascii"),
                 keep_blank_values=True,
                 strict_parsing=True,
-                max_num_fields=6,
+                max_num_fields=len(SCOPES) + 2,
                 encoding="utf-8",
                 errors="strict",
             )

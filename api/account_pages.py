@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.coach_markdown import coach_markdown
+from api.memory_pages import register_memory_pages
 from api.public_pages import _render_layout
 from api.library_pages import register_library_pages, library_csrf
 from coach.dialogue import send_dialogue
@@ -106,6 +107,9 @@ def register_account_pages(
         register_library_pages(
             app, repository, materials_repository, dialogue_repository, csrf_key=key
         )
+
+    if dialogue_repository is not None:
+        register_memory_pages(app, repository, dialogue_repository, csrf_key=key)
 
     def signature(purpose, value):
         return hmac.new(
