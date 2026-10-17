@@ -367,9 +367,31 @@ def build_export(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_topics'"
                 ).fetchone()
             ):
-                topic_query = "SELECT title,progress,next_step,material_id,updated_at FROM coach_topics WHERE user_id=? ORDER BY updated_at DESC,topic_id"
+                topic_query = "SELECT topic_id,title,progress,next_step,material_id,updated_at FROM coach_topics WHERE user_id=? ORDER BY updated_at DESC,topic_id"
+                has_parts = (
+                    coach.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_topic_parts'"
+                    ).fetchone()
+                    is not None
+                )
 
                 def topic_lines(row):
+                    part = (
+                        coach.execute(
+                            "SELECT chunk_id FROM coach_topic_parts WHERE user_id=? AND topic_id=? AND material_id=?",
+                            (user_id, row["topic_id"], row["material_id"]),
+                        ).fetchone()
+                        if has_parts
+                        else None
+                    )
+                    locator = (
+                        materials.execute(
+                            "SELECT c.locator FROM material_chunks c JOIN materials m ON m.material_id=c.material_id WHERE m.user_id=? AND m.material_id=? AND c.chunk_id=?",
+                            (user_id, row["material_id"], part[0]),
+                        ).fetchone()
+                        if part
+                        else None
+                    )
                     book = (
                         materials.execute(
                             "SELECT title FROM materials WHERE user_id=? AND material_id=?",
@@ -391,6 +413,15 @@ def build_export(
                             else "资料已不可用"
                             if row["material_id"]
                             else "未关联资料"
+                        )
+                        + (
+                            "\n当前选段：" + locator[0]
+                            if locator
+                            else "\n当前选段：已不可用"
+                            if part
+                            else "\n讨论范围：整份资料的相关片段"
+                            if book
+                            else "\n讨论范围：未关联可读资料"
                         )
                         + "\n更新于："
                         + _date(row["updated_at"])

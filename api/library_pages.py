@@ -513,7 +513,49 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
         try:
             item = materials.get(account.user_id, identity)
             chunks = materials.chunks(account.user_id, identity) if item else []
+            if not item or not chunks:
+                return problem("找不到这份可读取资料。", 404)
+            navigation = (
+                '<div class="material-locate"><form method="get" action="/web/materials/'
+                + identity
+                + '"><label for="material-part">跳到文字片段</label><input id="material-part" name="part" type="number" min="1" max="'
+                + str(len(chunks))
+                + '" required><button class="button button-outline" type="submit">定位片段</button></form>'
+            )
+            if item["kind"] == "pdf":
+                navigation += (
+                    '<form method="get" action="/web/materials/'
+                    + identity
+                    + '"><label for="material-page">跳到 PDF 文件页码</label><input id="material-page" name="page" type="number" min="1" max="'
+                    + str(item["page_count"])
+                    + '" required><button class="button button-outline" type="submit">定位页码</button></form><p class="lesson-revision-note">PDF 文件页码可能不同于书内印刷页码；每页可能分成多个文字片段。</p>'
+                )
+            navigation += "</div>"
             number = int(request.query_params.get("part", "1"))
+            if "page" in request.query_params:
+                requested_page = int(request.query_params["page"])
+                if (
+                    item["kind"] != "pdf"
+                    or not 1 <= requested_page <= item["page_count"]
+                ):
+                    raise ValueError("invalid PDF page")
+                number = next(
+                    (
+                        index + 1
+                        for index, part in enumerate(chunks)
+                        if part["locator"].startswith(f"PDF 第 {requested_page} 页 ·")
+                    ),
+                    None,
+                )
+                if number is None:
+                    return page(
+                        item["title"],
+                        '<p class="library-intro">这一页没有可提取的文字，尚未选入对话。请换一个页码，或按文字片段定位。</p>'
+                        + navigation
+                        + '<a class="text-link" href="/web/materials/'
+                        + identity
+                        + '">回到第一个可读片段 →</a>',
+                    )
             if not 1 <= number <= len(chunks):
                 return problem("找不到这份资料或片段。", 404)
             chunk = chunks[number - 1]
@@ -522,7 +564,16 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
                 f"/web/materials/{identity}/select",
                 "select",
                 identity,
-                "围绕这份资料讨论",
+                "围绕整份资料讨论",
+            )
+            controls += (
+                '<form method="post" action="/web/materials/'
+                + identity
+                + '/study">'
+                + input_csrf(request, "study-part", identity + "." + chunk["chunk_id"])
+                + '<input type="hidden" name="chunk_id" value="'
+                + chunk["chunk_id"]
+                + '"><button class="button button-primary" type="submit">选中这段，回到对话</button></form>'
             )
             previous = (
                 f'<a href="?part={number - 1}">← 上一片段</a>' if number > 1 else ""
@@ -543,7 +594,10 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
                 + escape(chunk["locator"])
                 + f" · 共 {len(chunks)} 个片段</p>"
                 + note
+                + navigation
+                + '<p class="lesson-revision-note">当前仅预览。选中这段后，可在统一对话中点击“讲解并提炼这段”；浏览和选段不调用 AI。</p><div class="library-actions">'
                 + controls
+                + "</div>"
                 + '<article class="library-document">'
                 + escape(chunk["content"])
                 + '</article><nav class="library-paging">'
@@ -551,8 +605,39 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
                 + following
                 + "</nav>",
             )
-        except (ValueError, sqlite3.Error):
+        except ValueError:
+            return problem("请输入这份资料范围内的有效页码或片段编号。")
+        except sqlite3.Error:
             return problem("资料暂时无法读取。", 503)
+
+    @app.post("/web/materials/{identity}/study", include_in_schema=False)
+    async def select_study_part(request: Request, identity: str):
+        account, denied = await run_in_threadpool(auth, request, write=True)
+        if denied is not None:
+            return denied
+        values = await fields(request, {"csrf", "chunk_id"}, limit=4096)
+        chunk_id = values.get("chunk_id", "") if values else ""
+        if not re.fullmatch(r"[a-f0-9]{32}", chunk_id) or not valid_csrf(
+            request, values, "study-part", identity + "." + chunk_id
+        ):
+            return problem("选段页面无法核对，请重新打开资料。", 403)
+        try:
+            item = materials.get(account.user_id, identity)
+            chunk = materials.chunk(account.user_id, identity, chunk_id)
+            if item is None or chunk is None:
+                return problem("找不到这份本人资料或选段。", 404)
+            await run_in_threadpool(
+                dialogue.select_material_part,
+                account.user_id,
+                identity,
+                item["title"],
+                chunk_id,
+            )
+        except TopicBusy as error:
+            return problem(str(error), 409)
+        except sqlite3.Error:
+            return problem("暂时无法保存选段，请稍后再试。", 503)
+        return redirect("/web/welcome#coach-dialog")
 
     @app.post("/web/materials/{identity}/select", include_in_schema=False)
     async def select(request: Request, identity: str):

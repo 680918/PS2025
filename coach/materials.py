@@ -276,3 +276,11 @@ class MaterialRepository:
             }
             for item in ranked
         ]
+
+    def chunk(self, user_id, material_id, chunk_id):
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT c.chunk_id,c.chunk_index,c.locator,c.content FROM material_chunks c JOIN materials m ON m.material_id=c.material_id WHERE m.user_id=? AND m.material_id=? AND c.chunk_id=?",
+                (user_id, material_id, chunk_id),
+            ).fetchone()
+        return dict(row) if row else None

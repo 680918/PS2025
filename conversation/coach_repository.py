@@ -61,6 +61,10 @@ class CoachRepository:
                     UNIQUE(user_id,topic_key)
                 );
                 CREATE TABLE IF NOT EXISTS coach_active_topic (user_id TEXT PRIMARY KEY, topic_id TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS coach_topic_parts (
+                    user_id TEXT NOT NULL, topic_id TEXT NOT NULL, material_id TEXT NOT NULL,
+                    chunk_id TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(user_id,topic_id)
+                );
                 CREATE TABLE IF NOT EXISTS coach_turn_topics (turn_id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, topic_id TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS coach_topic_history ON coach_turn_topics(user_id,topic_id,turn_id);
                 CREATE TABLE IF NOT EXISTS coach_memories (
@@ -254,6 +258,10 @@ class CoachRepository:
         if current is not None and current[0] != identity:
             db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
         db.execute(
+            "DELETE FROM coach_topic_parts WHERE user_id=? AND topic_id=? AND material_id<>COALESCE((SELECT material_id FROM coach_topics WHERE user_id=? AND topic_id=?),'')",
+            (user_id, identity, user_id, identity),
+        )
+        db.execute(
             "INSERT INTO coach_active_topic VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET topic_id=excluded.topic_id",
             (user_id, identity),
         )
@@ -372,9 +380,79 @@ class CoachRepository:
                     "UPDATE coach_topics SET material_id=?,updated_at=? WHERE user_id=? AND topic_id=?",
                     (material_id, now, user_id, active[0]),
                 )
+                db.execute(
+                    "DELETE FROM coach_topic_parts WHERE user_id=? AND topic_id=?",
+                    (user_id, active[0]),
+                )
             else:
                 default_selector()
             db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
+
+    def topic_part(self, user_id, *, topic_id=None):
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT part.* FROM coach_topic_parts AS part JOIN coach_topics AS topic ON topic.topic_id=part.topic_id AND topic.user_id=part.user_id AND topic.material_id=part.material_id WHERE part.user_id=? AND part.topic_id=COALESCE(?,(SELECT topic_id FROM coach_active_topic WHERE user_id=?))",
+                (user_id, topic_id, user_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    @staticmethod
+    def _set_part(db, user_id, topic_id, material_id, chunk_id, now):
+        if chunk_id:
+            db.execute(
+                "INSERT INTO coach_topic_parts VALUES(?,?,?,?,?) ON CONFLICT(user_id,topic_id) DO UPDATE SET material_id=excluded.material_id,chunk_id=excluded.chunk_id,updated_at=excluded.updated_at",
+                (user_id, topic_id, material_id, chunk_id, now),
+            )
+        else:
+            db.execute(
+                "DELETE FROM coach_topic_parts WHERE user_id=? AND topic_id=?",
+                (user_id, topic_id),
+            )
+
+    def select_material_part(self, user_id, material_id, title, chunk_id, *, now=None):
+        # Ownership of material and chunk is verified by the caller. All study
+        # state changes below share one transaction and the existing idle guard.
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_idle(db, user_id, now)
+            row = db.execute(
+                "SELECT topic.topic_id FROM coach_topics AS topic LEFT JOIN coach_active_topic AS active ON active.user_id=topic.user_id AND active.topic_id=topic.topic_id WHERE topic.user_id=? AND topic.material_id=? ORDER BY (active.topic_id IS NOT NULL) DESC,topic.updated_at DESC,topic.topic_id LIMIT 1",
+                (user_id, material_id),
+            ).fetchone()
+            if row:
+                identity = row[0]
+                self._activate_topic(db, user_id, identity)
+            else:
+                base = "研读《" + title[:100] + "》"
+                name, counter = base, 1
+                while db.execute(
+                    "SELECT 1 FROM coach_topics WHERE user_id=? AND topic_key=?",
+                    (user_id, topic_key(name)),
+                ).fetchone():
+                    counter += 1
+                    name = base + " · " + str(counter)
+                identity = self._store_topic(
+                    db,
+                    user_id,
+                    {
+                        "topic": name,
+                        "progress": "尚未开始讨论。",
+                        "next_step": "从所选段落的核心知识点开始，结合一个例子理解。",
+                    },
+                    now,
+                    material_id,
+                )
+            self._set_part(db, user_id, identity, material_id, chunk_id, now)
+            db.execute(
+                "UPDATE coach_topics SET updated_at=? WHERE user_id=? AND topic_id=?",
+                (now, user_id, identity),
+            )
+            db.execute(
+                "UPDATE coach_learning SET updated_at=? WHERE user_id=?", (now, user_id)
+            )
+            db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
+            return identity
 
     def topic_turns(self, user_id, identity):
         with closing(self._connect()) as db:
@@ -437,7 +515,17 @@ class CoachRepository:
             ).fetchone()
         return {**page, "learning": dict(learning) if learning else None}
 
-    def claim(self, user_id, nonce, text, *, now, study_id=None):
+    def claim(
+        self,
+        user_id,
+        nonce,
+        text,
+        *,
+        now,
+        study_id=None,
+        part_id=None,
+        part_material_id=None,
+    ):
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             self._expire(connection, user_id, now)
@@ -454,6 +542,29 @@ class CoachRepository:
                 return "busy"
             if study_id is not None:
                 self._activate_topic(connection, user_id, study_id)
+            if part_id is not None:
+                target = connection.execute(
+                    "SELECT topic.topic_id,topic.material_id FROM coach_topics AS topic JOIN coach_active_topic AS active ON active.topic_id=topic.topic_id AND active.user_id=topic.user_id WHERE topic.user_id=?",
+                    (user_id,),
+                ).fetchone()
+                if target is None or target["material_id"] != part_material_id:
+                    raise ValueError("study material changed")
+                before = connection.execute(
+                    "SELECT chunk_id FROM coach_topic_parts WHERE user_id=? AND topic_id=?",
+                    (user_id, target["topic_id"]),
+                ).fetchone()
+                if (before[0] if before else "") != part_id:
+                    connection.execute(
+                        "DELETE FROM coach_review WHERE user_id=?", (user_id,)
+                    )
+                self._set_part(
+                    connection,
+                    user_id,
+                    target["topic_id"],
+                    part_material_id,
+                    part_id,
+                    now,
+                )
             connection.execute(
                 "INSERT INTO coach_turns(user_id,nonce,user_content,status,created_at) "
                 "VALUES(?,?,?,'pending',?)",
@@ -476,6 +587,7 @@ class CoachRepository:
         citations=None,
         draft=None,
         material_id=None,
+        part_id=None,
     ):
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -495,6 +607,10 @@ class CoachRepository:
                 identity = self._store_topic(
                     connection, user_id, learning, now, material_id
                 )
+                if part_id:
+                    self._set_part(
+                        connection, user_id, identity, material_id, part_id, now
+                    )
                 connection.execute(
                     "INSERT INTO coach_turn_topics SELECT turn_id,user_id,? FROM coach_turns WHERE user_id=? AND nonce=? ON CONFLICT(turn_id) DO UPDATE SET topic_id=excluded.topic_id",
                     (identity, user_id, nonce),
@@ -723,7 +839,7 @@ class CoachRepository:
             if knowledge_id is None:
                 db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
             else:
-                self._store_topic(
+                topic_id = self._store_topic(
                     db,
                     user_id,
                     {
@@ -733,6 +849,10 @@ class CoachRepository:
                     },
                     now,
                     material_id,
+                )
+                db.execute(
+                    "DELETE FROM coach_topic_parts WHERE user_id=? AND topic_id=?",
+                    (user_id, topic_id),
                 )
                 db.execute(
                     "INSERT INTO coach_review VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET knowledge_id=excluded.knowledge_id",

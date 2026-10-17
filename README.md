@@ -155,3 +155,7 @@ python -m pytest tests/test_api_run.py tests/test_web_home.py tests/test_web_pub
 ### 已保存教案的修订与版本
 
 已保存教案支持修改标题和正文、查看版本记录，以及明确恢复旧版。每次修订保留原文，重温和导出使用当前版本；编辑不调用 AI。操作、冲突处理与存储边界见 [教案持续修订](docs/lesson-revision.md)。
+
+### 书籍选段导学
+
+资料页支持按文字片段、PDF 文件页码定位，选中后在统一聊天框讲解和提炼。每个主题保留书籍与选段，右栏显示真实位置；浏览和选段不调用 AI，明确提问后才调用。当前以单个已提取片段为资料来源，操作与边界见 [书籍选段导学](docs/book-section-study.md)。

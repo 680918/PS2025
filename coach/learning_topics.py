@@ -44,3 +44,10 @@ def select_discussion_material(dialogue, materials, user_id, material_id=None):
         material_id or "",
         default_selector=lambda: materials.select(user_id, material_id),
     )
+
+
+def discussion_part(dialogue, materials, user_id, *, topic_id=None):
+    selected = dialogue.topic_part(user_id, topic_id=topic_id)
+    if selected is None or materials is None:
+        return None
+    return materials.chunk(user_id, selected["material_id"], selected["chunk_id"])

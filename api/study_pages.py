@@ -13,7 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.library_pages import HEADERS, library_csrf
 from api.public_pages import _render_layout
-from coach.learning_topics import TopicBusy, validate_topic_title
+from coach.learning_topics import TopicBusy, validate_topic_title, discussion_part
 from security.login_sessions import signed_in_account
 from security.registration_rate_limit import RegistrationRateLimiter
 
@@ -174,6 +174,11 @@ def register_study_pages(
                 if item["material_id"]
                 else "未关联资料"
             )
+            selected_part = discussion_part(
+                dialogue, materials, account.user_id, topic_id=identity
+            )
+            if selected_part:
+                material_title += " · " + selected_part["locator"]
             stamp = datetime.fromtimestamp(
                 item["updated_at"], timezone(timedelta(hours=8))
             ).strftime("%Y-%m-%d %H:%M")
