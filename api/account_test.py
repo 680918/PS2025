@@ -88,6 +88,8 @@ def create_trial_app(
                 f'<a class="button button-primary button-full" href="{escape(message.activation_url, quote=True)}">打开模拟验证邮件 →</a>'
                 for message in messages
                 if message.recipient == row[2]
+                and "/web/verify-registration?"
+                in getattr(message, "activation_url", "")
             ]
         content = '<main id="main-content" class="verification-layout"><section class="verification-card"><p class="mail-simulation-notice">本机模拟 · 不会发送真实邮件</p><h1>模拟收件箱</h1><p>仅显示当前浏览器申请的虚构邮件。确认后创建临时账户，可继续登录与退出。</p>'
         content += (

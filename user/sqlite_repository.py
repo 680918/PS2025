@@ -125,8 +125,90 @@ class SQLiteUserRepository:
                 """
             )
 
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    user_id TEXT PRIMARY KEY NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    email TEXT NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE CHECK(length(token_hash)=64 AND token_hash NOT GLOB '*[^0-9a-f]*'),
+                    issued_at INTEGER NOT NULL,
+                    expires_at INTEGER NOT NULL CHECK(expires_at>issued_at)
+                )"""
+            )
+
+    def issue_password_reset_token(
+        self, email, token_hash, issued_at, expires_at, *, cooldown
+    ):
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            account = connection.execute(
+                """SELECT account.user_id, account.email FROM users AS account
+                   JOIN user_email_verifications AS verified ON verified.user_id=account.user_id
+                   JOIN user_passwords AS password ON password.user_id=account.user_id
+                   WHERE account.email=? AND verified.email=account.email
+                     AND verified.verified_at IS NOT NULL""",
+                (email,),
+            ).fetchone()
+            if account is None:
+                return None
+            previous = connection.execute(
+                "SELECT issued_at FROM password_reset_tokens WHERE user_id=?",
+                (account[0],),
+            ).fetchone()
+            if previous is not None and issued_at < previous[0] + cooldown:
+                return None
+            connection.execute(
+                """INSERT INTO password_reset_tokens(user_id,email,token_hash,issued_at,expires_at)
+                   VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+                   email=excluded.email, token_hash=excluded.token_hash,
+                   issued_at=excluded.issued_at, expires_at=excluded.expires_at""",
+                (account[0], account[1], token_hash, issued_at, expires_at),
+            )
+            return account[1]
+
+    @staticmethod
+    def _reset_row(connection, token_hash, now):
+        return connection.execute(
+            """SELECT reset.user_id, reset.email FROM password_reset_tokens AS reset
+               JOIN users AS account ON account.user_id=reset.user_id AND account.email=reset.email
+               JOIN user_email_verifications AS verified ON verified.user_id=reset.user_id
+               JOIN user_passwords AS password ON password.user_id=reset.user_id
+               WHERE reset.token_hash=? AND reset.issued_at<=? AND reset.expires_at>?
+                 AND verified.email=reset.email AND verified.verified_at IS NOT NULL""",
+            (token_hash, now, now),
+        ).fetchone()
+
+    def password_reset_available(self, token_hash, now):
+        with closing(self._connect()) as connection:
+            return self._reset_row(connection, token_hash, now) is not None
+
+    def consume_password_reset_token(self, token_hash, password_hash, now):
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = self._reset_row(connection, token_hash, now)
+            if row is None:
+                return False
+            connection.execute(
+                "UPDATE user_passwords SET password_hash=? WHERE user_id=?",
+                (password_hash, row[0]),
+            )
+            connection.execute(
+                "UPDATE login_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL",
+                (now, row[0]),
+            )
+            connection.execute(
+                "DELETE FROM password_reset_tokens WHERE user_id=?", (row[0],)
+            )
+            return row[1]
+
     def save_login_session(
-        self, token_hash, user_id, issued_at, expires_at, previous_hash=None
+        self,
+        token_hash,
+        user_id,
+        issued_at,
+        expires_at,
+        previous_hash=None,
+        *,
+        expected_password_hash=None,
     ):
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -134,14 +216,17 @@ class SQLiteUserRepository:
                 "DELETE FROM login_sessions WHERE expires_at <= ?", (issued_at,)
             )
             allowed = connection.execute(
-                """SELECT 1 FROM users AS account
+                """SELECT password.password_hash FROM users AS account
                    JOIN user_email_verifications AS verified ON verified.user_id = account.user_id
                    JOIN user_passwords AS password ON password.user_id = account.user_id
                    WHERE account.user_id = ? AND verified.email = account.email
                      AND verified.verified_at IS NOT NULL""",
                 (user_id,),
             ).fetchone()
-            if allowed is None:
+            if allowed is None or (
+                expected_password_hash is not None
+                and allowed[0] != expected_password_hash
+            ):
                 raise ValueError("login unavailable")
             connection.execute(
                 "INSERT INTO login_sessions (token_hash, user_id, issued_at, expires_at) VALUES (?, ?, ?, ?)",

@@ -187,7 +187,12 @@ def send_verification_email(
     if not isinstance(settings, SMTPSettings):
         raise MailConfigurationError("邮件发送尚未启用，请先完成本机配置。")
     message = build_verification_email(verification, settings.username, now=now)
-    recipient = _mailbox(verification.recipient).addr_spec
+    _send_mail_message(message, verification.recipient, settings)
+
+
+def _send_mail_message(message, recipient, settings):
+    """Shared single-attempt TLS transport; messages are built by their purpose."""
+    recipient = _mailbox(recipient).addr_spec
     sender = _mailbox(settings.username).addr_spec
     accepted = False
     try:

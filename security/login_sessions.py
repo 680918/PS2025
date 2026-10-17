@@ -58,13 +58,18 @@ def sign_in(repository, email, password, *, dummy_hash, previous_token=None, now
     timestamp = _timestamp(now)
     token = secrets.token_urlsafe(32)
     expiry = timestamp + SESSION_LIFETIME
-    repository.save_login_session(
-        session_token_hash(token),
-        user.user_id,
-        timestamp,
-        expiry,
-        session_token_hash(previous_token),
-    )
+    try:
+        repository.save_login_session(
+            session_token_hash(token),
+            user.user_id,
+            timestamp,
+            expiry,
+            session_token_hash(previous_token),
+            expected_password_hash=stored,
+        )
+    except ValueError:
+        # A concurrent reset changed credentials after verification.
+        return None
     return LoginReceipt(token, datetime.fromtimestamp(expiry, timezone.utc))
 
 

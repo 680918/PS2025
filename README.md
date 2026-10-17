@@ -139,3 +139,7 @@ python -m api.account_test --simulate
 python -m pip install -r requirements-dev.txt
 python -m pytest tests/test_api_run.py tests/test_web_home.py tests/test_web_public_pages.py
 ```
+
+### 本机邮箱找回密码
+
+登录页已接入邮箱找回与一次性链接重置，成功后撤销旧登录状态并保留学习资产。发信仍需本机显式 `--register`，不保存授权码。操作、冷却与异常提示见 [邮箱找回密码](docs/password-recovery.md)。

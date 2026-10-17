@@ -443,3 +443,11 @@ input[aria-invalid="true"] { border-color: #923f32; }
 @keyframes export-spin { to { transform: rotate(360deg); } }
 @media (max-width: 720px) { .export-card { padding: 16px; } .export-card button[type=submit] { width: 100%; } .export-option strong { font-size: 13px; } }
 @media (prefers-reduced-motion: reduce) { .export-busy::before { animation: none; } }
+
+/* Account recovery shares the quiet, responsive account entry layout. */
+.recovery-layout .auth-intro { line-height: 1.9; }
+.recovery-layout form label { display: block; margin-top: 18px; }
+.recovery-layout form button { margin-top: 24px; }
+.recovery-status { color: var(--green); font-size: 13px; line-height: 1.9; overflow-wrap: anywhere; }
+.recovery-status:empty { display: none; }
+.recovery-layout button[disabled] { opacity: .65; cursor: wait; }

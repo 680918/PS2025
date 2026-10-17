@@ -179,7 +179,7 @@ def main(argv=None):
     parser.add_argument(
         "--register",
         action="store_true",
-        help="本次开启本人 163 邮件注册，在终端隐藏输入授权码",
+        help="本次开启本人 163 注册与密码找回邮件，在终端隐藏输入授权码",
     )
     parser.add_argument(
         "--ai",
@@ -225,13 +225,17 @@ def main(argv=None):
                     "请在自己的 PowerShell 中运行；不要通过聊天、参数或管道传递授权码。"
                 )
                 return 1
-            username = input("本次注册使用的本人完整 163 邮箱：").strip().lower()
+            username = (
+                input("本次注册或找回密码使用的本人完整 163 邮箱：").strip().lower()
+            )
             with warnings.catch_warnings():
                 warnings.simplefilter("error", getpass.GetPassWarning)
                 code = getpass.getpass("163 客户端授权码（输入不显示）：")
             settings = SMTPSettings(username, code)
             del code
-            print("仅允许向该本人邮箱发送，由你在网页点击发送。授权码不会写入文件。")
+            print(
+                "仅允许向该本人邮箱发送注册、密码找回及重置完成通知；由你在网页操作触发。授权码不会写入文件。"
+            )
         return _serve(
             directory,
             args.port,
