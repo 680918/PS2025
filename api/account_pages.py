@@ -461,7 +461,7 @@ def register_account_pages(
             '<section class="workspace-assets" aria-label="知识资产沉淀"><h2><a href="/web/knowledge">知识资产沉淀</a></h2>'
             '<nav class="asset-nav" aria-label="教案收集与保存"><a href="/web/knowledge?status=pending">教案草稿 · 预览与保存'
             + ('<span class="asset-pending">待你确认</span>' if draft_items else "")
-            + '</a><a href="/web/knowledge">已保存的教案目录</a></nav>'
+            + '</a><a href="/web/knowledge">已保存的教案目录</a><a href="/web/export">导出我的学习资料</a></nav>'
             + lesson_button
             + "</section>"
         )

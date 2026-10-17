@@ -424,3 +424,22 @@ input[aria-invalid="true"] { border-color: #923f32; }
     .workspace-sidebar-content { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
     .workspace-layout-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 }
+
+/* Personal learning export. */
+.export-card { max-width: 800px; }
+.export-card fieldset { border: 0; margin: 0; padding: 0; }
+.export-card legend { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+.library-space .export-option { display: flex; align-items: flex-start; gap: 13px; border: 1px solid var(--line); border-radius: 10px; padding: 15px; margin: 12px 0; cursor: pointer; background: #fafbf8; }
+.library-space .export-option:has(input:checked) { background: #edf2e7; border-color: #a5b5a0; }
+.library-space .export-option:has(input:disabled) { cursor: default; opacity: .6; }
+.library-space .export-option input { width: 18px; height: 18px; flex-shrink: 0; margin: 4px 0 0; accent-color: var(--green); }
+.export-option strong { display: block; font-size: 14px; font-weight: 500; }
+.export-option span span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.85; }
+.export-period { margin: 24px 0; }
+.export-period select { max-width: 100%; width: 220px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #fafbf8; font: inherit; font-size: 13px; }
+.export-note, #asset-export-status { color: var(--muted); font-size: 12px; line-height: 1.9; margin-top: 12px; }
+#asset-export-status { color: var(--green); }
+.export-busy::before { content: ''; display: inline-block; width: 12px; height: 12px; border: 2px solid #c6d3bd; border-top-color: var(--green); border-radius: 50%; margin-right: 8px; vertical-align: middle; animation: export-spin 1s linear infinite; }
+@keyframes export-spin { to { transform: rotate(360deg); } }
+@media (max-width: 720px) { .export-card { padding: 16px; } .export-card button[type=submit] { width: 100%; } .export-option strong { font-size: 13px; } }
+@media (prefers-reduced-motion: reduce) { .export-busy::before { animation: none; } }

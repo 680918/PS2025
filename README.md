@@ -17,6 +17,8 @@ python -m api.coach_run --simulate
 
 真实试用前可运行 `python -m api.coach_run --check --ai --register --port 8785`；仅检查本机条件，不发信、不调用 AI。通过后去掉 `--check` 启动。端口可更换，记录仍保存在同一本机账户空间。详见 [本人真实 AI 试用步骤](docs/real-ai-local-trial.md)。
 
+左侧“知识资产沉淀”现可选择导出教案、草稿、聊天与引用、学习位置和原始资料。下载包含可直接打开的阅读目录，Coach 内内容继续保留，不调用 AI；详见 [个人学习资产导出](docs/personal-asset-export.md)。
+
 **下方 `api.run` 是保留的旧开发入口，其禁用登录与旧学习页面描述不适用于以上新入口。**
 
 ## 启动网页
