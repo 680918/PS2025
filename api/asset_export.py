@@ -15,6 +15,7 @@ from urllib.parse import quote
 from zipfile import ZipFile, ZIP_DEFLATED
 
 from api.coach_markdown import coach_markdown
+from coach.book_study import study_directory
 
 
 SCOPES = {
@@ -133,6 +134,81 @@ def _has_memories(database):
     )
 
 
+def _book_directories(coach, materials, user_id):
+    if not coach.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_book_units'"
+    ).fetchone():
+        return
+    for material in materials.execute(
+        "SELECT material_id,title,kind,page_count FROM materials WHERE user_id=? ORDER BY created_at,material_id",
+        (user_id,),
+    ):
+        identity = material["material_id"]
+        units = [
+            dict(row)
+            for row in coach.execute(
+                "SELECT * FROM coach_book_units WHERE user_id=? AND material_id=? ORDER BY start_pos,unit_id",
+                (user_id, identity),
+            )
+        ]
+        coverage = [
+            dict(row)
+            for row in coach.execute(
+                "SELECT chunk_id FROM coach_book_coverage WHERE user_id=? AND material_id=?",
+                (user_id, identity),
+            )
+        ]
+        if not units and not coverage:
+            continue
+        chunks = [
+            dict(row)
+            for row in materials.execute(
+                "SELECT chunk_id,chunk_index,locator FROM material_chunks WHERE material_id=? ORDER BY chunk_index",
+                (identity,),
+            )
+        ]
+        stored = coach.execute(
+            "SELECT part.chunk_id FROM coach_topic_parts part JOIN coach_topics topic ON topic.user_id=part.user_id AND topic.topic_id=part.topic_id AND topic.material_id=part.material_id LEFT JOIN coach_active_topic active ON active.user_id=topic.user_id AND active.topic_id=topic.topic_id WHERE part.user_id=? AND part.material_id=? ORDER BY (active.topic_id IS NOT NULL) DESC,topic.updated_at DESC,topic.topic_id LIMIT 1",
+            (user_id, identity),
+        ).fetchone()
+        state = study_directory(
+            dict(material), chunks, units, coverage, stored[0] if stored else None
+        )
+        lines = [
+            material["title"],
+            "已讲解：" + str(state["explained"]) + " / " + str(state["total"]) + " 段",
+            "讲解记录不代表已经掌握；仅涵盖可提取文字的片段。",
+            "上次位置："
+            + (
+                state["current"]["locator"]
+                if state["current"]
+                else "选段已不可用"
+                if stored
+                else "尚未选段"
+            ),
+        ]
+        for unit in state["units"]:
+            lines.append(
+                unit["title"]
+                + " · "
+                + unit["label"]
+                + " · 已讲解 "
+                + str(unit["explained"])
+                + " / "
+                + str(unit["total"])
+                + " 段"
+            )
+        done = {row["chunk_id"] for row in coverage}
+        lines.append("逐段记录：")
+        lines.extend(
+            chunk["locator"]
+            + " · "
+            + ("已讲解" if chunk["chunk_id"] in done else "待讲解")
+            for chunk in chunks
+        )
+        yield "\n".join(lines)
+
+
 def export_summary(dialogue_path, materials_path, user_id):
     with _read(dialogue_path) as coach, _read(materials_path) as materials:
         counts = {key: 0 for key in SCOPES}
@@ -153,6 +229,14 @@ def export_summary(dialogue_path, materials_path, user_id):
                 "SELECT 1 FROM coach_learning WHERE user_id=?", (user_id,)
             ).fetchone()
         )
+        if coach.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_book_units'"
+        ).fetchone():
+            counts["learning"] = counts["learning"] or bool(
+                coach.execute(
+                    "SELECT 1 FROM coach_book_units WHERE user_id=? LIMIT 1", (user_id,)
+                ).fetchone()
+            )
         row = materials.execute(
             "SELECT COUNT(*),COALESCE(SUM(length(raw)),0) FROM materials WHERE user_id=?",
             (user_id,),
@@ -456,6 +540,32 @@ def build_export(
                         '<li><a href="'
                         + quote("学习主题/记录/学习主题目录.html", safe="/")
                         + '">全部学习主题与位置</a></li>'
+                    )
+
+            if "chat" in scopes:
+                book_records = list(_book_directories(coach, materials, user_id))
+                if book_records:
+                    has_learning = True
+                    writer.text(
+                        "书籍学习/学习目录.txt",
+                        "书籍学习目录与讲解记录\n\n" + "\n\n".join(book_records),
+                    )
+                    writer.text(
+                        "书籍学习/学习目录.html",
+                        _html(
+                            "书籍学习目录与讲解记录",
+                            "".join(
+                                '<article class="plain">'
+                                + escape(record)
+                                + "</article>"
+                                for record in book_records
+                            ),
+                        ),
+                    )
+                    listing["chat"].append(
+                        '<li><a href="'
+                        + quote("书籍学习/学习目录.html", safe="/")
+                        + '">书籍学习目录与讲解记录</a></li>'
                     )
 
             if "memories" in scopes and _has_memories(coach):

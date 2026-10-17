@@ -505,3 +505,18 @@ input[aria-invalid="true"] { border-color: #923f32; }
 @media(max-width:520px) { .material-locate form > input, .material-locate form > button { width: 100%; } }
 .study-position-summary { color: var(--green); background: #edf2e7; border-radius: 7px; padding: 9px 10px; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .learning-status form + form { margin-top: 10px; }
+
+/* A compact local reading plan beside the unified conversation. */
+.book-study-summary { margin: .75rem 0; padding: .75rem; border: 1px solid var(--line, #dce3d5); border-radius: 12px; background: #f5f7f0; overflow-wrap: anywhere; }
+.book-study-summary p { margin: .3rem 0; }
+.book-unit-list { display: grid; gap: 1rem; }
+.book-plan-overview progress, .book-unit-card progress { width: 100%; height: .65rem; accent-color: #486b4c; }
+.book-unit-card h3 { margin: .65rem 0; }
+.book-unit-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.book-unit-range > div, .book-unit-editor, .book-unit-list > * { min-width: 0; }
+.book-unit-editor input { box-sizing: border-box; width: 100%; }
+.book-unit-parts { margin-top: 1rem; }
+.book-unit-parts ul { padding-left: 1.2rem; }
+.book-unit-parts li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; margin: .6rem 0; }
+.book-unit-parts li span { color: #5e6d5e; font-size: .85rem; }
+@media (max-width: 560px) { .book-unit-range { grid-template-columns: minmax(0, 1fr); } }

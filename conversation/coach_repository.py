@@ -65,6 +65,17 @@ class CoachRepository:
                     user_id TEXT NOT NULL, topic_id TEXT NOT NULL, material_id TEXT NOT NULL,
                     chunk_id TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(user_id,topic_id)
                 );
+                CREATE TABLE IF NOT EXISTS coach_book_units (
+                    unit_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, material_id TEXT NOT NULL,
+                    title TEXT NOT NULL, start_pos INTEGER NOT NULL, end_pos INTEGER NOT NULL,
+                    revision INTEGER NOT NULL, updated_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS coach_book_unit_owner ON coach_book_units(user_id,material_id,start_pos);
+                CREATE TABLE IF NOT EXISTS coach_book_coverage (
+                    user_id TEXT NOT NULL, material_id TEXT NOT NULL, chunk_id TEXT NOT NULL,
+                    turn_id INTEGER NOT NULL, explained_at INTEGER NOT NULL,
+                    PRIMARY KEY(user_id,material_id,chunk_id)
+                );
                 CREATE TABLE IF NOT EXISTS coach_turn_topics (turn_id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, topic_id TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS coach_topic_history ON coach_turn_topics(user_id,topic_id,turn_id);
                 CREATE TABLE IF NOT EXISTS coach_memories (
@@ -454,6 +465,96 @@ class CoachRepository:
             db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
             return identity
 
+    def book_units(self, user_id, material_id):
+        with closing(self._connect()) as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT * FROM coach_book_units WHERE user_id=? AND material_id=? ORDER BY start_pos,unit_id",
+                    (user_id, material_id),
+                )
+            ]
+
+    def book_coverage(self, user_id, material_id):
+        with closing(self._connect()) as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT * FROM coach_book_coverage WHERE user_id=? AND material_id=? ORDER BY explained_at,chunk_id",
+                    (user_id, material_id),
+                )
+            ]
+
+    def book_position(self, user_id, material_id):
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT part.* FROM coach_topic_parts part JOIN coach_topics topic ON topic.user_id=part.user_id AND topic.topic_id=part.topic_id AND topic.material_id=part.material_id LEFT JOIN coach_active_topic active ON active.user_id=topic.user_id AND active.topic_id=topic.topic_id WHERE part.user_id=? AND part.material_id=? ORDER BY (active.topic_id IS NOT NULL) DESC,topic.updated_at DESC,topic.topic_id LIMIT 1",
+                (user_id, material_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def save_book_unit(
+        self, user_id, material_id, unit_id, title, start, end, revision, *, now=None
+    ):
+        # The route validates ownership, material bounds and readable content.
+        title = validate_topic_title(title)
+        if (
+            len(title) > 80
+            or type(start) is not int
+            or type(end) is not int
+            or not 1 <= start <= end
+            or type(revision) is not int
+            or revision < 0
+        ):
+            raise ValueError("学习单元标题最多 80 字，请检查起止位置。")
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_idle(db, user_id, now)
+            old = db.execute(
+                "SELECT * FROM coach_book_units WHERE unit_id=? AND user_id=? AND material_id=?",
+                (unit_id, user_id, material_id),
+            ).fetchone()
+            if old is None and revision:
+                return "missing"
+            if old and old["revision"] != revision:
+                return "conflict"
+            if db.execute(
+                "SELECT 1 FROM coach_book_units WHERE user_id=? AND material_id=? AND unit_id<>? AND start_pos<=? AND end_pos>=?",
+                (user_id, material_id, unit_id, end, start),
+            ).fetchone():
+                raise ValueError("学习单元范围不能重叠，请先核对已有目录。")
+            if old:
+                if (old["title"], old["start_pos"], old["end_pos"]) == (
+                    title,
+                    start,
+                    end,
+                ):
+                    return "unchanged"
+                db.execute(
+                    "UPDATE coach_book_units SET title=?,start_pos=?,end_pos=?,revision=revision+1,updated_at=? WHERE unit_id=?",
+                    (title, start, end, now, unit_id),
+                )
+            else:
+                if (
+                    db.execute(
+                        "SELECT COUNT(*) FROM coach_book_units WHERE user_id=? AND material_id=?",
+                        (user_id, material_id),
+                    ).fetchone()[0]
+                    >= 60
+                ):
+                    raise ValueError("每份资料最多 60 个学习单元，可修改现有单元。")
+                # A foreign unit id must never be overwritten.
+                if db.execute(
+                    "SELECT 1 FROM coach_book_units WHERE unit_id=?", (unit_id,)
+                ).fetchone():
+                    return "missing"
+                db.execute(
+                    "INSERT INTO coach_book_units VALUES(?,?,?,?,?,?,1,?)",
+                    (unit_id, user_id, material_id, title, start, end, now),
+                )
+        return "saved"
+
     def topic_turns(self, user_id, identity):
         with closing(self._connect()) as db:
             rows = db.execute(
@@ -588,6 +689,7 @@ class CoachRepository:
         draft=None,
         material_id=None,
         part_id=None,
+        explained_part=False,
     ):
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -614,6 +716,11 @@ class CoachRepository:
                 connection.execute(
                     "INSERT INTO coach_turn_topics SELECT turn_id,user_id,? FROM coach_turns WHERE user_id=? AND nonce=? ON CONFLICT(turn_id) DO UPDATE SET topic_id=excluded.topic_id",
                     (identity, user_id, nonce),
+                )
+            if changed and explained_part and material_id and part_id:
+                connection.execute(
+                    "INSERT INTO coach_book_coverage SELECT user_id,?,?,turn_id,? FROM coach_turns WHERE user_id=? AND nonce=? ON CONFLICT(user_id,material_id,chunk_id) DO NOTHING",
+                    (material_id, part_id, now, user_id, nonce),
                 )
             if changed and draft is not None:
                 turn_id = connection.execute(

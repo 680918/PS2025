@@ -277,6 +277,7 @@ def send_dialogue(
             part_id=part["chunk_id"] if part else None,
             citations=citations,
             draft=draft,
+            explained_part=action == "study" and bool(citations),
         )
         return "complete" if completed else "interrupted"
     except Exception:

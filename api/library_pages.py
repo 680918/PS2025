@@ -27,6 +27,8 @@ from api.coach_markdown import coach_markdown
 
 from api.public_pages import _render_layout
 from coach.materials import MaterialError, MAX_FILE_BYTES
+from coach.book_study import study_directory, unit_chunks
+from uuid import uuid4
 from coach.learning_topics import (
     discussion_material,
     select_discussion_material,
@@ -214,7 +216,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             "saved": "已经由你确认保存的教案，包含阅读版、Markdown 文本与引用说明。",
             "memories": "你明确保存的学习目标、基础和偏好，包含阅读版与文本。",
             "drafts": "尚未确认的教案草稿；导出后仍保留草稿状态。",
-            "chat": "你的提问、教练回复、实际引用说明，以及当前学习位置和其他主题的学习位置。",
+            "chat": "你的提问、教练回复、实际引用说明，以及各主题学习位置、书籍学习目录与讲解记录。",
             "materials": f"你上传或粘贴的原始内容，合计约 {material_size}。",
         }
         for scope, label in SCOPES.items():
@@ -387,7 +389,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
                 + label
                 + "<p>"
                 + escape(item["filename"])
-                + f' · {item["char_count"]} 字</p><div class="library-actions"><a class="text-link" href="/web/materials/{identity}">预览文字</a>'
+                + f' · {item["char_count"]} 字</p><div class="library-actions"><a class="text-link" href="/web/materials/{identity}">预览文字</a><a class="text-link" href="/web/materials/{identity}/plan">学习目录</a>'
                 + action(
                     request,
                     f"/web/materials/{identity}/select",
@@ -505,6 +507,308 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
         except sqlite3.Error:
             return problem("文字资料暂时无法保存。", 503)
 
+    def book_state(user_id, item, chunks):
+        stored = dialogue.book_position(user_id, item["material_id"])
+        return study_directory(
+            item,
+            chunks,
+            dialogue.book_units(user_id, item["material_id"]),
+            dialogue.book_coverage(user_id, item["material_id"]),
+            stored["chunk_id"] if stored else None,
+        )
+
+    def select_part_button(request, identity, chunk, label):
+        return (
+            '<form method="post" action="/web/materials/'
+            + identity
+            + '/study">'
+            + input_csrf(request, "study-part", identity + "." + chunk["chunk_id"])
+            + '<input type="hidden" name="chunk_id" value="'
+            + chunk["chunk_id"]
+            + '"><button class="button button-primary" type="submit">'
+            + escape(label)
+            + "</button></form>"
+        )
+
+    def book_unit_editor(request, item, unit, values=None, *, message="", code=200):
+        values = values or unit
+        identity, unit_id = item["material_id"], unit["unit_id"]
+        label = "PDF 文件页码" if item["kind"] == "pdf" else "文字片段编号"
+        body = (
+            '<p class="library-intro">'
+            + escape(item["title"])
+            + " · 按原文范围组织学习，不调用 AI。标题可使用原书章名，也可按自己的目标命名。</p>"
+        )
+        if message:
+            body += (
+                '<p class="form-error-summary" role="alert">' + escape(message) + "</p>"
+            )
+        body += (
+            '<section class="library-card book-unit-editor"><form method="post" action="/web/materials/'
+            + identity
+            + "/plan/"
+            + unit_id
+            + '">'
+            + input_csrf(
+                request,
+                "book-unit",
+                identity + "." + unit_id + "." + str(unit["revision"]),
+            )
+            + '<input type="hidden" name="revision" value="'
+            + str(unit["revision"])
+            + '"><label for="unit-title">学习单元名称</label><input id="unit-title" name="title" maxlength="80" required value="'
+            + escape(str(values["title"]), quote=True)
+            + '"><div class="book-unit-range"><div><label for="unit-start">起始'
+            + label
+            + '</label><input id="unit-start" name="start_pos" type="number" min="1" required value="'
+            + escape(str(values["start_pos"]), quote=True)
+            + '"></div><div><label for="unit-end">结束'
+            + label
+            + '</label><input id="unit-end" name="end_pos" type="number" min="1" required value="'
+            + escape(str(values["end_pos"]), quote=True)
+            + '"></div></div><p class="lesson-revision-note">范围包含起止位置，单元之间不重叠，每份资料最多 60 个。PDF 使用文件实际页码，空白或无可提取文字的页面不会生成讲解片段。调整目录会按新范围重新计算已有讲解记录。</p><div class="library-actions"><button class="button button-primary" type="submit">'
+            + ("核对后再次保存" if code == 409 else "保存学习单元")
+            + '</button><a class="button button-outline" href="/web/materials/'
+            + identity
+            + '/plan">返回学习目录</a></div></form></section>'
+        )
+        return page(
+            "修改学习单元" if unit["revision"] else "添加学习单元", body, code=code
+        )
+
+    @app.get("/web/materials/{identity}/plan", include_in_schema=False)
+    def book_plan(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            item = materials.get(account.user_id, identity)
+            chunks = materials.chunks(account.user_id, identity) if item else []
+            if not item or not chunks:
+                return problem("找不到这份可读取资料。", 404)
+            state = book_state(account.user_id, item, chunks)
+            stored = dialogue.book_position(account.user_id, identity)
+            if stored and state["current"] is None:
+                current_note = (
+                    "原选段暂不可用；请从下方选择可读位置，系统不会自动换段。"
+                )
+            else:
+                current_note = (
+                    "上次位置 · " + state["current"]["locator"]
+                    if state["current"]
+                    else "选择一个位置，开始逐段学习。"
+                )
+            done = {
+                row["chunk_id"]
+                for row in dialogue.book_coverage(account.user_id, identity)
+            }
+            resume = state["current"] or next(
+                (part for part in chunks if part["chunk_id"] not in done), chunks[0]
+            )
+            body = (
+                '<p class="library-intro">按自己的节奏读书，把讨论逐渐沉淀为知识。</p><section class="library-card book-plan-overview"><p class="eyebrow">书籍学习</p><h2>'
+                + escape(item["title"])
+                + "</h2><p>可读内容已讲解 <strong>"
+                + str(state["explained"])
+                + " / "
+                + str(state["total"])
+                + '</strong> 段</p><progress max="'
+                + str(state["total"])
+                + '" value="'
+                + str(state["explained"])
+                + '" aria-label="可读片段讲解进度"></progress><p>'
+                + escape(current_note)
+                + '</p><p class="learning-record-note">仅记录成功取得且带原文引用的选段讲解，不代表已经掌握。浏览、目录编辑与选段不调用 AI；回到对话后点击讲解才调用。</p><div class="library-actions">'
+                + select_part_button(
+                    request,
+                    identity,
+                    resume,
+                    "回到上次位置" if state["current"] else "开始逐段学习",
+                )
+                + '<a class="button button-outline" href="/web/materials/'
+                + identity
+                + '/plan/new">添加学习单元</a><a class="text-link" href="/web/materials/'
+                + identity
+                + '">查看原文与定位 →</a></div></section>'
+            )
+            if item["kind"] == "pdf" and item["readable_pages"] < item["page_count"]:
+                body += '<p class="lesson-revision-note">部分 PDF 页没有可提取文字，进度仅涵盖可读片段；这不代表整本书已被完整处理。</p>'
+            if request.query_params.get("notice") == "saved":
+                body += '<p class="lesson-version-notice" role="status">学习单元已保存，已有讲解记录继续保留。</p>'
+            body += '<h2>我的学习单元</h2><p class="library-intro">按起始位置排列。可按章节或自己的学习目标分组；没有分组的内容仍可在原文中选择学习。</p><div class="book-unit-list">'
+            if not state["units"]:
+                body += '<section class="library-card"><h3>先读起来，也可以慢慢整理目录</h3><p>你可以直接从第一段开始；需要时，再把原书章节或某个页码范围设为学习单元。</p></section>'
+            for unit in state["units"]:
+                selected = state["current"] if unit["current"] else unit["resume"]
+                body += (
+                    '<article class="library-card book-unit-card"><span class="library-badge">'
+                    + ("当前位置" if unit["current"] else "学习单元")
+                    + "</span><h3>"
+                    + escape(unit["title"])
+                    + "</h3><p>"
+                    + escape(unit["label"])
+                    + " · 已讲解 "
+                    + str(unit["explained"])
+                    + " / "
+                    + str(unit["total"])
+                    + ' 段</p><progress max="'
+                    + str(max(1, unit["total"]))
+                    + '" value="'
+                    + str(unit["explained"])
+                    + '" aria-label="本单元讲解进度"></progress><div class="library-actions">'
+                    + (
+                        select_part_button(
+                            request,
+                            identity,
+                            selected,
+                            "继续本单元" if unit["current"] else "进入本单元",
+                        )
+                        if selected
+                        else "<p>原文暂不可用，请调整范围。</p>"
+                    )
+                    + '<a class="text-link" href="/web/materials/'
+                    + identity
+                    + "/plan/"
+                    + unit["unit_id"]
+                    + '">修改名称与范围</a></div><details class="book-unit-parts"><summary>查看本单元的原文位置与讲解记录</summary><ul>'
+                )
+                for part in unit["chunks"]:
+                    body += (
+                        '<li><a href="/web/materials/'
+                        + identity
+                        + "?part="
+                        + str(part["chunk_index"])
+                        + '">'
+                        + escape(part["locator"])
+                        + "</a><span>"
+                        + ("已讲解" if part["chunk_id"] in done else "待讲解")
+                        + "</span></li>"
+                    )
+                body += "</ul></details></article>"
+            return page("书籍学习目录", body + "</div>")
+        except (sqlite3.Error, ValueError):
+            return problem("暂时无法读取学习目录，请稍后重试。", 503)
+
+    @app.get("/web/materials/{identity}/plan/{unit_id}", include_in_schema=False)
+    def edit_book_unit(request: Request, identity: str, unit_id: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            item = materials.get(account.user_id, identity)
+            if not item:
+                return problem("找不到这份资料。", 404)
+            unit = next(
+                (
+                    unit
+                    for unit in dialogue.book_units(account.user_id, identity)
+                    if unit["unit_id"] == unit_id
+                ),
+                None,
+            )
+            if unit_id == "new":
+                unit = {
+                    "unit_id": uuid4().hex,
+                    "revision": 0,
+                    "title": "",
+                    "start_pos": "",
+                    "end_pos": "",
+                }
+            return (
+                book_unit_editor(request, item, unit)
+                if unit
+                else problem("找不到这个学习单元。", 404)
+            )
+        except sqlite3.Error:
+            return problem("暂时无法读取学习单元。", 503)
+
+    @app.post("/web/materials/{identity}/plan/{unit_id}", include_in_schema=False)
+    async def save_book_unit(request: Request, identity: str, unit_id: str):
+        account, denied = await run_in_threadpool(auth, request, write=True)
+        if denied is not None:
+            return denied
+        values = await fields(
+            request, {"csrf", "revision", "title", "start_pos", "end_pos"}, limit=4096
+        )
+        if (
+            values is None
+            or not re.fullmatch(r"[a-f0-9]{32}", unit_id)
+            or not re.fullmatch(r"(?:0|[1-9][0-9]{0,9})", values["revision"])
+            or not valid_csrf(
+                request,
+                values,
+                "book-unit",
+                identity + "." + unit_id + "." + values["revision"],
+            )
+            or (
+                request.headers.get("origin") == "null"
+                and request.headers.get("sec-fetch-site") != "same-origin"
+            )
+        ):
+            return problem("目录页面无法核对，请重新打开学习单元。", 403)
+        try:
+            item = materials.get(account.user_id, identity)
+            chunks = materials.chunks(account.user_id, identity) if item else []
+            if not item or not chunks:
+                return problem("找不到这份可读取资料。", 404)
+            revision = int(values["revision"])
+            unit = {**values, "unit_id": unit_id, "revision": revision}
+            try:
+                if not all(
+                    re.fullmatch(r"[1-9][0-9]{0,5}", values[key])
+                    for key in ("start_pos", "end_pos")
+                ):
+                    raise ValueError("请输入有效的起止位置编号。")
+                start, end = int(values["start_pos"]), int(values["end_pos"])
+                if not unit_chunks(item, chunks, start, end):
+                    raise ValueError(
+                        "这个范围没有可提取文字，请换一个范围；不会自动改用其他页面。"
+                    )
+                result = await run_in_threadpool(
+                    dialogue.save_book_unit,
+                    account.user_id,
+                    identity,
+                    unit_id,
+                    values["title"],
+                    start,
+                    end,
+                    revision,
+                )
+            except (ValueError, TopicBusy) as error:
+                return book_unit_editor(
+                    request,
+                    item,
+                    unit,
+                    values,
+                    message=str(error),
+                    code=409 if isinstance(error, TopicBusy) else 400,
+                )
+            if result == "missing":
+                return problem("找不到这个本人学习单元，请重新打开目录。", 404)
+            if result == "conflict":
+                latest = next(
+                    unit
+                    for unit in dialogue.book_units(account.user_id, identity)
+                    if unit["unit_id"] == unit_id
+                )
+                return book_unit_editor(
+                    request,
+                    item,
+                    latest,
+                    values,
+                    message="另一页面已修改本单元："
+                    + latest["title"]
+                    + "，范围 "
+                    + str(latest["start_pos"])
+                    + "–"
+                    + str(latest["end_pos"])
+                    + "。你填写的内容尚未保存，已保留在下方；请核对后再次保存。",
+                    code=409,
+                )
+        except sqlite3.Error:
+            return problem("目录暂时无法保存，请返回查看，避免重复操作。", 503)
+        return redirect("/web/materials/" + identity + "/plan?notice=saved")
+
     @app.get("/web/materials/{identity}", include_in_schema=False)
     def material_preview(request: Request, identity: str):
         account, denied = auth(request)
@@ -594,6 +898,9 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
                 + escape(chunk["locator"])
                 + f" · 共 {len(chunks)} 个片段</p>"
                 + note
+                + '<p><a class="text-link" href="/web/materials/'
+                + identity
+                + '/plan">书籍学习目录与进度 →</a></p>'
                 + navigation
                 + '<p class="lesson-revision-note">当前仅预览。选中这段后，可在统一对话中点击“讲解并提炼这段”；浏览和选段不调用 AI。</p><div class="library-actions">'
                 + controls

@@ -159,3 +159,5 @@ python -m pytest tests/test_api_run.py tests/test_web_home.py tests/test_web_pub
 ### 书籍选段导学
 
 资料页支持按文字片段、PDF 文件页码定位，选中后在统一聊天框讲解和提炼。每个主题保留书籍与选段，右栏显示真实位置；浏览和选段不调用 AI，明确提问后才调用。当前以单个已提取片段为资料来源，操作与边界见 [书籍选段导学](docs/book-section-study.md)。
+
+书籍连续导学支持按实际 PDF 页码或文字片段建立可修改的学习单元，在统一聊天框逐段讲解、显示引用与讲解进度。详见 [书籍学习目录与连续导学](docs/book-study-directory.md)。

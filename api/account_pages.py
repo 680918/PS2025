@@ -20,6 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from api.coach_markdown import coach_markdown
 from api.memory_pages import register_memory_pages
 from api.study_pages import register_study_pages
+from coach.book_study import study_directory
 from coach.learning_topics import discussion_material, discussion_part
 from api.public_pages import _render_layout
 from api.library_pages import register_library_pages, library_csrf
@@ -513,6 +514,45 @@ def register_account_pages(
                 if enabled
                 else '<button class="button button-primary button-full" type="button" disabled>讲解并提炼这段</button>'
             )
+            directory = study_directory(
+                selected,
+                materials_repository.chunks(user_id, selected["material_id"]),
+                dialogue_repository.book_units(user_id, selected["material_id"]),
+                dialogue_repository.book_coverage(user_id, selected["material_id"]),
+                part["chunk_id"],
+            )
+            unit = directory["unit"]
+            book_url = "/web/materials/" + selected["material_id"] + "/plan"
+            summary += (
+                '<div class="book-study-summary"><p>学习单元 · '
+                + escape(unit["title"] if unit else "按原文顺序学习")
+                + "</p><p>已讲解 "
+                + str(unit["explained"] if unit else directory["explained"])
+                + " / "
+                + str(unit["total"] if unit else directory["total"])
+                + ' 段</p><p class="learning-record-note">带原文引用的选段回复记录，不代表已经掌握。</p><a class="text-link" href="'
+                + book_url
+                + '">书籍学习目录与进度 →</a></div>'
+            )
+            following = directory["next"]
+            if following:
+                next_button = (
+                    '<input type="hidden" name="message" value=""><button class="button button-outline button-full" type="submit"'
+                    + (" disabled" if pending else "")
+                    + ">讲解下一段 · "
+                    + escape(following["locator"])
+                    + "</button>"
+                )
+                if enabled:
+                    study_action += dialogue_form(
+                        token, "study", next_button, study_id, following["chunk_id"]
+                    )
+            else:
+                study_action += (
+                    '<p class="learning-record-note">已到'
+                    + ("本单元" if unit else "可读原文")
+                    + "末段；可重温当前段落，或到学习目录选择其他范围。</p>"
+                )
             details = details.replace("</h3>", "</h3>" + summary + study_action, 1)
         elif stored_part:
             source_content += '<p class="form-error-summary">原选段暂不可用，请重新选择可读片段；系统不会改用其他段落。</p>'
