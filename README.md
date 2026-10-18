@@ -163,3 +163,5 @@ python -m pytest tests/test_api_run.py tests/test_web_home.py tests/test_web_pub
 书籍连续导学支持按实际 PDF 页码或文字片段建立可修改的学习单元，在统一聊天框逐段讲解、显示引用与讲解进度。详见 [书籍学习目录与连续导学](docs/book-study-directory.md)。
 
 学习单元可分批整理已讲解原文为教案草稿，确认后保存，并在原单元集中调阅、重温、修订与导出。详见 [单元教案](docs/unit-lessons.md)。
+
+已保存教案可以组织成学习手册，支持收录、排序、逐章阅读、重温和整册 HTML/Markdown 导出，整理不调用 AI。详见 [学习手册](docs/learning-booklets.md)。开发采用 [自主开发与检验后提交](docs/development-workflow.md) 流程。

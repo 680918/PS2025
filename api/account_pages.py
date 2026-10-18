@@ -24,6 +24,7 @@ from coach.book_study import study_directory
 from coach.learning_topics import discussion_material, discussion_part
 from api.public_pages import _render_layout
 from api.library_pages import register_library_pages, library_csrf
+from api.booklet_pages import register_booklet_pages
 from coach.dialogue import send_dialogue
 from security.login_sessions import (
     SESSION_LIFETIME,
@@ -119,6 +120,7 @@ def register_account_pages(
         )
 
     if dialogue_repository is not None:
+        register_booklet_pages(app, repository, dialogue_repository, csrf_key=key)
         register_memory_pages(app, repository, dialogue_repository, csrf_key=key)
         register_study_pages(
             app,
@@ -588,7 +590,7 @@ def register_account_pages(
             '<section class="workspace-assets" aria-label="知识资产沉淀"><h2><a href="/web/knowledge">知识资产沉淀</a></h2>'
             '<nav class="asset-nav" aria-label="教案收集与保存"><a href="/web/knowledge?status=pending">教案草稿 · 预览与保存'
             + ('<span class="asset-pending">待你确认</span>' if draft_items else "")
-            + '</a><a href="/web/knowledge">已保存的教案目录</a><a href="/web/export">导出我的学习资料</a></nav>'
+            + '</a><a href="/web/knowledge">已保存的教案目录</a><a href="/web/booklets">我的学习手册</a><a href="/web/export">导出我的学习资料</a></nav>'
             + lesson_button
             + "</section>"
         )

@@ -230,6 +230,7 @@ def register_library_pages(
         )
         descriptions = {
             "saved": "已经由你确认保存的教案，包含阅读版、Markdown 文本与引用说明。",
+            "booklets": "你组织的学习手册，按目录收录当前教案版本，包含整册阅读版和 Markdown。",
             "memories": "你明确保存的学习目标、基础和偏好，包含阅读版与文本。",
             "drafts": "尚未确认的教案草稿；导出后仍保留草稿状态。",
             "chat": "你的提问、教练回复、实际引用说明，以及各主题学习位置、书籍学习目录与讲解记录。",
@@ -242,7 +243,7 @@ def register_library_pages(
                 if not count and not (scope == "chat" and summary["learning"])
                 else ""
             )
-            checked = " checked" if scope == "saved" and count else ""
+            checked = " checked" if scope in {"saved", "booklets"} and count else ""
             options += (
                 '<label class="export-option"><input type="checkbox" name="scope" value="'
                 + scope
@@ -1306,7 +1307,7 @@ def register_library_pages(
         )
         return page(
             "知识资产沉淀",
-            '<p class="library-intro">经你确认的教案、知识点和学习册，留在这里，随时可以重温。</p><nav class="library-tabs"><a href="/web/knowledge">已保存的教案目录</a><a href="/web/knowledge?status=pending">教案草稿 · 预览与保存</a></nav>'
+            '<p class="library-intro">经你确认的教案、知识点和学习册，留在这里，随时可以重温。</p><nav class="library-tabs"><a href="/web/knowledge">已保存的教案目录</a><a href="/web/knowledge?status=pending">教案草稿 · 预览与保存</a><a href="/web/booklets">我的学习手册 · 教案成册</a></nav>'
             + search
             + '<div class="library-list">'
             + (

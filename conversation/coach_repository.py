@@ -1,6 +1,14 @@
 """Account-owned dialogue and learning anchors, independent of legacy journeys."""
 
 import sqlite3
+import re
+from coach.booklets import (
+    booklet_title,
+    booklet_ids,
+    booklet_snapshot,
+    MAX_BOOKLETS,
+    MAX_CHAPTERS,
+)
 import json
 from uuid import uuid4
 from contextlib import closing
@@ -65,6 +73,12 @@ class CoachRepository:
                     user_id TEXT NOT NULL, topic_id TEXT NOT NULL, material_id TEXT NOT NULL,
                     chunk_id TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(user_id,topic_id)
                 );
+                CREATE TABLE IF NOT EXISTS coach_booklets (
+                    booklet_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL,
+                    lesson_ids_json TEXT NOT NULL, revision INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS coach_booklet_owner ON coach_booklets(user_id,updated_at,booklet_id);
                 CREATE TABLE IF NOT EXISTS coach_knowledge_units (
                     knowledge_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                     material_id TEXT NOT NULL, unit_id TEXT NOT NULL, scope_json TEXT NOT NULL
@@ -118,6 +132,120 @@ class CoachRepository:
                     if selected
                     else ("" if materials is not None else None),
                 )
+
+    def list_booklets(self, user_id, *, query="", offset=0, limit=21):
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT booklet_id,title,lesson_ids_json,revision,updated_at FROM coach_booklets WHERE user_id=? AND instr(lower(title),lower(?))>0 ORDER BY updated_at DESC,booklet_id LIMIT ? OFFSET ?",
+                (user_id, query, limit, offset),
+            ).fetchall()
+        return [
+            {**dict(row), "chapter_count": len(booklet_ids(row["lesson_ids_json"]))}
+            for row in rows
+        ]
+
+    def booklet(self, user_id, identity, *, chapter=None):
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN")
+            return booklet_snapshot(db, user_id, identity, chapter=chapter)
+
+    def create_booklet(self, user_id, identity, title, *, now=None):
+        title = booklet_title(title)
+        if (
+            not isinstance(identity, str)
+            or re.fullmatch(r"[a-f0-9]{32}", identity) is None
+        ):
+            raise ValueError("手册编号无法读取。")
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            old = db.execute(
+                "SELECT user_id FROM coach_booklets WHERE booklet_id=?", (identity,)
+            ).fetchone()
+            if old:
+                return "unchanged" if old[0] == user_id else "missing"
+            if (
+                db.execute(
+                    "SELECT COUNT(*) FROM coach_booklets WHERE user_id=?", (user_id,)
+                ).fetchone()[0]
+                >= MAX_BOOKLETS
+            ):
+                raise ValueError("当前每个账户最多 50 本手册，可继续维护已有手册。")
+            db.execute(
+                "INSERT INTO coach_booklets VALUES(?,?,?,'[]',1,?,?)",
+                (identity, user_id, title, now, now),
+            )
+        return "saved"
+
+    def change_booklet(
+        self,
+        user_id,
+        identity,
+        revision,
+        operation,
+        *,
+        knowledge_id=None,
+        title=None,
+        now=None,
+    ):
+        if (
+            type(revision) is not int
+            or not 1 <= revision <= 1000000000
+            or operation not in {"title", "add", "up", "down", "remove"}
+        ):
+            raise ValueError("手册操作无法读取。")
+        if operation == "title":
+            title = booklet_title(title)
+        elif (
+            not isinstance(knowledge_id, str)
+            or re.fullmatch(r"[a-f0-9]{32}", knowledge_id) is None
+        ):
+            raise ValueError("教案编号无法读取。")
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            old = db.execute(
+                "SELECT * FROM coach_booklets WHERE user_id=? AND booklet_id=?",
+                (user_id, identity),
+            ).fetchone()
+            if old is None:
+                return "missing"
+            if old["revision"] != revision:
+                return "conflict"
+            ids = booklet_ids(old["lesson_ids_json"])
+            if operation == "title":
+                if title == old["title"]:
+                    return "unchanged"
+            else:
+                title = old["title"]
+                if operation == "add":
+                    if not db.execute(
+                        "SELECT 1 FROM coach_knowledge WHERE user_id=? AND knowledge_id=? AND status='saved'",
+                        (user_id, knowledge_id),
+                    ).fetchone():
+                        raise ValueError("只能收录本人已经确认保存的教案。")
+                    if knowledge_id in ids:
+                        return "unchanged"
+                    if len(ids) >= MAX_CHAPTERS:
+                        raise ValueError(
+                            "一本手册最多 100 章，可另建手册或移出暂不需要的章节。"
+                        )
+                    ids.append(knowledge_id)
+                elif knowledge_id not in ids:
+                    return "unchanged"
+                elif operation == "remove":
+                    ids.remove(knowledge_id)
+                else:
+                    index = ids.index(knowledge_id)
+                    other = index + (-1 if operation == "up" else 1)
+                    if not 0 <= other < len(ids):
+                        return "unchanged"
+                    ids[index], ids[other] = ids[other], ids[index]
+            db.execute(
+                "UPDATE coach_booklets SET title=?,lesson_ids_json=?,revision=revision+1,updated_at=? WHERE user_id=? AND booklet_id=?",
+                (title, json.dumps(ids), now, user_id, identity),
+            )
+        return "saved"
 
     def list_memories(self, user_id):
         with closing(self._connect()) as db:

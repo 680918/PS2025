@@ -17,10 +17,12 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from api.coach_markdown import coach_markdown
 from coach.book_study import study_directory
 from coach.unit_lessons import unit_scope_text
+from coach.booklets import booklet_snapshot, booklet_markdown
 
 
 SCOPES = {
     "saved": "已保存教案",
+    "booklets": "学习手册",
     "drafts": "教案草稿",
     "chat": "聊天记录与学习位置",
     "materials": "原始资料",
@@ -222,6 +224,47 @@ def _unit_scope(database, user_id, knowledge_id):
     return unit_scope_text(json.loads(row[0])) if row else ""
 
 
+def booklet_document(book):
+    body = '<p class="note">这是导出时的整册阅读副本，保留各章当时的教案版本与整理时参考。原教案继续保留在知识资产中。</p><h2>目录</h2><ol>'
+    for chapter in book["chapters"]:
+        body += (
+            '<li><a href="#chapter-'
+            + str(chapter["number"])
+            + '">'
+            + escape(chapter["title"])
+            + "</a></li>"
+        )
+    body += "</ol>"
+    if not book["chapters"]:
+        body += "<p>尚未收录教案。</p>"
+    for chapter in book["chapters"]:
+        body += (
+            '<article id="chapter-'
+            + str(chapter["number"])
+            + '"><h2>第 '
+            + str(chapter["number"])
+            + " 章 · "
+            + escape(chapter["title"])
+            + "</h2>"
+        )
+        if chapter.get("missing"):
+            body += "<p>原教案暂不可用，请回到手册目录核对。</p></article>"
+            continue
+        body += '<p class="note">教案版本：第 ' + str(chapter["revision"]) + " 版</p>"
+        if chapter.get("unit_summary"):
+            body += (
+                '<p class="plain">'
+                + escape(unit_scope_text(chapter["unit_summary"]))
+                + "</p>"
+            )
+        body += (
+            coach_markdown(chapter["content"])
+            + _citations(chapter["citations"])
+            + "</article>"
+        )
+    return _html(book["title"], body)
+
+
 def export_summary(dialogue_path, materials_path, user_id):
     with _read(dialogue_path) as coach, _read(materials_path) as materials:
         counts = {key: 0 for key in SCOPES}
@@ -250,6 +293,12 @@ def export_summary(dialogue_path, materials_path, user_id):
                     "SELECT 1 FROM coach_book_units WHERE user_id=? LIMIT 1", (user_id,)
                 ).fetchone()
             )
+        if coach.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_booklets'"
+        ).fetchone():
+            counts["booklets"] = coach.execute(
+                "SELECT COUNT(*) FROM coach_booklets WHERE user_id=?", (user_id,)
+            ).fetchone()[0]
         row = materials.execute(
             "SELECT COUNT(*),COALESCE(SUM(length(raw)),0) FROM materials WHERE user_id=?",
             (user_id,),
@@ -381,6 +430,32 @@ def build_export(
                         + "</span></li>"
                     )
                     counts[scope] += 1
+
+            if (
+                "booklets" in scopes
+                and coach.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_booklets'"
+                ).fetchone()
+            ):
+                for index, row in enumerate(
+                    coach.execute(
+                        "SELECT booklet_id FROM coach_booklets WHERE user_id=? ORDER BY created_at,booklet_id",
+                        (user_id,),
+                    ),
+                    1,
+                ):
+                    book = booklet_snapshot(coach, user_id, row[0])
+                    stem = f"学习手册/{index:04d}-{_stem(book['title'])}"
+                    writer.text(stem + ".html", booklet_document(book))
+                    writer.text(stem + ".md", booklet_markdown(book))
+                    listing["booklets"].append(
+                        '<li><a href="'
+                        + quote(stem + ".html", safe="/")
+                        + '">'
+                        + escape(book["title"])
+                        + "</a></li>"
+                    )
+                    counts["booklets"] += 1
 
             if "chat" in scopes:
                 query = "SELECT user_content,assistant_content,status,created_at,citations_json FROM coach_turns WHERE user_id=? AND created_at>=? ORDER BY turn_id"

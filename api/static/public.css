@@ -520,3 +520,15 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .book-unit-parts li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; margin: .6rem 0; }
 .book-unit-parts li span { color: #5e6d5e; font-size: .85rem; }
 @media (max-width: 560px) { .book-unit-range { grid-template-columns: minmax(0, 1fr); } }
+
+/* Reading collections keep chapter content separate from directory editing. */
+.booklet-list, .booklet-chapters { display: grid; gap: 16px; margin: 20px 0; min-width: 0; }
+.booklet-chapters { list-style: none; padding: 0; }
+.booklet-list > *, .booklet-chapters > * { min-width: 0; overflow-wrap: anywhere; }
+.booklet-moves { display: flex; flex-wrap: wrap; gap: 8px; }
+.booklet-moves .button { padding: 8px 12px; margin: 0; font-size: 13px; }
+.booklet-toc summary { font-weight: 700; }
+.booklet-toc a[aria-current] { font-weight: 700; text-decoration: underline; }
+.booklet-toc li { margin: 8px 0; overflow-wrap: anywhere; }
+#booklet-reading { margin-top: 24px; scroll-margin-top: 24px; }
+#booklet-add { scroll-margin-top: 24px; }
