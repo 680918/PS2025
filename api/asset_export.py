@@ -17,7 +17,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from api.coach_markdown import coach_markdown
 from coach.book_study import study_directory
 from coach.unit_lessons import unit_scope_text
-from coach.booklets import booklet_snapshot, booklet_markdown
+from coach.booklets import booklet_snapshot, booklet_markdown, booklet_position_text
 
 
 SCOPES = {
@@ -234,7 +234,11 @@ def booklet_document(book):
             + escape(chapter["title"])
             + "</a></li>"
         )
-    body += "</ol>"
+    body += (
+        '</ol><p class="note">'
+        + escape(booklet_position_text(book))
+        + "（阅读位置不代表学习完成或掌握程度。）</p>"
+    )
     if not book["chapters"]:
         body += "<p>尚未收录教案。</p>"
     for chapter in book["chapters"]:

@@ -14,7 +14,7 @@ from api.asset_export import booklet_document
 from api.coach_markdown import coach_markdown
 from api.library_pages import HEADERS, library_csrf
 from api.public_pages import _render_layout
-from coach.booklets import booklet_markdown
+from coach.booklets import booklet_markdown, booklet_position_text
 from coach.unit_lessons import unit_scope_text
 from security.login_sessions import signed_in_account
 from security.registration_rate_limit import RegistrationRateLimiter
@@ -169,6 +169,16 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
             body += '<section class="library-card"><h2>从一份教案开始积累</h2><p>可以按学习主题、书籍或个人目标创建手册，再逐渐收录已经确认保存的教案。</p></section>'
         for book in books[:20]:
             url = "/web/booklets/" + book["booklet_id"]
+            position = book["reading_position"]
+            position_note = (
+                "已记到第 " + str(position["number"]) + " 章，下次从这里继续。"
+                if position["number"]
+                else (
+                    "之前记住的章节已移出或暂不可用，请重新选择。"
+                    if position["knowledge_id"]
+                    else "尚未记住续读位置，可在阅读时保存。"
+                )
+            )
             body += (
                 '<article class="library-card"><span class="library-badge">学习手册 · '
                 + str(book["chapter_count"])
@@ -176,9 +186,14 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
                 + url
                 + '">'
                 + escape(book["title"])
-                + '</a></h2><div class="library-actions"><a class="button button-primary" href="'
+                + "</a></h2><p>"
+                + position_note
+                + '</p><div class="library-actions"><a class="button button-primary" href="'
                 + url
-                + '">打开阅读</a><a class="text-link" href="'
+                + ("#booklet-reading" if position["number"] else "")
+                + '">'
+                + ("继续阅读" if position["number"] else "打开阅读")
+                + '</a><a class="text-link" href="'
                 + url
                 + '/edit">收录教案与整理目录</a></div></article>'
             )
@@ -371,6 +386,54 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
         except sqlite3.Error:
             return problem("暂时无法读取手册目录。", 503)
 
+    @app.post("/web/booklets/{identity}/position", include_in_schema=False)
+    async def remember_position(request: Request, identity: str):
+        account, denied = await run_in_threadpool(auth, request, write=True)
+        if denied is not None:
+            return denied
+        values = await fields(
+            request, {"csrf", "revision", "knowledge_id", "position_revision"}
+        )
+        if (
+            values is None
+            or not re.fullmatch(r"[1-9][0-9]{0,9}", values["revision"])
+            or not re.fullmatch(r"0|[1-9][0-9]{0,9}", values["position_revision"])
+            or not re.fullmatch(r"[a-f0-9]{32}", values["knowledge_id"])
+        ):
+            return problem("续读页面无法核对，请重新打开手册。", 403)
+        binding = (
+            identity
+            + "."
+            + values["revision"]
+            + "."
+            + values["knowledge_id"]
+            + "."
+            + values["position_revision"]
+        )
+        if not valid(request, values, "position", binding):
+            return problem("续读页面无法核对，请重新打开手册。", 403)
+        try:
+            result = await run_in_threadpool(
+                dialogue.remember_booklet_position,
+                account.user_id,
+                identity,
+                int(values["revision"]),
+                values["knowledge_id"],
+                int(values["position_revision"]),
+            )
+            if result == "missing":
+                return problem("找不到这本本人手册。", 404)
+            if result == "conflict":
+                return problem(
+                    "另一页面已经更新手册或续读位置。本次没有覆盖，请重新打开手册后选择。",
+                    409,
+                )
+        except ValueError as error:
+            return problem(str(error))
+        except sqlite3.Error:
+            return problem("续读位置暂时无法保存，请稍后重新打开手册核对。", 503)
+        return redirect("/web/booklets/" + identity + "#booklet-reading")
+
     @app.post("/web/booklets/{identity}/{operation}", include_in_schema=False)
     async def change(request: Request, identity: str, operation: str):
         account, denied = await run_in_threadpool(auth, request, write=True)
@@ -457,13 +520,17 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
         if denied is not None:
             return denied
         try:
-            value = request.query_params.get("chapter", "1")
-            if not re.fullmatch(r"[1-9][0-9]{0,2}", value):
+            value = request.query_params.get("chapter")
+            if value is not None and not re.fullmatch(r"[1-9][0-9]{0,2}", value):
                 return problem("请检查章节编号。", 404)
-            number = int(value)
-            book = dialogue.booklet(account.user_id, identity, chapter=number)
+            book = dialogue.booklet(
+                account.user_id,
+                identity,
+                chapter=int(value) if value is not None else "resume",
+            )
             if book is None:
                 return problem("找不到这本本人手册。", 404)
+            number = book["selected_chapter"]
             if book["chapters"] and number > len(book["chapters"]):
                 return problem("找不到这个手册章节。", 404)
         except (sqlite3.Error, ValueError):
@@ -478,7 +545,11 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
             + url
             + '/download?format=html">导出整册阅读版</a><a class="text-link" href="'
             + url
-            + '/download?format=md">导出整册 Markdown</a></div><details class="library-card booklet-toc" open><summary>手册目录</summary><ol>'
+            + '/download?format=md">导出整册 Markdown</a><a class="text-link" href="'
+            + url
+            + '?chapter=1#booklet-reading">从头阅读</a></div><p class="lesson-revision-note">'
+            + escape(booklet_position_text(book))
+            + ' 阅读位置不代表学习完成或掌握程度。</p><details class="library-card booklet-toc" open><summary>手册目录</summary><ol>'
         )
         for item in book["chapters"]:
             body += (
@@ -507,6 +578,38 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
             if item.get("missing"):
                 body += "<p>原教案暂不可用，请回目录核对；系统不会改用其他教案。</p>"
             else:
+                position = book["reading_position"]
+                current = position["knowledge_id"] == item["knowledge_id"]
+                binding = (
+                    identity
+                    + "."
+                    + str(book["revision"])
+                    + "."
+                    + item["knowledge_id"]
+                    + "."
+                    + str(position["revision"])
+                )
+                body += (
+                    '<div class="library-actions"><form method="post" action="'
+                    + url
+                    + '/position">'
+                    + hidden(request, "position", binding)
+                    + '<input type="hidden" name="revision" value="'
+                    + str(book["revision"])
+                    + '">'
+                    + '<input type="hidden" name="knowledge_id" value="'
+                    + item["knowledge_id"]
+                    + '">'
+                    + '<input type="hidden" name="position_revision" value="'
+                    + str(position["revision"])
+                    + '">'
+                    + (
+                        '<span class="library-badge">已记住本章位置</span>'
+                        if current
+                        else '<button class="button button-outline" type="submit">记住本章位置</button>'
+                    )
+                    + '</form><span class="lesson-revision-note">下次打开从记住的章节继续；仅浏览不会改写位置。</span></div>'
+                )
                 body += (
                     '<p class="lesson-revision-note">当前教案 · 第 '
                     + str(item["revision"])

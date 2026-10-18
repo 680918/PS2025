@@ -45,6 +45,10 @@ def booklet_snapshot(database, user_id, identity, *, chapter=None):
         return None
     book = dict(row)
     ids = booklet_ids(book.pop("lesson_ids_json"))
+    book["reading_position"] = booklet_position(database, user_id, identity, ids)
+    if chapter == "resume":
+        chapter = book["reading_position"]["number"] or 1
+    book["selected_chapter"] = chapter
     has_scope = (
         database.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_knowledge_units'"
@@ -83,6 +87,43 @@ def booklet_snapshot(database, user_id, identity, *, chapter=None):
     return book
 
 
+def booklet_position(database, user_id, identity, ids):
+    """Resolve a user-selected chapter by ID; never infer completion or mastery."""
+    empty = {"knowledge_id": None, "revision": 0, "number": None}
+    if not database.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_booklet_positions'"
+    ).fetchone():
+        return empty
+    row = database.execute(
+        "SELECT knowledge_id,revision FROM coach_booklet_positions WHERE user_id=? AND booklet_id=?",
+        (user_id, identity),
+    ).fetchone()
+    if row is None:
+        return empty
+    value = dict(row)
+    readable = (
+        value["knowledge_id"] in ids
+        and database.execute(
+            "SELECT 1 FROM coach_knowledge WHERE user_id=? AND knowledge_id=? AND status='saved'",
+            (user_id, value["knowledge_id"]),
+        ).fetchone()
+    )
+    value["number"] = ids.index(value["knowledge_id"]) + 1 if readable else None
+    return value
+
+
+def booklet_position_text(book):
+    position = book.get("reading_position", {})
+    number = position.get("number")
+    if number:
+        return (
+            "已记到第 " + str(number) + " 章 · " + book["chapters"][number - 1]["title"]
+        )
+    if position.get("knowledge_id"):
+        return "之前记住的章节已移出或暂不可用，请重新选择续读位置。"
+    return "尚未记住续读位置。"
+
+
 def booklet_markdown(book):
     def label(text):
         return re.sub(r"([\\`*_\[\]#<>])", r"\\\1", text)
@@ -90,6 +131,7 @@ def booklet_markdown(book):
     parts = [
         "# " + label(book["title"]),
         "这是导出时的阅读副本。各章使用当时的教案版本，原教案继续保留在知识资产中。",
+        label(booklet_position_text(book)) + "（阅读位置不代表学习完成或掌握程度。）",
         "## 目录",
     ]
     parts.extend(

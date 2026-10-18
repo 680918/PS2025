@@ -6,6 +6,7 @@ from coach.booklets import (
     booklet_title,
     booklet_ids,
     booklet_snapshot,
+    booklet_position,
     MAX_BOOKLETS,
     MAX_CHAPTERS,
 )
@@ -79,6 +80,11 @@ class CoachRepository:
                     created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS coach_booklet_owner ON coach_booklets(user_id,updated_at,booklet_id);
+                CREATE TABLE IF NOT EXISTS coach_booklet_positions (
+                    user_id TEXT NOT NULL, booklet_id TEXT NOT NULL,
+                    knowledge_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0),
+                    updated_at INTEGER NOT NULL, PRIMARY KEY(user_id,booklet_id)
+                );
                 CREATE TABLE IF NOT EXISTS coach_knowledge_units (
                     knowledge_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                     material_id TEXT NOT NULL, unit_id TEXT NOT NULL, scope_json TEXT NOT NULL
@@ -134,15 +140,25 @@ class CoachRepository:
                 )
 
     def list_booklets(self, user_id, *, query="", offset=0, limit=21):
-        with closing(self._connect()) as db:
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN")
             rows = db.execute(
                 "SELECT booklet_id,title,lesson_ids_json,revision,updated_at FROM coach_booklets WHERE user_id=? AND instr(lower(title),lower(?))>0 ORDER BY updated_at DESC,booklet_id LIMIT ? OFFSET ?",
                 (user_id, query, limit, offset),
             ).fetchall()
-        return [
-            {**dict(row), "chapter_count": len(booklet_ids(row["lesson_ids_json"]))}
-            for row in rows
-        ]
+            result = []
+            for row in rows:
+                ids = booklet_ids(row["lesson_ids_json"])
+                result.append(
+                    {
+                        **dict(row),
+                        "chapter_count": len(ids),
+                        "reading_position": booklet_position(
+                            db, user_id, row["booklet_id"], ids
+                        ),
+                    }
+                )
+            return result
 
     def booklet(self, user_id, identity, *, chapter=None):
         with closing(self._connect()) as db, db:
@@ -174,6 +190,52 @@ class CoachRepository:
             db.execute(
                 "INSERT INTO coach_booklets VALUES(?,?,?,'[]',1,?,?)",
                 (identity, user_id, title, now, now),
+            )
+        return "saved"
+
+    def remember_booklet_position(
+        self, user_id, identity, revision, knowledge_id, position_revision, *, now=None
+    ):
+        if (
+            type(revision) is not int
+            or not 1 <= revision <= 1000000000
+            or type(position_revision) is not int
+            or not 0 <= position_revision <= 1000000000
+            or not isinstance(knowledge_id, str)
+            or re.fullmatch(r"[a-f0-9]{32}", knowledge_id) is None
+        ):
+            raise ValueError("续读位置无法核对，请重新打开章节。")
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            book = db.execute(
+                "SELECT revision,lesson_ids_json FROM coach_booklets WHERE user_id=? AND booklet_id=?",
+                (user_id, identity),
+            ).fetchone()
+            if book is None:
+                return "missing"
+            if book["revision"] != revision:
+                return "conflict"
+            ids = booklet_ids(book["lesson_ids_json"])
+            if (
+                knowledge_id not in ids
+                or not db.execute(
+                    "SELECT 1 FROM coach_knowledge WHERE user_id=? AND knowledge_id=? AND status='saved'",
+                    (user_id, knowledge_id),
+                ).fetchone()
+            ):
+                raise ValueError("只能记住本手册中本人已保存教案的位置。")
+            old = db.execute(
+                "SELECT knowledge_id,revision FROM coach_booklet_positions WHERE user_id=? AND booklet_id=?",
+                (user_id, identity),
+            ).fetchone()
+            if old and old["knowledge_id"] == knowledge_id:
+                return "unchanged"
+            if (old["revision"] if old else 0) != position_revision:
+                return "conflict"
+            db.execute(
+                "INSERT INTO coach_booklet_positions VALUES(?,?,?,?,?) ON CONFLICT(user_id,booklet_id) DO UPDATE SET knowledge_id=excluded.knowledge_id,revision=excluded.revision,updated_at=excluded.updated_at",
+                (user_id, identity, knowledge_id, position_revision + 1, now),
             )
         return "saved"
 
