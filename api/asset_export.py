@@ -16,6 +16,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 from api.coach_markdown import coach_markdown
 from coach.book_study import study_directory
+from coach.unit_lessons import unit_scope_text
 
 
 SCOPES = {
@@ -209,6 +210,18 @@ def _book_directories(coach, materials, user_id):
         yield "\n".join(lines)
 
 
+def _unit_scope(database, user_id, knowledge_id):
+    if not database.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coach_knowledge_units'"
+    ).fetchone():
+        return ""
+    row = database.execute(
+        "SELECT scope_json FROM coach_knowledge_units WHERE user_id=? AND knowledge_id=?",
+        (user_id, knowledge_id),
+    ).fetchone()
+    return unit_scope_text(json.loads(row[0])) if row else ""
+
+
 def export_summary(dialogue_path, materials_path, user_id):
     with _read(dialogue_path) as coach, _read(materials_path) as materials:
         counts = {key: 0 for key in SCOPES}
@@ -316,12 +329,13 @@ def build_export(
                 folder = "教案/已保存" if scope == "saved" else "教案/待确认草稿"
                 for index, row in enumerate(
                     coach.execute(
-                        "SELECT title,topic,content,citations_json,created_at,saved_at FROM coach_knowledge WHERE user_id=? AND status=? ORDER BY created_at,knowledge_id",
+                        "SELECT knowledge_id,title,topic,content,citations_json,created_at,saved_at FROM coach_knowledge WHERE user_id=? AND status=? ORDER BY created_at,knowledge_id",
                         (user_id, status),
                     ),
                     1,
                 ):
                     sources = _sources(row["citations_json"])
+                    unit_scope = _unit_scope(coach, user_id, row["knowledge_id"])
                     stem = f"{folder}/{index:04d}-{_stem(row['title'])}"
                     label = (
                         "已确认保存"
@@ -337,7 +351,13 @@ def build_export(
                             + " · 创建："
                             + _date(row["created_at"])
                         )
-                        + "</p><section>"
+                        + "</p>"
+                        + (
+                            '<p class="plain">' + escape(unit_scope) + "</p>"
+                            if unit_scope
+                            else ""
+                        )
+                        + "<section>"
                         + coach_markdown(row["content"])
                         + "</section>"
                         + _citations(sources)
@@ -345,7 +365,11 @@ def build_export(
                     writer.text(stem + ".html", _html(row["title"], body))
                     writer.text(
                         stem + ".md",
-                        label + "\n\n" + row["content"] + _citation_text(sources),
+                        label
+                        + "\n\n"
+                        + (unit_scope + "\n\n" if unit_scope else "")
+                        + row["content"]
+                        + _citation_text(sources),
                     )
                     listing[scope].append(
                         '<li><a href="'

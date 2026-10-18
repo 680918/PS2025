@@ -65,6 +65,11 @@ class CoachRepository:
                     user_id TEXT NOT NULL, topic_id TEXT NOT NULL, material_id TEXT NOT NULL,
                     chunk_id TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(user_id,topic_id)
                 );
+                CREATE TABLE IF NOT EXISTS coach_knowledge_units (
+                    knowledge_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                    material_id TEXT NOT NULL, unit_id TEXT NOT NULL, scope_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS coach_unit_knowledge_owner ON coach_knowledge_units(user_id,material_id,unit_id);
                 CREATE TABLE IF NOT EXISTS coach_book_units (
                     unit_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, material_id TEXT NOT NULL,
                     title TEXT NOT NULL, start_pos INTEGER NOT NULL, end_pos INTEGER NOT NULL,
@@ -626,6 +631,8 @@ class CoachRepository:
         study_id=None,
         part_id=None,
         part_material_id=None,
+        detached=False,
+        unit_guard=None,
     ):
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -641,6 +648,24 @@ class CoachRepository:
                 (user_id,),
             ).fetchone():
                 return "busy"
+            if unit_guard is not None:
+                unit = connection.execute(
+                    "SELECT revision FROM coach_book_units WHERE user_id=? AND material_id=? AND unit_id=?",
+                    (user_id, unit_guard["material_id"], unit_guard["unit_id"]),
+                ).fetchone()
+                covered = sorted(
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT chunk_id FROM coach_book_coverage WHERE user_id=? AND material_id=?",
+                        (user_id, unit_guard["material_id"]),
+                    )
+                )
+                if (
+                    unit is None
+                    or unit[0] != unit_guard["revision"]
+                    or covered != unit_guard["coverage_ids"]
+                ):
+                    raise ValueError("单元或讲解记录已变化，请重新核对整理范围。")
             if study_id is not None:
                 self._activate_topic(connection, user_id, study_id)
             if part_id is not None:
@@ -671,10 +696,11 @@ class CoachRepository:
                 "VALUES(?,?,?,'pending',?)",
                 (user_id, nonce, text, now),
             )
-            connection.execute(
-                "INSERT INTO coach_turn_topics SELECT turn.turn_id,turn.user_id,active.topic_id FROM coach_turns AS turn JOIN coach_active_topic AS active ON active.user_id=turn.user_id WHERE turn.user_id=? AND turn.nonce=?",
-                (user_id, nonce),
-            )
+            if not detached:
+                connection.execute(
+                    "INSERT INTO coach_turn_topics SELECT turn.turn_id,turn.user_id,active.topic_id FROM coach_turns AS turn JOIN coach_active_topic AS active ON active.user_id=turn.user_id WHERE turn.user_id=? AND turn.nonce=?",
+                    (user_id, nonce),
+                )
         return "claimed"
 
     def finish(
@@ -690,6 +716,7 @@ class CoachRepository:
         material_id=None,
         part_id=None,
         explained_part=False,
+        unit_summary=None,
     ):
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -727,10 +754,11 @@ class CoachRepository:
                     "SELECT turn_id FROM coach_turns WHERE user_id=? AND nonce=?",
                     (user_id, nonce),
                 ).fetchone()[0]
+                knowledge_id = uuid4().hex
                 connection.execute(
                     "INSERT INTO coach_knowledge VALUES(?,?,?,?,?,?,?,'pending',?,NULL)",
                     (
-                        uuid4().hex,
+                        knowledge_id,
                         user_id,
                         turn_id,
                         draft["title"],
@@ -740,7 +768,36 @@ class CoachRepository:
                         now,
                     ),
                 )
+                if unit_summary is not None:
+                    connection.execute(
+                        "INSERT INTO coach_knowledge_units VALUES(?,?,?,?,?)",
+                        (
+                            knowledge_id,
+                            user_id,
+                            unit_summary["material_id"],
+                            unit_summary["unit_id"],
+                            json.dumps(unit_summary, ensure_ascii=False),
+                        ),
+                    )
         return bool(changed)
+
+    def unit_knowledge(self, user_id, material_id, unit_id, *, offset=0, limit=21):
+        with closing(self._connect()) as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT k.knowledge_id,k.title,k.status,k.created_at,link.scope_json FROM coach_knowledge k JOIN coach_knowledge_units link ON link.knowledge_id=k.knowledge_id AND link.user_id=k.user_id WHERE k.user_id=? AND link.material_id=? AND link.unit_id=? AND k.status<>'dismissed' ORDER BY k.created_at DESC,k.knowledge_id LIMIT ? OFFSET ?",
+                    (user_id, material_id, unit_id, limit, offset),
+                )
+            ]
+
+    def unit_lesson_result(self, user_id, nonce):
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT k.knowledge_id FROM coach_knowledge k JOIN coach_turns t ON t.turn_id=k.turn_id AND t.user_id=k.user_id JOIN coach_knowledge_units link ON link.knowledge_id=k.knowledge_id AND link.user_id=k.user_id WHERE k.user_id=? AND t.nonce=? AND k.status<>'dismissed'",
+                (user_id, nonce),
+            ).fetchone()
+        return row[0] if row else None
 
     def knowledge(self, user_id, knowledge_id, *, saved_only=False):
         with closing(self._connect()) as db:
@@ -752,6 +809,13 @@ class CoachRepository:
             return None
         result = dict(row)
         result["citations"] = json.loads(result.pop("citations_json"))
+        with closing(self._connect()) as db:
+            link = db.execute(
+                "SELECT scope_json FROM coach_knowledge_units WHERE user_id=? AND knowledge_id=?",
+                (user_id, knowledge_id),
+            ).fetchone()
+        if link:
+            result["unit_summary"] = json.loads(link[0])
         return result
 
     def list_knowledge(self, user_id, *, status="saved", query="", offset=0, limit=21):

@@ -108,7 +108,14 @@ def register_account_pages(
     dialogue_slots = BoundedSemaphore(2)
     if materials_repository is not None:
         register_library_pages(
-            app, repository, materials_repository, dialogue_repository, csrf_key=key
+            app,
+            repository,
+            materials_repository,
+            dialogue_repository,
+            csrf_key=key,
+            summary_responder=dialogue_responder,
+            summary_slots=dialogue_slots,
+            summary_limit=dialogue_limit,
         )
 
     if dialogue_repository is not None:

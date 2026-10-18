@@ -28,6 +28,8 @@ from api.coach_markdown import coach_markdown
 from api.public_pages import _render_layout
 from coach.materials import MaterialError, MAX_FILE_BYTES
 from coach.book_study import study_directory, unit_chunks
+from coach.unit_lessons import unit_lesson_plan, send_unit_lesson, unit_scope_text
+import json
 from uuid import uuid4
 from coach.learning_topics import (
     discussion_material,
@@ -57,7 +59,21 @@ def lesson_html(content):
     return coach_markdown(content)
 
 
-def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
+def register_library_pages(
+    app,
+    accounts,
+    materials,
+    dialogue,
+    *,
+    csrf_key,
+    summary_responder=None,
+    summary_slots=None,
+    summary_limit=None,
+):
+    summary_slots = summary_slots or BoundedSemaphore(2)
+    summary_limit = summary_limit or RegistrationRateLimiter(
+        per_client_limit=8, total_limit=80
+    )
     view_limit = RegistrationRateLimiter(per_client_limit=60, total_limit=600)
     write_limit = RegistrationRateLimiter(per_client_limit=12, total_limit=60)
     upload_slots = BoundedSemaphore(2)
@@ -684,10 +700,257 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
                         + ("已讲解" if part["chunk_id"] in done else "待讲解")
                         + "</span></li>"
                     )
-                body += "</ul></details></article>"
+                body += (
+                    '</ul></details><p><a class="text-link" href="/web/materials/'
+                    + identity
+                    + "/plan/"
+                    + unit["unit_id"]
+                    + '/lessons">整理已讲解内容 · 查看本单元教案 →</a></p>'
+                )
+                related = dialogue.unit_knowledge(
+                    account.user_id, identity, unit["unit_id"], limit=3
+                )
+                if related:
+                    body += '<ul class="unit-lesson-links">'
+                    for lesson in related:
+                        body += (
+                            '<li><a href="/web/knowledge/'
+                            + lesson["knowledge_id"]
+                            + '">'
+                            + escape(lesson["title"])
+                            + "</a> · "
+                            + (
+                                "已保存"
+                                if lesson["status"] == "saved"
+                                else "草稿待确认"
+                            )
+                            + "</li>"
+                        )
+                    body += "</ul>"
+                body += "</article>"
             return page("书籍学习目录", body + "</div>")
         except (sqlite3.Error, ValueError):
             return problem("暂时无法读取学习目录，请稍后重试。", 503)
+
+    def unit_summary_binding(identity, unit_id, values):
+        return ".".join(
+            (identity, unit_id, values["batch"], values["digest"], values["nonce"])
+        )
+
+    @app.get(
+        "/web/materials/{identity}/plan/{unit_id}/lessons", include_in_schema=False
+    )
+    def unit_lessons_page(request: Request, identity: str, unit_id: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            plan = unit_lesson_plan(
+                dialogue, materials, account.user_id, identity, unit_id
+            )
+            number = request.query_params.get("page", "1")
+            if not re.fullmatch(r"[1-9][0-9]{0,5}", number):
+                return problem("请检查教案目录页码。")
+            number = int(number)
+            lessons = dialogue.unit_knowledge(
+                account.user_id, identity, unit_id, offset=(number - 1) * 20
+            )
+            recent = [
+                (row, json.loads(row["scope_json"]))
+                for row in dialogue.unit_knowledge(
+                    account.user_id, identity, unit_id, limit=100
+                )
+            ]
+            pending = any(
+                turn["status"] == "pending"
+                for turn in dialogue.view(account.user_id)["turns"]
+            )
+        except ValueError as error:
+            return problem(str(error), 404)
+        except sqlite3.Error:
+            return problem("暂时无法读取单元教案。", 503)
+        unit = plan["unit"]
+        url = "/web/materials/" + identity + "/plan/" + unit_id + "/lessons"
+        body = (
+            '<p class="library-intro">'
+            + escape(plan["material"]["title"])
+            + " · "
+            + escape(unit["title"])
+            + '</p><a class="text-link" href="/web/materials/'
+            + identity
+            + '/plan">← 返回书籍学习目录</a><p><a class="text-link" href="#unit-lesson-assets">直接查看本单元教案 ↓</a></p><section class="library-card"><h2>把已讲解内容留成可重温的教案</h2><p>本单元已讲解 '
+            + str(plan["explained"])
+            + " / "
+            + str(plan["total"])
+            + " 段。仅整理下方列出的可读原文；未讲解部分不纳入本次草稿。每批最多 6 段，逐批由你决定是否整理，不会自动处理后续批次。</p><p>浏览不调用 AI；点击“整理本批教案草稿”会调用一次你启用的 AI。生成后可预览、修改并明确确认保存。</p></section>"
+        )
+        if not plan["batches"]:
+            body += '<section class="library-card"><h2>先从一次讲解开始</h2><p>本单元还没有带原文引用的选段讲解记录。回到书籍学习目录进入本单元，点击讲解后，再来整理。</p></section>'
+        if pending:
+            body += '<p class="lesson-version-notice" role="status">教练正在回复，等本轮结束后刷新此页再整理。</p>'
+        body += '<div class="book-unit-list">'
+        for batch in plan["batches"]:
+            source_ids = [source["source_id"] for source in batch["sources"]]
+            existing = next(
+                (
+                    row
+                    for row, scope in recent
+                    if scope["unit_revision"] == unit["revision"]
+                    and [source["chunk_id"] for source in scope["sources"]]
+                    == source_ids
+                ),
+                None,
+            )
+            values = {
+                "batch": str(batch["number"]),
+                "digest": batch["digest"],
+                "nonce": secrets.token_urlsafe(32),
+            }
+            body += (
+                '<article class="library-card"><h2>第 '
+                + str(batch["number"])
+                + " / "
+                + str(len(plan["batches"]))
+                + " 批</h2><p>本批提供的原文位置：</p><ul>"
+            )
+            for source in batch["sources"]:
+                body += "<li>" + escape(source["locator"]) + "</li>"
+            body += "</ul>"
+            if existing:
+                body += (
+                    '<p><a class="button button-primary" href="/web/knowledge/'
+                    + existing["knowledge_id"]
+                    + '">'
+                    + (
+                        "查看已有教案"
+                        if existing["status"] == "saved"
+                        else "查看待确认草稿"
+                    )
+                    + '</a></p><p class="learning-record-note">本批已有整理结果，可以先调阅。需要重新整理时再点击下方按钮，将再次调用 AI。</p>'
+                )
+            body += (
+                '<form class="unit-summary-form" method="post" action="' + url + '">'
+            )
+            body += input_csrf(
+                request, "unit-lesson", unit_summary_binding(identity, unit_id, values)
+            )
+            body += "".join(
+                '<input type="hidden" name="' + key + '" value="' + value + '">'
+                for key, value in values.items()
+            )
+            body += (
+                '<button data-unit-submit class="button '
+                + ("button-outline" if existing else "button-primary")
+                + '" type="submit"'
+                + (" disabled" if pending or summary_responder is None else "")
+                + ">"
+                + ("重新整理本批草稿" if existing else "整理本批教案草稿")
+                + '</button><p class="unit-summary-wait" role="status" hidden><span class="waiting-dots" aria-hidden="true"><i></i><i></i><i></i></span>教练正在整理，请稍候；请勿重复提交。完成后会打开草稿预览。</p></form></article>'
+            )
+        body += '</div><h2 id="unit-lesson-assets">本单元的知识积累</h2><p class="library-intro">草稿与已保存教案集中在这里。教案保留生成时的范围说明，修订、版本、重温和导出继续使用原有功能。</p>'
+        if summary_responder is None:
+            body += '<p class="lesson-version-notice">当前未启用对话 AI，可先浏览已有教案，稍后启用再整理。</p>'
+        if not lessons:
+            body += "<p>这里暂时没有教案。</p>"
+        for lesson in lessons[:20]:
+            scope = json.loads(lesson["scope_json"])
+            body += (
+                '<article class="library-card"><span class="library-badge">'
+                + ("已保存" if lesson["status"] == "saved" else "草稿待确认")
+                + '</span><h3><a href="/web/knowledge/'
+                + lesson["knowledge_id"]
+                + '">'
+                + escape(lesson["title"])
+                + "</a></h3><p>生成时："
+                + escape(scope["range"])
+                + " · 第 "
+                + str(scope["batch"])
+                + " / "
+                + str(scope["batch_count"])
+                + ' 批</p><a class="text-link" href="/web/knowledge/'
+                + lesson["knowledge_id"]
+                + '">预览、保存与调阅 →</a></article>'
+            )
+        body += '<nav class="library-paging" aria-label="本单元教案分页">'
+        if number > 1:
+            body += '<a href="?page=' + str(number - 1) + '">← 上一页教案</a>'
+        if len(lessons) > 20:
+            body += '<a href="?page=' + str(number + 1) + '">下一页教案 →</a>'
+        return page(
+            "单元教案与整理",
+            body + '</nav><script src="/static/unit-lessons.js" defer></script>',
+            interactive=True,
+        )
+
+    @app.post(
+        "/web/materials/{identity}/plan/{unit_id}/lessons", include_in_schema=False
+    )
+    async def generate_unit_lesson(request: Request, identity: str, unit_id: str):
+        account, denied = await run_in_threadpool(auth, request, write=True)
+        if denied is not None:
+            return denied
+        values = await fields(request, {"csrf", "nonce", "batch", "digest"}, limit=4096)
+        if (
+            values is None
+            or not re.fullmatch(r"[A-Za-z0-9_-]{43}", values["nonce"])
+            or not re.fullmatch(r"[1-9][0-9]{0,3}", values["batch"])
+            or not re.fullmatch(r"[a-f0-9]{64}", values["digest"])
+            or not valid_csrf(
+                request,
+                values,
+                "unit-lesson",
+                unit_summary_binding(identity, unit_id, values),
+            )
+            or (
+                request.headers.get("origin") == "null"
+                and request.headers.get("sec-fetch-site") != "same-origin"
+            )
+        ):
+            return problem("整理页面无法核对，请重新打开本单元的教案整理页面。", 403)
+        if summary_responder is None:
+            return problem("当前尚未启用对话 AI，请稍后再整理。", 503)
+        wait = summary_limit.admit(request.client.host if request.client else "unknown")
+        if wait:
+            result = problem("整理较频繁，请稍后再试。", 429)
+            result.headers["Retry-After"] = str(wait)
+            return result
+        if not summary_slots.acquire(blocking=False):
+            return problem("教练正在处理其他请求，请稍后再试。", 409)
+        try:
+            outcome = await run_in_threadpool(
+                send_unit_lesson,
+                dialogue,
+                materials,
+                account.user_id,
+                identity,
+                unit_id,
+                int(values["batch"]),
+                values["digest"],
+                values["nonce"],
+                responder=summary_responder,
+            )
+            if outcome == "busy":
+                return problem("教练还有回复未完成，请等本轮结束后再整理。", 409)
+            result = dialogue.unit_lesson_result(account.user_id, values["nonce"])
+            if result:
+                return redirect("/web/knowledge/" + result)
+            return page(
+                "本次尚未形成教案草稿",
+                '<p class="library-intro">本次未取得带完整选段引用的教案草稿，尚未保存。请先查看对话记录，再决定是否重新整理；系统不会自动重试。</p><a class="button button-outline" href="/web/materials/'
+                + identity
+                + "/plan/"
+                + unit_id
+                + '/lessons">返回单元整理</a><a class="text-link" href="/web/welcome">查看对话记录 →</a>',
+                code=502,
+            )
+        except ValueError as error:
+            return problem(str(error), 409)
+        except sqlite3.Error:
+            return problem(
+                "整理结果暂时无法核对，请先查看本单元教案目录，避免重复提交。", 503
+            )
+        finally:
+            summary_slots.release()
 
     @app.get("/web/materials/{identity}/plan/{unit_id}", include_in_schema=False)
     def edit_book_unit(request: Request, identity: str, unit_id: str):
@@ -1118,6 +1381,17 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
         return page(
             item["title"],
             '<section class="library-card">'
+            + (
+                '<div class="book-study-summary"><p>'
+                + escape(unit_scope_text(item["unit_summary"])).replace("\n", "<br>")
+                + '</p><a class="text-link" href="/web/materials/'
+                + item["unit_summary"]["material_id"]
+                + "/plan/"
+                + item["unit_summary"]["unit_id"]
+                + '/lessons">回到本单元教案与整理 →</a></div>'
+                if item.get("unit_summary")
+                else ""
+            )
             + controls
             + citations
             + (
@@ -1511,4 +1785,7 @@ def register_library_pages(app, accounts, materials, dialogue, *, csrf_key):
             "Content-Disposition": "attachment; filename=lesson.md; filename*=UTF-8''"
             + quote(item["title"] + ".md", safe=""),
         }
-        return Response(item["content"], media_type="text/markdown", headers=headers)
+        content = item["content"]
+        if item.get("unit_summary"):
+            content = unit_scope_text(item["unit_summary"]) + "\n\n" + content
+        return Response(content, media_type="text/markdown", headers=headers)
