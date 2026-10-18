@@ -278,7 +278,7 @@ def _render_layout(title, content, page="", *, signed_in=False):
         f'<a class="button button-primary" href="/web/register" {register_current}>开始使用<span aria-hidden="true"> ↗</span></a>'
     )
     return layout.substitute(
-        title=title,
+        title=escape(title),
         content=content,
         auth_navigation=navigation,
         home_current='aria-current="page"' if page == "home" else "",

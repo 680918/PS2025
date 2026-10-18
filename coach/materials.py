@@ -13,6 +13,8 @@ from pathlib import Path
 from time import time
 from uuid import uuid4
 
+from coach.knowledge_search import match_contexts, search_query
+
 
 MAX_FILE_BYTES = 10 * 1024**2
 MAX_TEXT = 500000
@@ -209,6 +211,43 @@ class MaterialRepository:
             (item for item in self.list(user_id) if item["material_id"] == material_id),
             None,
         )
+
+    def find_chunks(self, user_id, query, *, material_id=None, page=1):
+        """Return at most 21 owned literal hits; the last is a next-page sentinel."""
+        query = search_query(query)
+        if type(page) is not int or not 1 <= page <= 10000:
+            raise ValueError("请输入有效的查找结果页码。")
+        if material_id is not None and (
+            not isinstance(material_id, str)
+            or re.fullmatch(r"[a-f0-9]{32}", material_id) is None
+        ):
+            raise ValueError("查找范围无法读取。")
+        if not query:
+            return []
+        scope = " AND m.material_id=?" if material_id is not None else ""
+        values = [user_id, query]
+        if material_id is not None:
+            values.append(material_id)
+        values.append((page - 1) * 20)
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT m.material_id,m.title,m.kind,c.chunk_id,c.chunk_index,c.locator,c.content "
+                "FROM material_chunks c JOIN materials m ON c.material_id=m.material_id "
+                "WHERE m.user_id=? AND instr(lower(c.content),lower(?))>0"
+                + scope
+                + " ORDER BY m.created_at DESC,m.material_id,c.chunk_index LIMIT 21 OFFSET ?",
+                values,
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            match = match_contexts(item.pop("content"), query, limit=1)
+            item["search_match"] = {
+                "fields": ["原文"],
+                "excerpt": match["contexts"][0],
+            }
+            results.append(item)
+        return results
 
     def select(self, user_id, material_id=None):
         with closing(self._connect()) as db, db:

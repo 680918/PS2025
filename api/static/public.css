@@ -539,3 +539,14 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .lesson-search-result, .lesson-find { min-width: 0; overflow-wrap: anywhere; }
 .library-space mark { color: #243c28; background: #f4e3a1; padding: 0 2px; border-radius: 2px; }
 #lesson-find { scroll-margin-top: 24px; }
+
+/* Original-material lookup shares the reading surface and keeps long titles contained. */
+.material-search-form { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; }
+.material-search-form > div { flex: 1 1 230px; min-width: 0; }
+.material-search-form label { display: block; margin-bottom: 8px; }
+.library-space .material-search-form input, .library-space .material-search-form select { width: 100%; min-width: 0; box-sizing: border-box; }
+.material-search-form select { min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; }
+.material-search-form .button { margin-top: 0; }
+.material-search-result, .material-results-title { min-width: 0; overflow-wrap: anywhere; }
+#material-find { scroll-margin-top: 24px; }
+@media(max-width:520px) { .material-search-form > div, .material-search-form > button { flex-basis: 100%; width: 100%; } }

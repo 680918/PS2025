@@ -411,6 +411,130 @@ def register_library_pages(
             background=BackgroundTask(cleanup),
         )
 
+    def material_find_values(request, *, preview=False):
+        names = (
+            ("find", "find_material", "find_page")
+            if preview
+            else ("q", "material", "page")
+        )
+        if any(len(request.query_params.getlist(name)) > 1 for name in names):
+            raise ValueError("查找条件重复，请重新输入。")
+        query = search_query(request.query_params.get(names[0], ""))
+        scope = request.query_params.get(names[1], "")
+        number = request.query_params.get(names[2], "1")
+        if not re.fullmatch(r"[1-9][0-9]{0,4}", number) or int(number) > 10000:
+            raise ValueError("请输入有效的查找结果页码。")
+        if scope and not re.fullmatch(r"[a-f0-9]{32}", scope):
+            raise ValueError("查找范围无法读取。")
+        return query, scope, int(number)
+
+    def material_search_form(items, *, query="", scope=""):
+        options = '<option value="">全部资料</option>'
+        for item in items:
+            options += (
+                '<option value="'
+                + item["material_id"]
+                + '"'
+                + (" selected" if item["material_id"] == scope else "")
+                + ">"
+                + escape(item["title"])
+                + "</option>"
+            )
+        return (
+            '<form class="material-search-form library-card" method="get" action="/web/materials/find">'
+            '<div><label for="material-query">查找资料原文</label><input id="material-query" name="q" maxlength="120" required value="'
+            + escape(query, quote=True)
+            + '" placeholder="输入关键词或一句原文"></div><div><label for="material-scope">查找范围</label><select id="material-scope" name="material">'
+            + options
+            + '</select></div><button class="button button-primary" type="submit">查找原文</button></form>'
+        )
+
+    @app.get("/web/materials/find", include_in_schema=False)
+    def find_materials(request: Request):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            query, scope, number = material_find_values(request)
+            items = materials.list(account.user_id)
+            if scope and not any(item["material_id"] == scope for item in items):
+                return problem("找不到这份可读取资料。", 404)
+            results = materials.find_chunks(
+                account.user_id, query, material_id=scope or None, page=number
+            )
+        except ValueError as error:
+            return problem(str(error))
+        except sqlite3.Error:
+            return problem("资料暂时无法查找，请稍后再试。", 503)
+        cards = []
+        for item in results[:20]:
+            link = (
+                "/web/materials/"
+                + item["material_id"]
+                + "?"
+                + urlencode(
+                    {
+                        "part": item["chunk_index"],
+                        "find": query,
+                        "find_material": scope,
+                        "find_page": number,
+                    }
+                )
+                + "#material-find"
+            )
+            cards.append(
+                '<article class="library-item material-search-result"><h2>'
+                + escape(item["title"])
+                + "</h2><p>"
+                + escape(item["locator"])
+                + "</p>"
+                + search_excerpt(item, query)
+                + '<a class="text-link material-hit" href="'
+                + escape(link, quote=True)
+                + '">查看原文并选段学习 →</a></article>'
+            )
+        paging = ""
+        for target, label, visible in (
+            (number - 1, "← 上一页", number > 1),
+            (number + 1, "下一页 →", len(results) > 20 and number < 10000),
+        ):
+            if visible:
+                link = "/web/materials/find?" + urlencode(
+                    {"q": query, "material": scope, "page": target}
+                )
+                paging += '<a href="' + escape(link, quote=True) + '">' + label + "</a>"
+        body = (
+            '<p class="library-intro">从原文找到依据，再带着具体片段去学习。</p>'
+            + material_search_form(items, query=query, scope=scope)
+            + '<p class="lesson-search-label">按输入文字逐字查找已提取原文，英文不区分大小写。每页最多 20 个匹配片段；相邻片段可能包含重复原文。PDF 断行可能影响匹配，扫描图片尚不可查找。查找和阅读不调用 AI，也不改变学习位置。</p>'
+        )
+        if query:
+            body += (
+                '<h2 class="material-results-title">“'
+                + escape(query)
+                + "” · 第 "
+                + str(number)
+                + " 页</h2>"
+            )
+        body += (
+            '<div class="library-list">'
+            + (
+                "".join(cards)
+                or '<p class="library-empty">'
+                + (
+                    "没有找到匹配原文。试试更短的关键词，或更换查找范围。"
+                    if query
+                    else "输入一个关键词，开始查找你的资料。"
+                )
+                + "</p>"
+            )
+            + '</div><nav class="library-paging" aria-label="原文查找结果翻页">'
+            + paging
+            + "</nav>"
+        )
+        body += '<p><a class="text-link" href="/web/materials">返回资料与书籍 →</a></p>'
+        return page("查找资料原文", body)
+
     @app.get("/web/materials", response_class=HTMLResponse, include_in_schema=False)
     def list_materials(request: Request):
         account, denied = auth(request)
@@ -468,6 +592,7 @@ def register_library_pages(
         return page(
             "资料与书籍",
             '<p class="library-intro">原始资料留在这里。选择一份资料后，回到同一个聊天框讨论。资料在本机保存；提问时，相关片段会交给你启用的 AI。</p>'
+            + material_search_form(items)
             + clear
             + '<div class="library-list">'
             + (
@@ -1113,16 +1238,48 @@ def register_library_pages(
         if denied is not None:
             return denied
         try:
+            query, scope, result_page = material_find_values(request, preview=True)
+        except ValueError as error:
+            return problem(str(error))
+        try:
             item = materials.get(account.user_id, identity)
             chunks = materials.chunks(account.user_id, identity) if item else []
             if not item or not chunks:
                 return problem("找不到这份可读取资料。", 404)
+            if scope and materials.get(account.user_id, scope) is None:
+                return problem("找不到这份可读取资料。", 404)
+            find_values = (
+                {"find": query, "find_material": scope, "find_page": result_page}
+                if query
+                else {}
+            )
+            find_hidden = "".join(
+                '<input type="hidden" name="'
+                + key
+                + '" value="'
+                + escape(str(value), quote=True)
+                + '">'
+                for key, value in find_values.items()
+            )
+            find_back = (
+                '<a class="text-link" href="'
+                + escape(
+                    "/web/materials/find?"
+                    + urlencode({"q": query, "material": scope, "page": result_page}),
+                    quote=True,
+                )
+                + '">← 返回原文查找结果</a>'
+                if query
+                else ""
+            )
             navigation = (
                 '<div class="material-locate"><form method="get" action="/web/materials/'
                 + identity
                 + '"><label for="material-part">跳到文字片段</label><input id="material-part" name="part" type="number" min="1" max="'
                 + str(len(chunks))
-                + '" required><button class="button button-outline" type="submit">定位片段</button></form>'
+                + '" required>'
+                + find_hidden
+                + '<button class="button button-outline" type="submit">定位片段</button></form>'
             )
             if item["kind"] == "pdf":
                 navigation += (
@@ -1130,7 +1287,9 @@ def register_library_pages(
                     + identity
                     + '"><label for="material-page">跳到 PDF 文件页码</label><input id="material-page" name="page" type="number" min="1" max="'
                     + str(item["page_count"])
-                    + '" required><button class="button button-outline" type="submit">定位页码</button></form><p class="lesson-revision-note">PDF 文件页码可能不同于书内印刷页码；每页可能分成多个文字片段。</p>'
+                    + '" required>'
+                    + find_hidden
+                    + '<button class="button button-outline" type="submit">定位页码</button></form><p class="lesson-revision-note">PDF 文件页码可能不同于书内印刷页码；每页可能分成多个文字片段。</p>'
                 )
             navigation += "</div>"
             number = int(request.query_params.get("part", "1"))
@@ -1154,8 +1313,14 @@ def register_library_pages(
                         item["title"],
                         '<p class="library-intro">这一页没有可提取的文字，尚未选入对话。请换一个页码，或按文字片段定位。</p>'
                         + navigation
+                        + find_back
                         + '<a class="text-link" href="/web/materials/'
                         + identity
+                        + (
+                            "?" + escape(urlencode(find_values), quote=True)
+                            if query
+                            else ""
+                        )
                         + '">回到第一个可读片段 →</a>',
                     )
             if not 1 <= number <= len(chunks):
@@ -1178,13 +1343,48 @@ def register_library_pages(
                 + '"><button class="button button-primary" type="submit">选中这段，回到对话</button></form>'
             )
             previous = (
-                f'<a href="?part={number - 1}">← 上一片段</a>' if number > 1 else ""
+                '<a href="?'
+                + escape(urlencode({"part": number - 1, **find_values}), quote=True)
+                + '">← 上一片段</a>'
+                if number > 1
+                else ""
             )
             following = (
-                f'<a href="?part={number + 1}">下一片段 →</a>'
+                '<a href="?'
+                + escape(urlencode({"part": number + 1, **find_values}), quote=True)
+                + '">下一片段 →</a>'
                 if number < len(chunks)
                 else ""
             )
+            matching = ""
+            if query:
+                matches = match_contexts(chunk["content"], query, limit=1)
+                matching = (
+                    '<section id="material-find" class="library-card lesson-find"><h2>关键词附近原文</h2><p>查找：'
+                    + escape(query)
+                    + "</p>"
+                    + find_back
+                )
+                if matches["count"]:
+                    matching += (
+                        '<p class="lesson-search-label">本片段有 '
+                        + str(matches["count"])
+                        + " 处匹配，下方展示首处附近原文；完整片段保留在后面。</p>"
+                    )
+                    matching += search_excerpt(
+                        {
+                            "search_match": {
+                                "fields": ["原文"],
+                                "excerpt": matches["contexts"][0],
+                            }
+                        },
+                        query,
+                    )
+                else:
+                    matching += (
+                        "<p>当前片段没有匹配文字，可以查看相邻片段或返回查找结果。</p>"
+                    )
+                matching += "</section>"
             note = (
                 "<p>部分页面没有可提取文字，当前检索范围为已提取内容。</p>"
                 if item["kind"] == "pdf" and item["readable_pages"] < item["page_count"]
@@ -1199,12 +1399,14 @@ def register_library_pages(
                 + '<p><a class="text-link" href="/web/materials/'
                 + identity
                 + '/plan">书籍学习目录与进度 →</a></p>'
+                + material_search_form([item], scope=identity, query=query)
                 + navigation
+                + matching
                 + '<p class="lesson-revision-note">当前仅预览。选中这段后，可在统一对话中点击“讲解并提炼这段”；浏览和选段不调用 AI。</p><div class="library-actions">'
                 + controls
                 + "</div>"
                 + '<article class="library-document">'
-                + escape(chunk["content"])
+                + search_highlight(chunk["content"], query)
                 + '</article><nav class="library-paging">'
                 + previous
                 + following
