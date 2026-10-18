@@ -164,4 +164,4 @@ python -m pytest tests/test_api_run.py tests/test_web_home.py tests/test_web_pub
 
 学习单元可分批整理已讲解原文为教案草稿，确认后保存，并在原单元集中调阅、重温、修订与导出。详见 [单元教案](docs/unit-lessons.md)。
 
-已保存教案可以组织成学习手册，支持收录、排序、逐章阅读、记住章节位置并跨次续读、重温和整册 HTML/Markdown 导出，整理与记住位置不调用 AI。详见 [学习手册](docs/learning-booklets.md)。开发采用 [自主开发与检验后提交](docs/development-workflow.md) 流程。
+已保存教案可以组织成学习手册，支持收录、排序、逐章阅读、记住章节位置并跨次续读、重温和整册 HTML/Markdown 导出，整理与记住位置不调用 AI。详见 [学习手册](docs/learning-booklets.md)。教案目录与手册收录支持 [标题、主题及当前正文查找](docs/knowledge-search.md)，可查看匹配片段与上下文，不调用 AI。开发采用 [自主开发与检验后提交](docs/development-workflow.md) 流程。

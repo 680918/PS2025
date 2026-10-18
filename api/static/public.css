@@ -532,3 +532,10 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .booklet-toc li { margin: 8px 0; overflow-wrap: anywhere; }
 #booklet-reading { margin-top: 24px; scroll-margin-top: 24px; }
 #booklet-add { scroll-margin-top: 24px; }
+
+/* Literal lookup stays readable without changing the stored lesson. */
+.lesson-search-label { color: var(--muted); font-size: 12px; line-height: 1.9; overflow-wrap: anywhere; }
+.lesson-search-excerpt { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; font-size: 14px; padding: 12px 14px; background: var(--tint); border-radius: 8px; }
+.lesson-search-result, .lesson-find { min-width: 0; overflow-wrap: anywhere; }
+.library-space mark { color: #243c28; background: #f4e3a1; padding: 0 2px; border-radius: 2px; }
+#lesson-find { scroll-margin-top: 24px; }

@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from html import escape
 from threading import BoundedSemaphore, Lock
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, urlencode
 
 from fastapi import Request
 from fastapi.responses import (
@@ -29,6 +29,7 @@ from api.public_pages import _render_layout
 from coach.materials import MaterialError, MAX_FILE_BYTES
 from coach.book_study import study_directory, unit_chunks
 from coach.unit_lessons import unit_lesson_plan, send_unit_lesson, unit_scope_text
+from coach.knowledge_search import search_query, literal_ranges, match_contexts
 import json
 from uuid import uuid4
 from coach.learning_topics import (
@@ -57,6 +58,39 @@ def library_csrf(key, token, purpose, identity=""):
 
 def lesson_html(content):
     return coach_markdown(content)
+
+
+def search_highlight(text, query):
+    parts, cursor = [], 0
+    for start, end in literal_ranges(text, query):
+        parts.extend(
+            (escape(text[cursor:start]), "<mark>" + escape(text[start:end]) + "</mark>")
+        )
+        cursor = end
+    parts.append(escape(text[cursor:]))
+    return "".join(parts)
+
+
+def search_excerpt(item, query):
+    match = item.get("search_match")
+    if not query or match is None:
+        return ""
+    excerpt = match["excerpt"]
+    if excerpt is None:
+        return (
+            '<p class="lesson-search-label">匹配：'
+            + escape("、".join(match["fields"]))
+            + "</p>"
+        )
+    return (
+        '<div class="lesson-search-result"><p class="lesson-search-label">匹配：'
+        + escape("、".join(match["fields"]))
+        + '</p><p class="lesson-search-excerpt">'
+        + ("…" if excerpt["before"] else "")
+        + search_highlight(excerpt["text"], query)
+        + ("…" if excerpt["after"] else "")
+        + "</p></div>"
+    )
 
 
 def register_library_pages(
@@ -1256,64 +1290,101 @@ def register_library_pages(
         if denied is not None:
             return denied
         status = request.query_params.get("status", "saved")
-        query = request.query_params.get("q", "").strip()
         try:
+            query = search_query(request.query_params.get("q", ""))
             number = int(request.query_params.get("page", "1"))
-            if (
-                status not in {"saved", "pending"}
-                or not 1 <= number <= 1000000
-                or len(query) > 120
-            ):
+            if status not in {"saved", "pending"} or not 1 <= number <= 1000000:
                 return problem("查询条件无法读取。")
+        except ValueError as error:
+            return problem(str(error))
+        try:
             items = dialogue.list_knowledge(
                 account.user_id, status=status, query=query, offset=(number - 1) * 20
             )
-        except (ValueError, sqlite3.Error):
+        except sqlite3.Error:
             return problem("暂时无法读取知识库。", 503)
-        cards = "".join(
-            '<article class="library-item"><span class="library-badge">'
-            + ("待你确认" if status == "pending" else "已保存教案")
-            + '</span><h2><a href="/web/knowledge/'
-            + item["knowledge_id"]
-            + '">'
-            + escape(item["title"])
-            + "</a></h2><p>"
-            + escape(item["topic"])
-            + '</p><a class="text-link" href="/web/knowledge/'
-            + item["knowledge_id"]
-            + (
-                '">预览与保存教案 →</a></article>'
-                if status == "pending"
-                else '">调阅、修订与重温 →</a></article>'
+        cards = ""
+        for item in items[:20]:
+            url = "/web/knowledge/" + item["knowledge_id"]
+            if query:
+                url += (
+                    "?"
+                    + urlencode({"find": query, "result_page": number})
+                    + "#lesson-find"
+                )
+            cards += (
+                '<article class="library-item"><span class="library-badge">'
+                + ("待你确认" if status == "pending" else "已保存教案")
+                + '</span><h2><a href="'
+                + escape(url, quote=True)
+                + '">'
+                + escape(item["title"])
+                + "</a></h2><p>"
+                + escape(item["topic"])
+                + "</p>"
+                + search_excerpt(item, query)
+                + '<a class="text-link" href="'
+                + escape(url, quote=True)
+                + '">'
+                + ("预览与保存教案 →" if status == "pending" else "调阅、修订与重温 →")
+                + "</a></article>"
             )
-            for item in items[:20]
-        )
-        paging = (
-            f'<a href="?status={status}&q={quote(query)}&page={number + 1}">下一页 →</a>'
-            if len(items) > 20
-            else ""
-        )
-        if number > 1:
-            paging = (
-                f'<a href="?status={status}&q={quote(query)}&page={number - 1}">← 上一页</a>'
-                + paging
-            )
+        paging = ""
+        for target, label in ((number - 1, "← 上一页"), (number + 1, "下一页 →")):
+            if (target < number and number > 1) or (
+                target > number and len(items) > 20
+            ):
+                paging += (
+                    '<a href="?'
+                    + escape(
+                        urlencode({"status": status, "q": query, "page": target}),
+                        quote=True,
+                    )
+                    + '">'
+                    + label
+                    + "</a>"
+                )
         search = (
             '<form class="library-search" method="get"><input type="hidden" name="status" value="'
             + status
-            + '"><label class="visually-hidden" for="knowledge-query">查找标题或主题</label><input id="knowledge-query" name="q" maxlength="120" placeholder="查找标题或主题" value="'
+            + '"><label class="visually-hidden" for="knowledge-query">查找标题、主题或正文</label><input id="knowledge-query" name="q" maxlength="120" placeholder="查找标题、主题或正文" value="'
             + escape(query, quote=True)
             + '"><button class="button button-outline">查找</button></form>'
         )
+        if query:
+            search += (
+                '<p class="lesson-search-label">按输入文字查找当前版本；不调用 AI。<a class="text-link" href="?status='
+                + status
+                + '">清除查找</a></p>'
+            )
+        empty = (
+            "没有找到匹配内容。可以缩短关键词、换一句原文，或切换已保存与草稿目录查找。"
+            if query
+            else "这里还没有内容。可以在对话中说“把这个知识点整理成教案”。草稿先在这里预览、修改并确认保存，之后进入已保存目录。"
+        )
+        tabs = '<nav class="library-tabs">'
+        for state, label in (
+            ("saved", "已保存的教案目录"),
+            ("pending", "教案草稿 · 预览与保存"),
+        ):
+            target = "/web/knowledge?" + urlencode({"status": state, "q": query})
+            tabs += (
+                '<a href="'
+                + escape(target, quote=True)
+                + '"'
+                + (' aria-current="page"' if status == state else "")
+                + ">"
+                + label
+                + "</a>"
+            )
+        tabs += '<a href="/web/booklets">我的学习手册 · 教案成册</a></nav>'
         return page(
             "知识资产沉淀",
-            '<p class="library-intro">经你确认的教案、知识点和学习册，留在这里，随时可以重温。</p><nav class="library-tabs"><a href="/web/knowledge">已保存的教案目录</a><a href="/web/knowledge?status=pending">教案草稿 · 预览与保存</a><a href="/web/booklets">我的学习手册 · 教案成册</a></nav>'
+            '<p class="library-intro">经你确认的教案、知识点和学习册，留在这里，随时可以重温。</p>'
+            + tabs
             + search
             + '<div class="library-list">'
-            + (
-                cards
-                or '<p class="library-empty">这里还没有内容。可以在对话中说“把这个知识点整理成教案”。草稿先在这里预览、修改并确认保存，之后进入已保存目录。</p>'
-            )
+            + (cards or '<p class="library-empty">' + empty + "</p>")
             + '</div><nav class="library-paging">'
             + paging
             + "</nav>",
@@ -1325,11 +1396,71 @@ def register_library_pages(
         if denied is not None:
             return denied
         try:
+            query = search_query(request.query_params.get("find", ""))
+            number = request.query_params.get("result_page", "1")
+            if not re.fullmatch(r"[1-9][0-9]{0,5}|1000000", number):
+                return problem("返回结果的页码无法读取。")
+            booklet = request.query_params.get("booklet", "")
+            if booklet and not re.fullmatch(r"[a-f0-9]{32}", booklet):
+                return problem("来源手册无法读取。")
+        except ValueError as error:
+            return problem(str(error))
+        try:
             item = dialogue.knowledge(account.user_id, identity)
+            if (
+                booklet
+                and dialogue.booklet(account.user_id, booklet, chapter=0) is None
+            ):
+                return problem("找不到这本本人手册。", 404)
         except sqlite3.Error:
             return problem("暂时无法读取教案。", 503)
         if not item:
             return problem("找不到这份教案。", 404)
+        matching = ""
+        if query:
+            back = (
+                (
+                    "/web/booklets/"
+                    + booklet
+                    + "/edit?"
+                    + urlencode({"q": query, "page": number})
+                    + "#booklet-add"
+                )
+                if booklet
+                else (
+                    "/web/knowledge?"
+                    + urlencode({"q": query, "status": item["status"], "page": number})
+                )
+            )
+            matches = match_contexts(item["content"], query)
+            matching = (
+                '<section id="lesson-find" class="library-card lesson-find"><h2>查找匹配位置</h2><p>查找：'
+                + escape(query)
+                + '</p><a class="text-link" href="'
+                + escape(back, quote=True)
+                + '">'
+                + ("返回手册收录结果" if booklet else "返回查找结果")
+                + " →</a>"
+            )
+            if matches["count"]:
+                matching += (
+                    '<p class="lesson-search-label">当前正文共 '
+                    + str(matches["count"])
+                    + " 处匹配，展示 "
+                    + str(len(matches["contexts"]))
+                    + " 段附近原文，最多五段；完整教案在下方。</p>"
+                )
+                for excerpt in matches["contexts"]:
+                    matching += (
+                        '<p class="lesson-search-excerpt">'
+                        + ("…" if excerpt["before"] else "")
+                        + search_highlight(excerpt["text"], query)
+                        + ("…" if excerpt["after"] else "")
+                        + "</p>"
+                    )
+            else:
+                matching += "<p>当前正文没有匹配文字。关键词可能匹配标题或主题，或教案已经修订；可查看下方全文，或返回结果重新查找。</p>"
+            matching += "</section>"
         if item["status"] == "pending":
             controls = (
                 '<p class="library-intro">这是待确认草稿，尚未进入已保存知识库。可以修改后确认，也可以暂不保存。</p><article class="lesson-document markdown-content">'
@@ -1381,7 +1512,8 @@ def register_library_pages(
         )
         return page(
             item["title"],
-            '<section class="library-card">'
+            matching
+            + '<section class="library-card">'
             + (
                 '<div class="book-study-summary"><p>'
                 + escape(unit_scope_text(item["unit_summary"])).replace("\n", "<br>")

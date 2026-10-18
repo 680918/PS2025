@@ -17,6 +17,7 @@ from pathlib import Path
 from coach.learning_memory import MAX_MEMORIES, validate_memory
 from time import time
 from coach.learning_topics import topic_key, validate_topic_title, TopicBusy
+from coach.knowledge_search import search_query, lesson_match
 
 
 PENDING_LIFETIME = 180
@@ -1009,12 +1010,23 @@ class CoachRepository:
         return result
 
     def list_knowledge(self, user_id, *, status="saved", query="", offset=0, limit=21):
+        query = search_query(query)
         with closing(self._connect()) as db:
             rows = db.execute(
-                "SELECT knowledge_id,title,topic,status,created_at FROM coach_knowledge WHERE user_id=? AND status=? AND (instr(lower(title),lower(?))>0 OR instr(lower(topic),lower(?))>0) ORDER BY created_at DESC, knowledge_id LIMIT ? OFFSET ?",
-                (user_id, status, query, query, limit, offset),
+                "SELECT knowledge_id,title,topic,status,created_at"
+                + (",content" if query else "")
+                + " FROM coach_knowledge WHERE user_id=? AND status=? AND (instr(lower(title),lower(?))>0 OR instr(lower(topic),lower(?))>0 OR instr(lower(content),lower(?))>0) ORDER BY created_at DESC, knowledge_id LIMIT ? OFFSET ?",
+                (user_id, status, query, query, query, limit, offset),
             ).fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        for row in rows:
+            item = dict(row)
+            if query:
+                item["search_match"] = lesson_match(
+                    item["title"], item["topic"], item.pop("content"), query
+                )
+            result.append(item)
+        return result
 
     def confirm_knowledge(
         self, user_id, knowledge_id, *, save=True, title=None, content=None

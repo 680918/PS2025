@@ -12,10 +12,11 @@ from starlette.concurrency import run_in_threadpool
 
 from api.asset_export import booklet_document
 from api.coach_markdown import coach_markdown
-from api.library_pages import HEADERS, library_csrf
+from api.library_pages import HEADERS, library_csrf, search_excerpt
 from api.public_pages import _render_layout
 from coach.booklets import booklet_markdown, booklet_position_text
 from coach.unit_lessons import unit_scope_text
+from coach.knowledge_search import search_query
 from security.login_sessions import signed_in_account
 from security.registration_rate_limit import RegistrationRateLimiter
 import secrets
@@ -122,7 +123,7 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
         )
 
     def query_values(query):
-        q = query.get("q", "").strip()
+        q = search_query(query.get("q", ""))
         number = query.get("page", "1")
         if len(q) > 120 or not re.fullmatch(r"[1-9][0-9]{0,5}", number):
             raise ValueError("请检查查找内容或目录页码。")
@@ -332,21 +333,35 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
         body += (
             '</ol><h2 id="booklet-add">查找并收录已保存教案</h2><p class="library-intro">只收录你已经确认保存的教案。草稿请先到知识资产中预览确认。</p><form class="library-search" method="get" action="'
             + url
-            + '/edit#booklet-add"><label class="visually-hidden" for="lesson-query">查找教案标题或主题</label><input id="lesson-query" name="q" maxlength="120" placeholder="查找教案标题或主题" value="'
+            + '/edit#booklet-add"><label class="visually-hidden" for="lesson-query">查找教案标题、主题或正文</label><input id="lesson-query" name="q" maxlength="120" placeholder="查找教案标题、主题或正文" value="'
             + escape(q, quote=True)
             + '"><button class="button button-outline">查找教案</button></form><div class="booklet-list">'
         )
         if not candidates:
             body += "<p>没有找到已保存教案。可以换个关键词，或先在知识资产中确认保存草稿。</p>"
         for item in candidates[:20]:
+            lesson_url = "/web/knowledge/" + item["knowledge_id"]
+            if q:
+                lesson_url += (
+                    "?"
+                    + urlencode(
+                        {
+                            "find": q,
+                            "result_page": number,
+                            "booklet": book["booklet_id"],
+                        }
+                    )
+                    + "#lesson-find"
+                )
             body += (
-                '<article class="library-card"><h3><a href="/web/knowledge/'
-                + item["knowledge_id"]
+                '<article class="library-card"><h3><a href="'
+                + escape(lesson_url, quote=True)
                 + '">'
                 + escape(item["title"])
                 + "</a></h3><p>"
                 + escape(item["topic"])
                 + "</p>"
+                + search_excerpt(item, q)
                 + (
                     '<span class="library-badge">已在手册中</span>'
                     if item["knowledge_id"] in ids
