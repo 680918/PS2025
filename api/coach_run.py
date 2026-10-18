@@ -9,6 +9,11 @@ import sys
 import warnings
 from pathlib import Path
 
+from core.local_data_lock import (
+    data_directory_lock,
+    DataDirectoryBusy,
+    RestoreIncomplete,
+)
 from api.run import parse_port
 from security.verification_mailer import MailConfigurationError, SMTPSettings
 
@@ -45,6 +50,8 @@ def check_ready(directory, port, *, simulated=False, ai=False, register=False):
         print("[通过] 网页、密码、资料和 PDF 运行依赖可加载。")
 
     try:
+        if (directory / ".coach-restore-incomplete").exists():
+            raise ValueError
         if directory.exists() and not directory.is_dir():
             raise ValueError
         marker = directory / ".coach-mode"
@@ -56,7 +63,9 @@ def check_ready(directory, port, *, simulated=False, ai=False, register=False):
         print("[通过] 数据目录路径与已有模式兼容；实际写入权限在启动时确认。")
     except (OSError, ValueError, UnicodeError):
         ready = False
-        print("[需处理] 数据目录不可读取或模式冲突；模拟与真实数据请使用不同目录。")
+        print(
+            "[需处理] 数据目录不可读取、模式冲突或恢复未完成；请核对目录。模拟与真实数据请使用不同目录。"
+        )
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
@@ -132,33 +141,42 @@ def _serve(directory, port, *, simulated=False, settings=None, responder=None):
         listener.bind(("127.0.0.1", port))
         listener.listen(64)
         directory.mkdir(parents=True, exist_ok=True)
-        marker = directory / ".coach-mode"
-        mode = "simulated" if simulated else "real"
-        if marker.exists() and marker.read_text(encoding="utf-8") != mode:
-            raise ValueError("模拟和真实模式需要使用不同的数据目录。")
-        marker.write_text(mode, encoding="utf-8")
-        app = build_app(
-            directory, port, simulated=simulated, settings=settings, responder=responder
-        )
-        print(f"成长空间：http://127.0.0.1:{port}/web/login", flush=True)
-        print(f"记录保存在本机：{directory}；停止服务后仍保留。", flush=True)
-        if simulated:
-            print(f"模拟收件箱：http://127.0.0.1:{port}/web/trial-mailbox", flush=True)
-        print(
-            "资料保存在本机；教案需在页面预览并确认后收入知识库。停止服务请按 Ctrl+C。",
-            flush=True,
-        )
-        server = uvicorn.Server(
-            uvicorn.Config(
-                app,
-                host="127.0.0.1",
-                port=port,
-                access_log=False,
-                proxy_headers=False,
-                log_level="error",
+        with data_directory_lock(directory):
+            if (directory / ".coach-restore-incomplete").exists():
+                raise RestoreIncomplete
+            marker = directory / ".coach-mode"
+            mode = "simulated" if simulated else "real"
+            if marker.exists() and marker.read_text(encoding="utf-8") != mode:
+                raise ValueError("模拟和真实模式需要使用不同的数据目录。")
+            marker.write_text(mode, encoding="utf-8")
+            app = build_app(
+                directory,
+                port,
+                simulated=simulated,
+                settings=settings,
+                responder=responder,
             )
-        )
-        server.run(sockets=[listener])
+            print(f"成长空间：http://127.0.0.1:{port}/web/login", flush=True)
+            print(f"记录保存在本机：{directory}；停止服务后仍保留。", flush=True)
+            if simulated:
+                print(
+                    f"模拟收件箱：http://127.0.0.1:{port}/web/trial-mailbox", flush=True
+                )
+            print(
+                "资料保存在本机；教案需在页面预览并确认后收入知识库。停止服务请按 Ctrl+C。",
+                flush=True,
+            )
+            server = uvicorn.Server(
+                uvicorn.Config(
+                    app,
+                    host="127.0.0.1",
+                    port=port,
+                    access_log=False,
+                    proxy_headers=False,
+                    log_level="error",
+                )
+            )
+            server.run(sockets=[listener])
     return 0
 
 
@@ -243,6 +261,14 @@ def main(argv=None):
             settings=settings,
             responder=responder,
         )
+    except DataDirectoryBusy:
+        print(
+            "数据目录正在使用，请先停止占用同一数据目录的服务或备份操作；不要删除锁文件。"
+        )
+        return 1
+    except RestoreIncomplete:
+        print("恢复尚未完成，不能启动此目录。请保留原空间，使用另一个新目录重新恢复。")
+        return 1
     except (MailConfigurationError, ValueError) as error:
         # Only locally constructed, fixed configuration messages reach this branch.
         print(

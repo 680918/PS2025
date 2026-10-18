@@ -42,3 +42,5 @@ data/memory_reliability/
 # Private account/dialogue data for the persistent local entry.
 /data/coach-local/
 /data/coach-simulated/
+/data/coach-backups/
+/data/coach-restored*/
