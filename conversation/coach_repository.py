@@ -907,6 +907,24 @@ class CoachRepository:
         with closing(self._connect()) as connection:
             return self._history_page(connection, user_id, before)
 
+    def dialogue_status(self, user_id, nonce, *, now=None):
+        """Read only the owned request's status; never expire, resend or bill it."""
+        if (
+            not isinstance(nonce, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{43}", nonce) is None
+        ):
+            raise ValueError("invalid request")
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT status,created_at FROM coach_turns WHERE user_id=? AND nonce=?",
+                (user_id, nonce),
+            ).fetchone()
+        status = row["status"] if row else "missing"
+        if row and status == "pending" and row["created_at"] <= now - PENDING_LIFETIME:
+            status = "expired"
+        return {"status": status}
+
     def conversation_records(self, user_id, *, query="", topic_id="", page=1):
         """Read owned stored messages without expiring requests or changing learning state."""
         query = search_query(query)

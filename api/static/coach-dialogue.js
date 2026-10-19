@@ -30,6 +30,97 @@
         return article;
     }
 
+    function failedMessage() {
+        const wrapper = document.createElement("div");
+        wrapper.className = "dialogue-state dialogue-failed";
+        const text = document.createElement("p");
+        text.textContent = "这次未能取得回复，原消息已保留。系统不会自动重试。";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "dialogue-recover";
+        button.textContent = "放回输入框修改";
+        const input = document.getElementById("coach-message");
+        button.disabled = !input || input.disabled || input.readOnly || sending;
+        const note = document.createElement("p");
+        note.className = "dialogue-recovery-note";
+        note.setAttribute("role", "status");
+        wrapper.append(text, button, note);
+        return wrapper;
+    }
+
+    messages.addEventListener("click", event => {
+        const button = event.target.closest("button.dialogue-recover");
+        if (!button || !messages.contains(button)) return;
+        const wrapper = button.closest(".dialogue-failed");
+        const note = wrapper.querySelector(".dialogue-recovery-note");
+        const input = document.getElementById("coach-message");
+        if (!input || input.disabled || input.readOnly || sending) {
+            note.textContent = "当前暂不能编辑。请先核对发送状态，或刷新查看记录。";
+            return;
+        }
+        const previous = wrapper.previousElementSibling;
+        const body = previous && previous.classList.contains("dialogue-user") && previous.querySelector(".message-content");
+        const text = body && body.textContent;
+        if (typeof text !== "string" || text.length < 1 || text.length > 2000) return;
+        if (input.value && input.value !== text) {
+            note.textContent = "输入框已有文字。请先保留或清空现有填写，再放回这条消息。";
+            return;
+        }
+        input.value = text;
+        input.focus();
+        note.textContent = "已放回输入框。请核对当前主题与资料，修改后再发送。";
+    });
+
+    function addStatusCheck(container, nonce) {
+        if (!/^[A-Za-z0-9_-]{43}$/.test(nonce || "")) return;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "dialogue-check-status";
+        button.textContent = "核对发送状态";
+        const note = document.createElement("p");
+        note.className = "dialogue-check-note";
+        note.setAttribute("role", "status");
+        button.addEventListener("click", async () => {
+            button.disabled = true;
+            note.textContent = "正在核对已保存的状态…";
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15000);
+            try {
+                const response = await fetch("/web/coach/status?" + new URLSearchParams({nonce}), {
+                    credentials: "same-origin", cache: "no-store", signal: controller.signal,
+                    headers: {"Accept": "application/json"},
+                });
+                if (response.status === 401) {
+                    note.textContent = "登录已过期。请先复制尚未发送的文字，再重新登录。";
+                    const link = container.querySelector(".dialogue-refresh");
+                    if (link) { link.href = "/web/login"; link.textContent = " 复制文字后重新登录 →"; }
+                    return;
+                }
+                if (response.status === 429) {
+                    note.textContent = "核对较频繁，请稍后再试；核对不会重新发送。";
+                    return;
+                }
+                if (!response.ok) throw new Error("state unavailable");
+                const result = await response.json();
+                if (result.status === "complete") { window.location.reload(); return; }
+                const notes = {
+                    pending: "这条消息仍在处理。稍后可再次核对，核对不会重新发送。",
+                    failed: "这次已受理，但未能取得回复。刷新后可将原消息放回输入框修改；再次发送将按新请求处理。",
+                    expired: "原请求已超过处理时限。请先刷新查看记录，需要时再重新编辑。",
+                    missing: "尚未查到这次请求，不能据此确认未发送。请稍后再核对，或复制文字后刷新。",
+                };
+                if (!Object.hasOwn(notes, result.status)) throw new Error("invalid state");
+                note.textContent = notes[result.status];
+            } catch (_) {
+                note.textContent = "暂时无法核对。请保留文字，稍后再试；系统不会自动重发。";
+            } finally {
+                clearTimeout(timeout);
+                button.disabled = false;
+            }
+        });
+        container.append(button, note);
+    }
+
     async function older() {
         const before = load.dataset.before;
         if (loading || sending || !before) return;
@@ -73,9 +164,11 @@
                     }
                     fragment.append(reply);
                 } else {
-                    const note = document.createElement("p");
-                    note.className = "dialogue-state";
-                    note.textContent = turn.status === "pending" ? "这条消息尚在处理中。" : "这次未能取得回复，原消息已保留。";
+                    const note = turn.status === "pending" ? document.createElement("p") : failedMessage();
+                    if (turn.status === "pending") {
+                        note.className = "dialogue-state";
+                        note.textContent = "这条消息尚在处理中。";
+                    }
                     fragment.append(note);
                 }
             }
@@ -131,6 +224,7 @@
             for (const button of document.querySelectorAll('form[action="/web/coach/message"] button')) {
                 button.disabled = true;
             }
+            for (const button of messages.querySelectorAll(".dialogue-recover")) button.disabled = true;
             const waiting = document.createElement("article");
             waiting.className = "dialogue-message dialogue-coach dialogue-waiting";
             waiting.setAttribute("role", "status");
@@ -142,6 +236,9 @@
             messages.append(waiting);
             history.setAttribute("aria-busy", "true");
             showBeginning(waiting);
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 60000);
+            let loginRequired = false;
             try {
                 // The hidden field named "action" shadows form.action in browsers.
                 const response = await fetch(form.getAttribute("action"), {
@@ -150,10 +247,11 @@
                     cache: "no-store",
                     headers: {"Accept": "application/json"},
                     body: fields,
+                    signal: controller.signal,
                 });
                 if (response.redirected && new URL(response.url).pathname === "/web/login") {
-                    window.location.assign("/web/login");
-                    return;
+                    loginRequired = true;
+                    throw new Error("login expired");
                 }
                 if ((response.status === 429 || response.status === 409) && (response.headers.get("content-type") || "").includes("application/json")) {
                     const rejection = await response.json();
@@ -173,6 +271,7 @@
                         waiting.append(usage);
                         if (input) input.readOnly = false;
                         for (const button of document.querySelectorAll('form[action="/web/coach/message"] button')) button.disabled = false;
+                        for (const button of messages.querySelectorAll(".dialogue-recover")) button.disabled = false;
                         sending = false;
                         showBeginning(waiting);
                         return;
@@ -189,17 +288,21 @@
                 history.removeAttribute("aria-busy");
                 waiting.classList.remove("dialogue-waiting");
                 waiting.classList.add("dialogue-state");
-                waiting.textContent = "本次请求结果尚未确认。请先刷新查看已有记录，避免重复发送；若已退出，请重新登录。";
+                waiting.textContent = loginRequired ? "登录已过期。输入仍保留，请先复制文字，再重新登录。" : "本次请求结果尚未确认。输入仍保留，可以先核对状态或复制后刷新查看记录，避免重复发送。";
                 const link = document.createElement("a");
-                link.className = "text-link";
-                link.href = "/web/welcome#coach-dialog";
-                link.textContent = " 刷新查看记录 →";
+                link.className = "text-link dialogue-refresh";
+                link.href = loginRequired ? "/web/login" : "/web/welcome#coach-dialog";
+                link.textContent = loginRequired ? " 复制文字后重新登录 →" : " 复制文字后刷新查看记录 →";
                 link.addEventListener("click", event => {
+                    if (new URL(link.href).pathname === "/web/login") return;
                     event.preventDefault();
                     window.location.reload();
                 });
                 waiting.append(link);
+                if (!loginRequired) addStatusCheck(waiting, fields.get("nonce"));
                 showBeginning(waiting);
+            } finally {
+                clearTimeout(timeout);
             }
         });
     }

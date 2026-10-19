@@ -566,6 +566,11 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .material-search-result, .material-results-title { min-width: 0; overflow-wrap: anywhere; }
 .knowledge-topic-filter { margin-top: 24px; }
 .knowledge-topic-summary { color: var(--muted); font-size: 13px; line-height: 1.9; overflow-wrap: anywhere; margin-bottom: 10px; }
+.dialogue-recover, .dialogue-check-status { font: inherit; font-size: 13px; color: var(--green); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; cursor: pointer; max-width: 100%; white-space: normal; }
+.dialogue-recover:disabled, .dialogue-check-status:disabled { opacity: .6; cursor: wait; }
+.dialogue-recover:focus-visible, .dialogue-check-status:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.dialogue-recovery-note, .dialogue-check-note { font-size: 13px; line-height: 1.9; overflow-wrap: anywhere; }
+.dialogue-check-status { display: block; margin-top: 12px; }
 #material-find { scroll-margin-top: 24px; }
 @media(max-width:520px) { .material-search-form > div, .material-search-form > button { flex-basis: 100%; width: 100%; } }
 

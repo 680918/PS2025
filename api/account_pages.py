@@ -110,6 +110,7 @@ def register_account_pages(
     view_limit = RegistrationRateLimiter(per_client_limit=60, total_limit=600)
     dialogue_limit = RegistrationRateLimiter(per_client_limit=8, total_limit=80)
     history_limit = RegistrationRateLimiter(per_client_limit=30, total_limit=300)
+    status_limit = RegistrationRateLimiter(per_client_limit=20, total_limit=200)
     dialogue_slots = BoundedSemaphore(2)
     if materials_repository is not None:
         register_library_pages(
@@ -381,6 +382,40 @@ def register_account_pages(
                 turn["assistant_html"] = coach_markdown(turn["assistant_content"])
         return JSONResponse(page, headers=_HEADERS)
 
+    @app.get("/web/coach/status", include_in_schema=False)
+    def dialogue_status(request: Request):
+        def problem(text, code):
+            return JSONResponse({"error": text}, status_code=code, headers=_HEADERS)
+
+        if not same_origin(request):
+            return problem("无法核对请求来源。", 403)
+        try:
+            account = signed_in_account(repository, request.cookies.get(SESSION_COOKIE))
+        except sqlite3.Error:
+            return problem("暂时无法读取登录状态。", 503)
+        if account is None:
+            return problem("登录已过期，请先复制文字，再重新登录。", 401)
+        if dialogue_repository is None:
+            return problem("发送记录服务暂未启用。", 503)
+        params = request.query_params
+        nonce = params.get("nonce", "")
+        if (
+            len(params.multi_items()) != 1
+            or set(params) != {"nonce"}
+            or re.fullmatch(r"[A-Za-z0-9_-]{43}", nonce) is None
+        ):
+            return problem("无法读取本次发送编号。", 400)
+        wait = status_limit.admit(request.client.host if request.client else "unknown")
+        if wait:
+            result = problem("核对较频繁，请稍后再试。", 429)
+            result.headers["Retry-After"] = str(wait)
+            return result
+        try:
+            state = dialogue_repository.dialogue_status(account.user_id, nonce)
+        except sqlite3.Error:
+            return problem("暂时无法核对发送状态，请保留文字，稍后再试。", 503)
+        return JSONResponse(state, headers=_HEADERS)
+
     def dialogue_form(
         token, action, content, study_id="", part_id=None, review_guard=None
     ):
@@ -447,7 +482,7 @@ def register_account_pages(
                 )
             else:
                 history.append(
-                    f'<p{latest} class="dialogue-state" role="status">这次未能取得回复。你的消息已保留；需要时可以重新输入发送。系统不会自动重试。</p>'
+                    f'<div{latest} class="dialogue-state dialogue-failed"><p>这次未能取得回复。你的消息已保留；需要时可以重新输入发送。系统不会自动重试。</p><button class="dialogue-recover" type="button"{" disabled" if pending or not enabled else ""}>放回输入框修改</button><p class="dialogue-recovery-note" role="status"></p></div>'
                 )
         disabled = "" if enabled and not pending else " disabled"
         composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability"{disabled}></textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials#add-material">＋ 添加资料</a><button class="button button-primary" type="submit"{disabled}>发送</button></div></div>'
@@ -494,7 +529,7 @@ def register_account_pages(
             + "".join(history)
             + '</div></div><div id="conversation-input">'
             + composer
-            + '</div><script src="/static/coach-dialogue.js?v=review-session-1" defer></script>'
+            + '</div><script src="/static/coach-dialogue.js?v=dialogue-recovery-1" defer></script>'
         )
         if learning:
             details = f'<h3>{escape(learning["topic"])}</h3><dl><dt>学习进度 · 已讨论</dt><dd>{escape(learning["progress"])}</dd><dt>下一步</dt><dd>{escape(learning["next_step"])}</dd></dl><p class="learning-record-note">记录会随讨论更新，也可自行修正；不代表已经掌握。</p>'
