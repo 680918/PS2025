@@ -2,6 +2,7 @@
 
 import sqlite3
 import re
+from datetime import datetime, timedelta, timezone
 from coach.booklets import (
     booklet_title,
     booklet_ids,
@@ -1085,6 +1086,62 @@ class CoachRepository:
                     (user_id, nonce, usage["day"], ai_kind, now),
                 )
         return "claimed"
+
+    def growth_review(self, user_id, *, period="7", now=None):
+        """Read an owned, consistent activity summary; these records are not scores."""
+        if period not in {"7", "30", "all"}:
+            raise ValueError("请选择最近7天、30天或全部时间。")
+        now = int(time()) if now is None else now
+        if type(now) is not int or now < 0:
+            raise ValueError("回顾时间无法读取。")
+        zone = timezone(timedelta(hours=8))
+        today = datetime.fromtimestamp(now, zone).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        start = today - timedelta(days=int(period) - 1) if period != "all" else None
+        since = int(start.timestamp()) if start else 0
+        scope = " WHERE turn.user_id=? AND turn.status='complete' AND turn.completed_at>=? AND turn.completed_at<=?"
+        with closing(self._connect()) as db:
+            db.execute("BEGIN")
+            totals = db.execute(
+                "SELECT COUNT(*) AS completed_turns,COUNT(DISTINCT topic.topic_id) AS active_topics,COALESCE(SUM(CASE WHEN topic.topic_id IS NULL THEN 1 ELSE 0 END),0) AS unfiled_turns"
+                + _REVIEW_FROM
+                + scope,
+                (user_id, since, now),
+            ).fetchone()
+            saved = db.execute(
+                "SELECT COUNT(*) FROM coach_knowledge WHERE user_id=? AND status='saved' AND saved_at>=? AND saved_at<=?",
+                (user_id, since, now),
+            ).fetchone()[0]
+            turns = db.execute(
+                "SELECT turn.turn_id,substr(turn.user_content,1,180) AS question,length(turn.user_content)>180 AS shortened,turn.completed_at,topic.topic_id,topic.title AS topic_title"
+                + _REVIEW_FROM
+                + scope
+                + " ORDER BY turn.completed_at DESC,turn.turn_id DESC LIMIT 5",
+                (user_id, since, now),
+            ).fetchall()
+            lessons = db.execute(
+                "SELECT knowledge_id,title,topic,saved_at FROM coach_knowledge WHERE user_id=? AND status='saved' AND saved_at>=? AND saved_at<=? ORDER BY saved_at DESC,knowledge_id LIMIT 5",
+                (user_id, since, now),
+            ).fetchall()
+            topics = db.execute(
+                "SELECT topic.topic_id,topic.title,COUNT(*) AS completed_turns,MAX(turn.completed_at) AS last_completed_at"
+                + _REVIEW_FROM
+                + scope
+                + " AND topic.topic_id IS NOT NULL GROUP BY topic.topic_id,topic.title ORDER BY last_completed_at DESC,topic.topic_id LIMIT 5",
+                (user_id, since, now),
+            ).fetchall()
+        return {
+            "period": period,
+            "start_day": start.strftime("%Y-%m-%d") if start else None,
+            "end_day": today.strftime("%Y-%m-%d"),
+            "as_of": now,
+            **dict(totals),
+            "saved_lessons": saved,
+            "recent_turns": [dict(row) for row in turns],
+            "recent_lessons": [dict(row) for row in lessons],
+            "recent_topics": [dict(row) for row in topics],
+        }
 
     def ai_usage(self, user_id, *, now=None):
         now = int(time()) if now is None else now

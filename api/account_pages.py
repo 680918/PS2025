@@ -22,6 +22,7 @@ from api.memory_pages import register_memory_pages
 from api.study_pages import register_study_pages
 from api.conversation_pages import register_conversation_pages
 from api.usage_pages import register_usage_pages
+from api.growth_pages import register_growth_pages
 from coach.ai_usage import usage_message
 from coach.book_study import study_directory
 from coach.learning_topics import discussion_material, discussion_part
@@ -124,6 +125,7 @@ def register_account_pages(
 
     if dialogue_repository is not None:
         register_usage_pages(app, repository, dialogue_repository)
+        register_growth_pages(app, repository, dialogue_repository)
         register_conversation_pages(app, repository, dialogue_repository, csrf_key=key)
         register_booklet_pages(app, repository, dialogue_repository, csrf_key=key)
         register_memory_pages(app, repository, dialogue_repository, csrf_key=key)
