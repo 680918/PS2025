@@ -13,7 +13,12 @@ from starlette.concurrency import run_in_threadpool
 
 from api.library_pages import HEADERS, library_csrf
 from api.public_pages import _render_layout
-from coach.learning_topics import TopicBusy, validate_topic_title, discussion_part
+from coach.learning_topics import (
+    TopicBusy,
+    validate_topic_title,
+    discussion_part,
+    topic_edit_version,
+)
 from coach.ai_usage import usage_message
 from security.login_sessions import signed_in_account
 from security.registration_rate_limit import RegistrationRateLimiter
@@ -86,7 +91,7 @@ def register_study_pages(
             + '">'
         )
 
-    async def fields(request, expected):
+    async def fields(request, expected, *, limit=4096):
         if (
             request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
             != "application/x-www-form-urlencoded"
@@ -94,7 +99,7 @@ def register_study_pages(
             return None
         body = bytearray()
         async for chunk in request.stream():
-            if len(body) + len(chunk) > 4096:
+            if len(body) + len(chunk) > limit:
                 return None
             body.extend(chunk)
         try:
@@ -157,6 +162,8 @@ def register_study_pages(
         )
         if request.query_params.get("notice") == "existing":
             body += '<p class="study-notice" role="status">同名主题已经存在，已回到原来的位置，没有覆盖原进度或关联资料。</p>'
+        if request.query_params.get("notice") == "edited":
+            body += '<p class="study-notice" role="status">学习记录已保存。下次续学会参考当前记录，原书籍、选段和历史内容保留。</p>'
         if not records:
             body += (
                 '<section class="library-card"><h2>'
@@ -217,7 +224,9 @@ def register_study_pages(
                 + hidden(request, "open", identity)
                 + '<button class="button button-outline" type="submit">只切换主题</button></form><a class="text-link" href="/web/conversations?topic='
                 + identity
-                + '">回看主题对话</a></div></article>'
+                + '">回看主题对话</a><a class="text-link" href="/web/studies/'
+                + identity
+                + '/edit">修改学习记录</a></div></article>'
             )
         body += '</div><nav class="library-paging" aria-label="主题目录分页">'
         base = "/web/studies?q=" + quote(query, safe="") + "&amp;page="
@@ -282,6 +291,121 @@ def register_study_pages(
             if result == "existing"
             else "/web/welcome#coach-dialog"
         )
+
+    def editor(request, item, *, values=None, message="", code=200):
+        version = topic_edit_version(item)
+        values = values if values is not None else item
+        body = '<p class="study-intro">需要时修正学习记录，按自己的节奏继续。修改不会发送给 AI，也不要求完成练习或提交评分；后续实际讨论仍会更新记录。</p>'
+        if message:
+            body += (
+                '<p class="form-error-summary" role="alert">' + escape(message) + "</p>"
+            )
+        if code == 409:
+            body += '<details class="library-card study-edit-current" open><summary>核对当前保存的记录</summary><dl>'
+            for key, label in (
+                ("title", "主题"),
+                ("progress", "已讨论"),
+                ("next_step", "下一步"),
+            ):
+                body += "<dt>" + label + "</dt><dd>" + escape(item[key]) + "</dd>"
+            body += "</dl></details>"
+        body += (
+            '<section class="library-card study-edit"><h2>本次修改</h2><form method="post" action="/web/studies/'
+            + item["topic_id"]
+            + '/edit">'
+            + hidden(request, "edit", item["topic_id"] + "." + version)
+            + '<input type="hidden" name="version" value="'
+            + version
+            + '">'
+            + '<label for="edit-topic-title">学习主题</label><input id="edit-topic-title" name="title" maxlength="120" required value="'
+            + escape(values["title"], quote=True)
+            + '">'
+            + '<label for="edit-topic-progress">已讨论的内容</label><textarea id="edit-topic-progress" name="progress" rows="5" maxlength="800" required>'
+            + escape(values["progress"])
+            + "</textarea>"
+            + '<label for="edit-topic-next">下一步</label><textarea id="edit-topic-next" name="next_step" rows="4" maxlength="800" required>'
+            + escape(values["next_step"])
+            + "</textarea>"
+            + '<p class="study-note">只修改需要调整的内容。关联书籍和选段保留；这不是掌握程度评价。保存其他主题的记录不会切换当前对话。</p>'
+            + '<div class="study-actions"><button class="button button-primary" type="submit">保存学习记录</button>'
+            + '<a class="button button-outline" href="/web/studies">取消并返回我的学习</a></div></form></section>'
+        )
+        return page("修改学习记录", body, code)
+
+    @app.get("/web/studies/{identity}/edit", include_in_schema=False)
+    def edit_record(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            item = dialogue.topic(account.user_id, identity)
+            if item is None:
+                return problem("找不到这个学习主题。", 404)
+            return editor(request, item)
+        except sqlite3.Error:
+            return problem("暂时无法读取学习记录，请稍后再试。", 503)
+
+    @app.post("/web/studies/{identity}/edit", include_in_schema=False)
+    async def save_record(request: Request, identity: str):
+        account, denied = auth(request, True)
+        if denied is not None:
+            return denied
+        values = await fields(
+            request, {"csrf", "version", "title", "progress", "next_step"}, limit=24576
+        )
+        version = values["version"] if values else ""
+        if not re.fullmatch(r"[a-f0-9]{64}", version) or not valid(
+            request, values, "edit", identity + "." + version
+        ):
+            return problem("页面无法核对，请重新打开学习记录。", 403)
+        try:
+            item = await run_in_threadpool(dialogue.topic, account.user_id, identity)
+            if item is None:
+                return problem("找不到这个学习主题。", 404)
+            try:
+                outcome = await run_in_threadpool(
+                    dialogue.edit_topic,
+                    account.user_id,
+                    identity,
+                    values["title"],
+                    values["progress"],
+                    values["next_step"],
+                    expected_version=version,
+                )
+            except TopicBusy:
+                return editor(
+                    request,
+                    item,
+                    values=values,
+                    message="教练还在回复，请等本轮结束后再保存。你的填写保留在下面。",
+                    code=409,
+                )
+            except ValueError as error:
+                return editor(
+                    request, item, values=values, message=str(error), code=400
+                )
+            if outcome == "missing":
+                return problem("找不到这个学习主题。", 404)
+            if outcome in {"conflict", "duplicate"}:
+                item = await run_in_threadpool(
+                    dialogue.topic, account.user_id, identity
+                )
+                if item is None:
+                    return problem("找不到这个学习主题。", 404)
+                return editor(
+                    request,
+                    item,
+                    values=values,
+                    message=(
+                        "学习记录已在其他页面或新一轮对话中更新。请核对当前记录和本次填写，再决定是否保存。"
+                        if outcome == "conflict"
+                        else "已有同名学习主题，请更换名称；不会合并主题或覆盖另一份进度。"
+                    ),
+                    code=409,
+                )
+            return redirect("/web/studies?notice=edited")
+        except sqlite3.Error:
+            return problem("暂时无法保存学习记录，请稍后再试。", 503)
 
     @app.post("/web/studies/{identity}/{operation}", include_in_schema=False)
     async def choose(request: Request, identity: str, operation: str):

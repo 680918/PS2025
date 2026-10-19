@@ -464,7 +464,9 @@ def register_account_pages(
             + '</div><script src="/static/coach-dialogue.js" defer></script>'
         )
         if learning:
-            details = f'<h3>{escape(learning["topic"])}</h3><dl><dt>学习进度 · 已讨论</dt><dd>{escape(learning["progress"])}</dd><dt>下一步</dt><dd>{escape(learning["next_step"])}</dd></dl><p class="learning-record-note">由教练根据对话整理，供你核对；不代表已经掌握。</p>'
+            details = f'<h3>{escape(learning["topic"])}</h3><dl><dt>学习进度 · 已讨论</dt><dd>{escape(learning["progress"])}</dd><dt>下一步</dt><dd>{escape(learning["next_step"])}</dd></dl><p class="learning-record-note">记录会随讨论更新，也可自行修正；不代表已经掌握。</p>'
+            if study_id:
+                details += f'<a class="text-link study-directory-link" href="/web/studies/{study_id}/edit">修改学习记录</a>'
         else:
             details = "<h3>还没有开始主题学习</h3><p>在对话中说“我想学习……”即可开始。教练会在讨论后整理学习位置。</p><dl><dt>学习进度</dt><dd>尚无学习记录</dd><dt>下一步</dt><dd>选择一个你想了解的主题。</dd></dl>"
         button = f'<button class="button button-primary button-full" type="submit"{"" if learning and enabled and not pending else " disabled"}>继续上次学习</button>'

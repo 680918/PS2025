@@ -1,6 +1,8 @@
 """Small helpers for user-owned topics and the material actually used in discussion."""
 
 import unicodedata
+import hashlib
+import json
 
 
 class TopicBusy(ValueError):
@@ -19,6 +21,46 @@ def validate_topic_title(title):
     ):
         raise ValueError("学习主题需要 1–120 个字符，不含换行或控制字符。")
     return title.strip()
+
+
+def validate_topic_record(title, progress, next_step):
+    title = validate_topic_title(title)
+    values = []
+    for label, text in (("已讨论内容", progress), ("下一步", next_step)):
+        if isinstance(text, str):
+            text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if (
+            not isinstance(text, str)
+            or not 1 <= len(text.strip()) <= 800
+            or any(
+                unicodedata.category(char) in {"Cc", "Cs"} and char not in "\n\t"
+                for char in text
+            )
+        ):
+            raise ValueError(label + "需要 1–800 个字符，不含无效控制字符。")
+        values.append(text.strip())
+    return title, *values
+
+
+def topic_edit_version(row):
+    """Compare the complete editable record, including same-second AI updates."""
+    return hashlib.sha256(
+        json.dumps(
+            [
+                row[key]
+                for key in (
+                    "topic_id",
+                    "title",
+                    "progress",
+                    "next_step",
+                    "material_id",
+                    "updated_at",
+                )
+            ],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+    ).hexdigest()
 
 
 def discussion_material(dialogue, materials, user_id):

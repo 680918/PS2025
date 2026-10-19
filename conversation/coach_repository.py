@@ -16,7 +16,13 @@ from contextlib import closing
 from pathlib import Path
 from coach.learning_memory import MAX_MEMORIES, validate_memory
 from time import time
-from coach.learning_topics import topic_key, validate_topic_title, TopicBusy
+from coach.learning_topics import (
+    topic_key,
+    validate_topic_title,
+    TopicBusy,
+    validate_topic_record,
+    topic_edit_version,
+)
 from coach.knowledge_search import search_query, lesson_match, match_contexts
 from coach.ai_usage import USAGE_SCHEMA, budget
 
@@ -589,6 +595,62 @@ class CoachRepository:
             )
             db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
             return "created"
+
+    def edit_topic(
+        self,
+        user_id,
+        identity,
+        title,
+        progress,
+        next_step,
+        *,
+        expected_version,
+        now=None,
+    ):
+        if (
+            not isinstance(expected_version, str)
+            or re.fullmatch(r"[a-f0-9]{64}", expected_version) is None
+        ):
+            raise ValueError("学习记录版本无法核对，请重新打开编辑页。")
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT * FROM coach_topics WHERE user_id=? AND topic_id=?",
+                (user_id, identity),
+            ).fetchone()
+            if row is None:
+                return "missing"
+            if topic_edit_version(row) != expected_version:
+                return "conflict"
+            title, progress, next_step = validate_topic_record(
+                title, progress, next_step
+            )
+            if (row["title"], row["progress"], row["next_step"]) == (
+                title,
+                progress,
+                next_step,
+            ):
+                return "unchanged"
+            self._require_idle(db, user_id, now)
+            if db.execute(
+                "SELECT 1 FROM coach_topics WHERE user_id=? AND topic_key=? AND topic_id<>?",
+                (user_id, topic_key(title), identity),
+            ).fetchone():
+                return "duplicate"
+            db.execute(
+                "UPDATE coach_topics SET title=?,topic_key=?,progress=?,next_step=?,updated_at=? WHERE user_id=? AND topic_id=?",
+                (title, topic_key(title), progress, next_step, now, user_id, identity),
+            )
+            active = db.execute(
+                "SELECT topic_id FROM coach_active_topic WHERE user_id=?", (user_id,)
+            ).fetchone()
+            if active and active[0] == identity:
+                db.execute(
+                    "INSERT INTO coach_learning VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET topic=excluded.topic,progress=excluded.progress,next_step=excluded.next_step,updated_at=excluded.updated_at",
+                    (user_id, title, progress, next_step, now),
+                )
+        return "updated"
 
     def activate_topic(self, user_id, identity, *, now=None):
         now = int(time()) if now is None else now

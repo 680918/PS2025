@@ -488,6 +488,13 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .study-wait { margin-top: 10px; }
 .study-notice { background: var(--tint); border-radius: 8px; padding: 14px; font-size: 13px; }
 .study-add { margin-top: 28px; }
+.study-edit { margin-top: 20px; }
+.study-edit-current { margin: 20px 0; }
+.study-edit-current summary { cursor: pointer; font-size: 13px; color: var(--green); }
+.study-edit-current dt { color: var(--muted); margin-top: 14px; font-size: 12px; }
+.study-edit-current dd { margin: 5px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.85; }
+.study-edit input, .study-edit textarea { box-sizing: border-box; }
+.study-edit .study-actions { margin-top: 20px; }
 .study-space select { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; }
 .study-directory-link { display: inline-flex; margin-top: 12px; font-size: 12px; }
 @media(max-width:520px) { .study-actions { align-items: stretch; } .study-actions form, .study-actions .button { width: 100%; } .study-search input, .study-search .button { width: 100%; } }
