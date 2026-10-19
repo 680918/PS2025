@@ -34,7 +34,12 @@ from coach.materials import (
 )
 from coach.book_study import study_directory, unit_chunks
 from coach.unit_lessons import unit_lesson_plan, send_unit_lesson, unit_scope_text
-from coach.knowledge_search import search_query, literal_ranges, match_contexts
+from coach.knowledge_search import (
+    search_query,
+    literal_ranges,
+    match_contexts,
+    lesson_topic,
+)
 from coach.ai_usage import usage_message
 from coach.draft_edit import draft_version
 import json
@@ -98,6 +103,12 @@ def search_excerpt(item, query):
         + ("…" if excerpt["after"] else "")
         + "</p></div>"
     )
+
+
+def requested_lesson_topic(request):
+    if len(request.query_params.getlist("topic")) > 1:
+        raise ValueError("请只选择一个主题。")
+    return lesson_topic(request.query_params.get("topic", ""))
 
 
 def register_library_pages(
@@ -1752,6 +1763,8 @@ def register_library_pages(
         )
         try:
             query = search_query(request.query_params.get("q", ""))
+            topic = requested_lesson_topic(request)
+            topic_params = {"topic": topic} if topic else {}
             number = int(request.query_params.get("page", "1"))
             if (
                 not removed and status not in {"saved", "pending"}
@@ -1766,6 +1779,10 @@ def register_library_pages(
                 query=query,
                 offset=(number - 1) * 20,
                 favorites_only=favorites,
+                topic=topic,
+            )
+            catalog = dialogue.knowledge_topics(
+                account.user_id, status=status, favorites_only=favorites, topic=topic
             )
         except sqlite3.Error:
             return problem("暂时无法读取知识库。", 503)
@@ -1775,8 +1792,8 @@ def register_library_pages(
                 "knowledge_id"
             ]
             if removed:
-                url += "?" + urlencode({"q": query, "page": number})
-            elif query or favorites:
+                url += "?" + urlencode({"q": query, "page": number, **topic_params})
+            elif query or favorites or topic or number > 1:
                 url += (
                     "?"
                     + urlencode(
@@ -1784,6 +1801,7 @@ def register_library_pages(
                             "find": query,
                             "result_page": number,
                             **({"favorites": "1"} if favorites else {}),
+                            **topic_params,
                         }
                     )
                     + ("#lesson-find" if query else "")
@@ -1825,24 +1843,70 @@ def register_library_pages(
                 paging += (
                     '<a href="?'
                     + escape(
-                        urlencode({"status": status, "q": query, "page": target}),
+                        urlencode(
+                            {
+                                "status": status,
+                                "q": query,
+                                "page": target,
+                                **topic_params,
+                            }
+                        ),
                         quote=True,
                     )
                     + '">'
                     + label
                     + "</a>"
                 )
-        search = (
-            '<form class="library-search" method="get"><input type="hidden" name="status" value="'
-            + status
-            + '"><label class="visually-hidden" for="knowledge-query">查找标题、主题或正文</label><input id="knowledge-query" name="q" maxlength="120" placeholder="查找标题、主题或正文" value="'
-            + escape(query, quote=True)
-            + '"><button class="button button-outline">查找</button></form>'
+        options = (
+            '<option value="">全部主题 · ' + str(catalog["total"]) + " 份</option>"
         )
+        for choice in catalog["topics"]:
+            options += (
+                '<option value="'
+                + escape(choice["topic"], quote=True)
+                + '"'
+                + (" selected" if topic == choice["topic"] else "")
+                + ">"
+                + escape(choice["topic"])
+                + " · "
+                + str(choice["count"])
+                + " 份</option>"
+            )
+        search = (
+            '<form class="material-search-form knowledge-topic-filter" method="get"><input type="hidden" name="status" value="'
+            + status
+            + '"><div><label for="knowledge-topic">按整理时主题筛选</label><select id="knowledge-topic" name="topic">'
+            + options
+            + '</select></div><div><label for="knowledge-query">查找标题、主题或正文</label><input id="knowledge-query" name="q" maxlength="120" placeholder="输入关键词或一句原文" value="'
+            + escape(query, quote=True)
+            + '"></div><button class="button button-outline">查找</button></form>'
+        )
+        search += (
+            '<p class="knowledge-topic-summary">本目录共 '
+            + str(catalog["total"])
+            + " 份"
+        )
+        if topic:
+            search += (
+                "；所选主题《"
+                + escape(topic)
+                + "》共 "
+                + str(catalog["selected_count"])
+                + " 份"
+            )
+        search += "。关键词只在当前所选主题内查找；浏览不改变学习位置。</p>"
+        if catalog["truncated"]:
+            search += '<p class="lesson-search-label">主题选项显示最近有记录的 200 个主题；全部主题的文字查找仍覆盖本目录所有记录。</p>'
+        if topic:
+            search += (
+                '<a class="text-link" href="?'
+                + escape(urlencode({"status": status, "q": query}), quote=True)
+                + '">查看全部主题</a>'
+            )
         if query:
             search += (
-                '<p class="lesson-search-label">按输入文字查找当前版本；不调用 AI。<a class="text-link" href="?status='
-                + status
+                '<p class="lesson-search-label">按输入文字查找当前版本；不调用 AI。<a class="text-link" href="?'
+                + escape(urlencode({"status": status, **topic_params}), quote=True)
                 + '">清除查找</a></p>'
             )
         empty = (
@@ -1860,12 +1924,16 @@ def register_library_pages(
                 if query
                 else "还没有收藏教案。打开一份已保存教案，点击“收藏为常用教案”，以后就能在这里快速找到。"
             )
+        if topic:
+            empty = "当前主题下没有匹配内容。可以清除关键词、查看全部主题，或切换目录。"
         tabs = '<nav class="library-tabs">'
         for state, label in (
             ("saved", "已保存的教案目录"),
             ("pending", "教案草稿 · 预览与保存"),
         ):
-            target = "/web/knowledge?" + urlencode({"status": state, "q": query})
+            target = "/web/knowledge?" + urlencode(
+                {"status": state, "q": query, **topic_params}
+            )
             tabs += (
                 '<a href="'
                 + escape(target, quote=True)
@@ -1881,12 +1949,18 @@ def register_library_pages(
             )
         tabs += (
             '<a href="'
-            + escape("/web/knowledge-favorites?" + urlencode({"q": query}), quote=True)
+            + escape(
+                "/web/knowledge-favorites?" + urlencode({"q": query, **topic_params}),
+                quote=True,
+            )
             + '"'
             + (' aria-current="page"' if favorites else "")
             + ">常用教案 · 我的收藏</a>"
             + '<a href="'
-            + escape("/web/knowledge-removed?" + urlencode({"q": query}), quote=True)
+            + escape(
+                "/web/knowledge-removed?" + urlencode({"q": query, **topic_params}),
+                quote=True,
+            )
             + '"'
             + (' aria-current="page"' if removed else "")
             + '>已移出草稿 · 找回</a><a href="/web/booklets">我的学习手册 · 教案成册</a></nav>'
@@ -1990,12 +2064,15 @@ def register_library_pages(
             return denied
         try:
             query = search_query(request.query_params.get("q", ""))
+            topic = requested_lesson_topic(request)
             number = int(request.query_params.get("page", "1"))
             if not 1 <= number <= 1000000:
                 return problem("返回结果的页码无法读取。")
         except ValueError as error:
             return problem(str(error))
-        back = "/web/knowledge-removed?" + urlencode({"q": query, "page": number})
+        back = "/web/knowledge-removed?" + urlencode(
+            {"q": query, "page": number, **({"topic": topic} if topic else {})}
+        )
         try:
             item = dialogue.knowledge(account.user_id, identity, include_dismissed=True)
         except sqlite3.Error:
@@ -2075,6 +2152,8 @@ def register_library_pages(
             return denied
         try:
             query = search_query(request.query_params.get("find", ""))
+            topic = requested_lesson_topic(request)
+            topic_params = {"topic": topic} if topic else {}
             favorites = request.query_params.get("favorites", "0")
             if favorites not in {"0", "1"}:
                 return problem("来源目录无法读取。")
@@ -2106,11 +2185,21 @@ def register_library_pages(
         matching = (
             '<p><a class="text-link" href="'
             + escape(
-                "/web/knowledge-favorites?" + urlencode({"q": query, "page": number}),
+                ("/web/knowledge-favorites?" if favorites else "/web/knowledge?")
+                + urlencode(
+                    {
+                        "q": query,
+                        "page": number,
+                        "status": item["status"],
+                        **topic_params,
+                    }
+                ),
                 quote=True,
             )
-            + '">返回常用教案 →</a></p>'
-            if favorites
+            + '">'
+            + ("返回常用教案" if favorites else "返回主题目录")
+            + " →</a></p>"
+            if favorites or topic or "result_page" in request.query_params
             else ""
         )
         if query:
@@ -2125,7 +2214,14 @@ def register_library_pages(
                 if booklet
                 else (
                     ("/web/knowledge-favorites?" if favorites else "/web/knowledge?")
-                    + urlencode({"q": query, "status": item["status"], "page": number})
+                    + urlencode(
+                        {
+                            "q": query,
+                            "status": item["status"],
+                            "page": number,
+                            **topic_params,
+                        }
+                    )
                 )
             )
             matches = match_contexts(item["content"], query)

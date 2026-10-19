@@ -24,7 +24,12 @@ from coach.learning_topics import (
     validate_topic_record,
     topic_edit_version,
 )
-from coach.knowledge_search import search_query, lesson_match, match_contexts
+from coach.knowledge_search import (
+    search_query,
+    lesson_match,
+    match_contexts,
+    lesson_topic,
+)
 from coach.ai_usage import USAGE_SCHEMA, budget
 from coach.draft_edit import draft_version, draft_text
 
@@ -1298,20 +1303,32 @@ class CoachRepository:
         offset=0,
         limit=21,
         favorites_only=False,
+        topic="",
     ):
         query = search_query(query)
+        topic = lesson_topic(topic)
         with closing(self._connect()) as db:
             rows = db.execute(
                 "SELECT knowledge_id,title,topic,status,created_at"
                 + (",content" if query else "")
                 + " FROM coach_knowledge WHERE user_id=? AND status=? AND (instr(lower(title),lower(?))>0 OR instr(lower(topic),lower(?))>0 OR instr(lower(content),lower(?))>0)"
+                + (" AND topic=?" if topic else "")
                 + (
                     " AND status='saved' AND EXISTS(SELECT 1 FROM coach_lesson_favorites AS favorite WHERE favorite.user_id=coach_knowledge.user_id AND favorite.knowledge_id=coach_knowledge.knowledge_id AND favorite.selected=1)"
                     if favorites_only
                     else ""
                 )
                 + " ORDER BY created_at DESC, knowledge_id LIMIT ? OFFSET ?",
-                (user_id, status, query, query, query, limit, offset),
+                (
+                    user_id,
+                    status,
+                    query,
+                    query,
+                    query,
+                    *([topic] if topic else []),
+                    limit,
+                    offset,
+                ),
             ).fetchall()
         result = []
         for row in rows:
@@ -1322,6 +1339,37 @@ class CoachRepository:
                 )
             result.append(item)
         return result
+
+    def knowledge_topics(
+        self, user_id, *, status="saved", favorites_only=False, topic=""
+    ):
+        """Owned directory counts and bounded topic choices; no content or writes."""
+        topic = lesson_topic(topic)
+        scope = " FROM coach_knowledge WHERE user_id=? AND status=?"
+        if favorites_only:
+            scope += " AND status='saved' AND EXISTS(SELECT 1 FROM coach_lesson_favorites f WHERE f.user_id=coach_knowledge.user_id AND f.knowledge_id=coach_knowledge.knowledge_id AND f.selected=1)"
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN")
+            counts = db.execute(
+                "SELECT COUNT(*) AS total,COALESCE(SUM(CASE WHEN topic=? THEN 1 ELSE 0 END),0) AS selected"
+                + scope,
+                (topic, user_id, status),
+            ).fetchone()
+            rows = db.execute(
+                "SELECT topic,COUNT(*) AS count"
+                + scope
+                + " GROUP BY topic ORDER BY MAX(created_at) DESC,topic LIMIT 201",
+                (user_id, status),
+            ).fetchall()
+        choices = [dict(row) for row in rows[:200] if row["topic"]]
+        if topic and all(row["topic"] != topic for row in choices):
+            choices.append({"topic": topic, "count": counts["selected"]})
+        return {
+            "topics": choices,
+            "total": counts["total"],
+            "selected_count": counts["selected"] if topic else counts["total"],
+            "truncated": len(rows) > 200,
+        }
 
     def lesson_favorite(self, user_id, knowledge_id):
         """Read a saved lesson's shortcut state without changing content or position."""

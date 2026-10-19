@@ -6,6 +6,17 @@ _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrst
 MAX_QUERY = 120
 
 
+def lesson_topic(value):
+    """An exact historical lesson topic, independent of today's learning title."""
+    if (
+        not isinstance(value, str)
+        or len(value) > 120
+        or any(unicodedata.category(char) in {"Cc", "Cs"} for char in value)
+    ):
+        raise ValueError("主题条件需在 120 字以内，不含换行或控制字符。")
+    return value
+
+
 def search_query(value):
     if not isinstance(value, str):
         raise ValueError("查找内容无法读取。")
