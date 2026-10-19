@@ -1703,6 +1703,7 @@ def register_library_pages(
         except sqlite3.Error:
             return problem("暂时无法更新资料选择。", 503)
 
+    @app.get("/web/knowledge-favorites", include_in_schema=False)
     @app.get("/web/knowledge-removed", include_in_schema=False)
     @app.get("/web/knowledge", include_in_schema=False)
     def knowledge_list(request: Request):
@@ -1710,7 +1711,14 @@ def register_library_pages(
         if denied is not None:
             return denied
         removed = request.url.path == "/web/knowledge-removed"
-        status = "dismissed" if removed else request.query_params.get("status", "saved")
+        favorites = request.url.path == "/web/knowledge-favorites"
+        status = (
+            "dismissed"
+            if removed
+            else "saved"
+            if favorites
+            else request.query_params.get("status", "saved")
+        )
         try:
             query = search_query(request.query_params.get("q", ""))
             number = int(request.query_params.get("page", "1"))
@@ -1722,7 +1730,11 @@ def register_library_pages(
             return problem(str(error))
         try:
             items = dialogue.list_knowledge(
-                account.user_id, status=status, query=query, offset=(number - 1) * 20
+                account.user_id,
+                status=status,
+                query=query,
+                offset=(number - 1) * 20,
+                favorites_only=favorites,
             )
         except sqlite3.Error:
             return problem("暂时无法读取知识库。", 503)
@@ -1733,11 +1745,17 @@ def register_library_pages(
             ]
             if removed:
                 url += "?" + urlencode({"q": query, "page": number})
-            elif query:
+            elif query or favorites:
                 url += (
                     "?"
-                    + urlencode({"find": query, "result_page": number})
-                    + "#lesson-find"
+                    + urlencode(
+                        {
+                            "find": query,
+                            "result_page": number,
+                            **({"favorites": "1"} if favorites else {}),
+                        }
+                    )
+                    + ("#lesson-find" if query else "")
                 )
             cards += (
                 '<article class="library-item"><span class="library-badge">'
@@ -1805,6 +1823,12 @@ def register_library_pages(
             empty = (
                 "没有找到匹配的已移出草稿。" if query else "这里还没有已移出的草稿。"
             )
+        if favorites:
+            empty = (
+                "常用教案中没有匹配内容，可以换个关键词，或到已保存目录查找。"
+                if query
+                else "还没有收藏教案。打开一份已保存教案，点击“收藏为常用教案”，以后就能在这里快速找到。"
+            )
         tabs = '<nav class="library-tabs">'
         for state, label in (
             ("saved", "已保存的教案目录"),
@@ -1815,13 +1839,22 @@ def register_library_pages(
                 '<a href="'
                 + escape(target, quote=True)
                 + '"'
-                + (' aria-current="page"' if not removed and status == state else "")
+                + (
+                    ' aria-current="page"'
+                    if not removed and not favorites and status == state
+                    else ""
+                )
                 + ">"
                 + label
                 + "</a>"
             )
         tabs += (
             '<a href="'
+            + escape("/web/knowledge-favorites?" + urlencode({"q": query}), quote=True)
+            + '"'
+            + (' aria-current="page"' if favorites else "")
+            + ">常用教案 · 我的收藏</a>"
+            + '<a href="'
             + escape("/web/knowledge-removed?" + urlencode({"q": query}), quote=True)
             + '"'
             + (' aria-current="page"' if removed else "")
@@ -1833,10 +1866,12 @@ def register_library_pages(
             else ""
         )
         return page(
-            "已移出草稿" if removed else "知识资产沉淀",
+            "已移出草稿" if removed else "常用教案" if favorites else "知识资产沉淀",
             (
                 '<p class="library-intro">移出的草稿保留在这里，可以查看并恢复到待确认目录。恢复不代表确认保存，也不调用 AI。</p>'
                 if removed
+                else '<p class="library-intro">收藏经常重温的已保存教案，在这里集中查找与调阅。内容始终使用最新版；取消收藏不会删除原教案。</p>'
+                if favorites
                 else '<p class="library-intro">经你确认的教案、知识点和学习册，留在这里，随时可以重温。</p>'
             )
             + tabs
@@ -2009,6 +2044,10 @@ def register_library_pages(
             return denied
         try:
             query = search_query(request.query_params.get("find", ""))
+            favorites = request.query_params.get("favorites", "0")
+            if favorites not in {"0", "1"}:
+                return problem("来源目录无法读取。")
+            favorites = favorites == "1"
             number = request.query_params.get("result_page", "1")
             if not re.fullmatch(r"[1-9][0-9]{0,5}|1000000", number):
                 return problem("返回结果的页码无法读取。")
@@ -2019,6 +2058,11 @@ def register_library_pages(
             return problem(str(error))
         try:
             item = dialogue.knowledge(account.user_id, identity)
+            favorite = (
+                dialogue.lesson_favorite(account.user_id, identity)
+                if item and item["status"] == "saved"
+                else None
+            )
             if (
                 booklet
                 and dialogue.booklet(account.user_id, booklet, chapter=0) is None
@@ -2028,7 +2072,16 @@ def register_library_pages(
             return problem("暂时无法读取教案。", 503)
         if not item:
             return problem("找不到这份教案。", 404)
-        matching = ""
+        matching = (
+            '<p><a class="text-link" href="'
+            + escape(
+                "/web/knowledge-favorites?" + urlencode({"q": query, "page": number}),
+                quote=True,
+            )
+            + '">返回常用教案 →</a></p>'
+            if favorites
+            else ""
+        )
         if query:
             back = (
                 (
@@ -2040,7 +2093,7 @@ def register_library_pages(
                 )
                 if booklet
                 else (
-                    "/web/knowledge?"
+                    ("/web/knowledge-favorites?" if favorites else "/web/knowledge?")
                     + urlencode({"q": query, "status": item["status"], "page": number})
                 )
             )
@@ -2101,6 +2154,29 @@ def register_library_pages(
                 + lesson_html(item["content"])
                 + "</article>"
             )
+        if favorite is not None:
+            desired = "0" if favorite["selected"] else "1"
+            version = str(favorite["revision"])
+            controls = (
+                '<div class="library-actions"><form method="post" action="/web/lesson-favorites/'
+                + identity
+                + '">'
+                + input_csrf(
+                    request, "lesson-favorite", identity + "." + version + "." + desired
+                )
+                + '<input type="hidden" name="revision" value="'
+                + version
+                + '"><input type="hidden" name="selected" value="'
+                + desired
+                + '"><button class="button button-outline" type="submit">'
+                + ("取消常用收藏" if favorite["selected"] else "收藏为常用教案")
+                + '</button></form><a class="text-link" href="/web/knowledge-favorites">我的常用教案 →</a></div>'
+                + '<p class="lesson-revision-note">'
+                + ("已收藏为常用教案。" if favorite["selected"] else "尚未收藏。")
+                + "收藏只建立快捷入口，不复制正文、不调用 AI。</p>"
+                + lesson_favorite_notice(request.query_params.get("notice"))
+                + controls
+            )
         citations = "".join(
             '<details class="citation"><summary>整理时参考：'
             + escape(source["title"] + " · " + source["locator"])
@@ -2132,6 +2208,66 @@ def register_library_pages(
                 else ""
             )
             + "</section>",
+        )
+
+    def lesson_favorite_notice(notice):
+        message = {
+            "favorited": "已加入常用教案。",
+            "unfavorited": "已取消常用收藏，原教案保留。",
+        }.get(notice)
+        return (
+            '<p class="lesson-version-notice" role="status">' + message + "</p>"
+            if message
+            else ""
+        )
+
+    @app.post("/web/lesson-favorites/{identity}", include_in_schema=False)
+    async def lesson_favorite_action(request: Request, identity: str):
+        account, denied = await run_in_threadpool(auth, request, write=True)
+        if denied is not None:
+            return denied
+        values = await fields(request, {"csrf", "selected", "revision"})
+        version, desired = (
+            (values.get("revision", ""), values.get("selected", ""))
+            if values
+            else ("", "")
+        )
+        if (
+            re.fullmatch(r"0|[1-9][0-9]{0,8}|1000000000", version) is None
+            or desired not in {"0", "1"}
+            or not valid_csrf(
+                request,
+                values,
+                "lesson-favorite",
+                identity + "." + version + "." + desired,
+            )
+        ):
+            return problem("页面无法核对，请重新打开教案。", 403)
+        try:
+            result = await run_in_threadpool(
+                dialogue.set_lesson_favorite,
+                account.user_id,
+                identity,
+                desired == "1",
+                int(version),
+            )
+        except sqlite3.Error:
+            return problem("暂时无法核对收藏结果，请先打开教案查看当前状态。", 503)
+        if result == "missing":
+            return problem("找不到这份本人已保存教案。", 404)
+        if result == "conflict":
+            return page(
+                "请核对收藏状态",
+                '<p class="form-error-summary" role="alert">收藏已在其他页面改变，本次没有覆盖。请重新打开教案，核对后再选择。</p><a class="button button-outline" href="/web/knowledge/'
+                + identity
+                + '">查看当前教案</a><a class="text-link" href="/web/knowledge-favorites">返回常用教案</a>',
+                code=409,
+            )
+        return redirect(
+            "/web/knowledge/"
+            + identity
+            + "?notice="
+            + ("favorited" if desired == "1" else "unfavorited")
         )
 
     def lesson_time(timestamp):

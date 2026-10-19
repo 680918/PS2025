@@ -92,6 +92,12 @@ class CoachRepository:
                     generation INTEGER NOT NULL CHECK(generation>0),
                     PRIMARY KEY(user_id,knowledge_id)
                 );
+                CREATE TABLE IF NOT EXISTS coach_lesson_favorites (
+                    user_id TEXT NOT NULL, knowledge_id TEXT NOT NULL,
+                    selected INTEGER NOT NULL CHECK(selected IN (0,1)),
+                    revision INTEGER NOT NULL CHECK(revision>0),
+                    PRIMARY KEY(user_id,knowledge_id)
+                );
                 CREATE TABLE IF NOT EXISTS coach_review (user_id TEXT PRIMARY KEY, knowledge_id TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS coach_knowledge_versions (
                     user_id TEXT NOT NULL, knowledge_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0),
@@ -1212,13 +1218,28 @@ class CoachRepository:
             result["unit_summary"] = json.loads(link[0])
         return result
 
-    def list_knowledge(self, user_id, *, status="saved", query="", offset=0, limit=21):
+    def list_knowledge(
+        self,
+        user_id,
+        *,
+        status="saved",
+        query="",
+        offset=0,
+        limit=21,
+        favorites_only=False,
+    ):
         query = search_query(query)
         with closing(self._connect()) as db:
             rows = db.execute(
                 "SELECT knowledge_id,title,topic,status,created_at"
                 + (",content" if query else "")
-                + " FROM coach_knowledge WHERE user_id=? AND status=? AND (instr(lower(title),lower(?))>0 OR instr(lower(topic),lower(?))>0 OR instr(lower(content),lower(?))>0) ORDER BY created_at DESC, knowledge_id LIMIT ? OFFSET ?",
+                + " FROM coach_knowledge WHERE user_id=? AND status=? AND (instr(lower(title),lower(?))>0 OR instr(lower(topic),lower(?))>0 OR instr(lower(content),lower(?))>0)"
+                + (
+                    " AND status='saved' AND EXISTS(SELECT 1 FROM coach_lesson_favorites AS favorite WHERE favorite.user_id=coach_knowledge.user_id AND favorite.knowledge_id=coach_knowledge.knowledge_id AND favorite.selected=1)"
+                    if favorites_only
+                    else ""
+                )
+                + " ORDER BY created_at DESC, knowledge_id LIMIT ? OFFSET ?",
                 (user_id, status, query, query, query, limit, offset),
             ).fetchall()
         result = []
@@ -1230,6 +1251,52 @@ class CoachRepository:
                 )
             result.append(item)
         return result
+
+    def lesson_favorite(self, user_id, knowledge_id):
+        """Read a saved lesson's shortcut state without changing content or position."""
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT COALESCE(favorite.selected,0) AS selected,COALESCE(favorite.revision,0) AS revision FROM coach_knowledge AS lesson LEFT JOIN coach_lesson_favorites AS favorite ON favorite.user_id=lesson.user_id AND favorite.knowledge_id=lesson.knowledge_id WHERE lesson.user_id=? AND lesson.knowledge_id=? AND lesson.status='saved'",
+                (user_id, knowledge_id),
+            ).fetchone()
+        return (
+            {"selected": bool(row["selected"]), "revision": row["revision"]}
+            if row
+            else None
+        )
+
+    def set_lesson_favorite(self, user_id, knowledge_id, selected, revision):
+        """Set an explicit desired state; old forms never toggle a newer choice."""
+        if (
+            type(selected) is not bool
+            or type(revision) is not int
+            or not 0 <= revision <= 1000000000
+        ):
+            raise ValueError("收藏状态或版本无法核对。")
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            lesson = db.execute(
+                "SELECT 1 FROM coach_knowledge WHERE user_id=? AND knowledge_id=? AND status='saved'",
+                (user_id, knowledge_id),
+            ).fetchone()
+            if lesson is None:
+                return "missing"
+            row = db.execute(
+                "SELECT selected,revision FROM coach_lesson_favorites WHERE user_id=? AND knowledge_id=?",
+                (user_id, knowledge_id),
+            ).fetchone()
+            current_revision, current_selected = (
+                (row["revision"], bool(row["selected"])) if row else (0, False)
+            )
+            if current_revision != revision:
+                return "conflict"
+            if current_selected == selected:
+                return "unchanged"
+            db.execute(
+                "INSERT INTO coach_lesson_favorites(user_id,knowledge_id,selected,revision) VALUES(?,?,?,?) ON CONFLICT(user_id,knowledge_id) DO UPDATE SET selected=excluded.selected,revision=excluded.revision",
+                (user_id, knowledge_id, int(selected), revision + 1),
+            )
+        return "updated"
 
     def change_draft(
         self,
