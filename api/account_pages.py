@@ -381,13 +381,29 @@ def register_account_pages(
                 turn["assistant_html"] = coach_markdown(turn["assistant_content"])
         return JSONResponse(page, headers=_HEADERS)
 
-    def dialogue_form(token, action, content, study_id="", part_id=None):
+    def dialogue_form(
+        token, action, content, study_id="", part_id=None, review_guard=None
+    ):
         nonce = secrets.token_urlsafe(32)
         payload = f"{token}.{nonce}.{action}" + (f".{study_id}" if study_id else "")
         if part_id is not None:
             payload += ".part:" + part_id
             content = (
                 f'<input type="hidden" name="part_id" value="{part_id}">' + content
+            )
+        if review_guard is not None:
+            identity, revision = (
+                review_guard["knowledge_id"],
+                str(review_guard["revision"]),
+            )
+            payload += ".review:" + identity + ":" + revision
+            content = (
+                '<input type="hidden" name="review_id" value="'
+                + identity
+                + '"><input type="hidden" name="review_revision" value="'
+                + revision
+                + '">'
+                + content
             )
         csrf = signature("dialogue", payload)
         if study_id:
@@ -400,6 +416,7 @@ def register_account_pages(
         enabled = dialogue_responder is not None
         active_topic = dialogue_repository.active_topic(user_id)
         study_id = active_topic["topic_id"] if active_topic else ""
+        review_guard = dialogue_repository.review_state(user_id)
         part = discussion_part(dialogue_repository, materials_repository, user_id)
         stored_part = dialogue_repository.topic_part(user_id)
         form_part = (
@@ -435,7 +452,9 @@ def register_account_pages(
         disabled = "" if enabled and not pending else " disabled"
         composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability"{disabled}></textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials#add-material">＋ 添加资料</a><button class="button button-primary" type="submit"{disabled}>发送</button></div></div>'
         if enabled:
-            composer = dialogue_form(token, "message", composer, study_id, form_part)
+            composer = dialogue_form(
+                token, "message", composer, study_id, form_part, review_guard
+            )
         learning = view["learning"]
         selected = discussion_material(
             dialogue_repository, materials_repository, user_id
@@ -444,15 +463,27 @@ def register_account_pages(
             user_id, status="pending", limit=1
         )
         review = dialogue_repository.review(user_id)
+        if review:
+            selected, part, stored_part = None, None, None
         mobile_context = (
             '<div class="mobile-learning-context" aria-label="学习位置速览"><p>当前学习主题 · <strong>'
             + escape(learning["topic"] if learning else "尚未开始")
-            + '</strong></p><p class="mobile-learning-progress">学习进度 · '
+            + "</strong></p>"
+            + (
+                "<p>正在重温教案 · "
+                + escape(review["title"])
+                + '</p><a class="text-link" href="#review-mode-end">查看教案与结束重温 →</a>'
+                if review
+                else ""
+            )
+            + '<p class="mobile-learning-progress">学习进度 · '
             + escape(learning["progress"] if learning else "尚无学习记录")
             + "</p><p>讨论资料 · "
             + escape(
                 (selected["title"] + (" · " + part["locator"] if part else ""))
                 if selected
+                else "教案正文与整理时引用"
+                if review
                 else "未关联资料"
             )
             + '</p><a class="text-link" href="#learning-title">查看学习详情与续学 →</a></div>'
@@ -463,7 +494,7 @@ def register_account_pages(
             + "".join(history)
             + '</div></div><div id="conversation-input">'
             + composer
-            + '</div><script src="/static/coach-dialogue.js" defer></script>'
+            + '</div><script src="/static/coach-dialogue.js?v=review-session-1" defer></script>'
         )
         if learning:
             details = f'<h3>{escape(learning["topic"])}</h3><dl><dt>学习进度 · 已讨论</dt><dd>{escape(learning["progress"])}</dd><dt>下一步</dt><dd>{escape(learning["next_step"])}</dd></dl><p class="learning-record-note">记录会随讨论更新，也可自行修正；不代表已经掌握。</p>'
@@ -471,7 +502,12 @@ def register_account_pages(
                 details += f'<a class="text-link study-directory-link" href="/web/studies/{study_id}/edit">修改学习记录</a>'
         else:
             details = "<h3>还没有开始主题学习</h3><p>在对话中说“我想学习……”即可开始。教练会在讨论后整理学习位置。</p><dl><dt>学习进度</dt><dd>尚无学习记录</dd><dt>下一步</dt><dd>选择一个你想了解的主题。</dd></dl>"
-        button = f'<button class="button button-primary button-full" type="submit"{"" if learning and enabled and not pending else " disabled"}>继续上次学习</button>'
+        if review:
+            details = details.replace(
+                "记录会随讨论更新，也可自行修正；不代表已经掌握。",
+                "重温保留这份主题记录；结束后可继续原学习。",
+            )
+        button = f'<button class="button button-primary button-full" type="submit"{"" if learning and enabled and not pending else " disabled"}>{"继续重温教案" if review else "继续上次学习"}</button>'
         if enabled and learning:
             button = dialogue_form(
                 token,
@@ -479,6 +515,7 @@ def register_account_pages(
                 '<input type="hidden" name="message" value="">' + button,
                 study_id,
                 form_part,
+                review_guard,
             )
         else:
             button = button.replace('type="submit"', 'type="button"')
@@ -489,6 +526,7 @@ def register_account_pages(
                 '<input type="hidden" name="message" value=""><button class="button button-outline button-full" type="submit">把本次知识点整理成教案</button>',
                 study_id,
                 form_part,
+                review_guard,
             )
             if enabled and not pending and (view["turns"] or selected)
             else ""
@@ -528,7 +566,9 @@ def register_account_pages(
                 + ">讲解并提炼这段</button>"
             )
             study_action = (
-                dialogue_form(token, "study", study_button, study_id, form_part)
+                dialogue_form(
+                    token, "study", study_button, study_id, form_part, review_guard
+                )
                 if enabled
                 else '<button class="button button-primary button-full" type="button" disabled>讲解并提炼这段</button>'
             )
@@ -604,21 +644,56 @@ def register_account_pages(
             + "</section>"
         )
         review_content = (
-            '<div class="review-note"><p>正在重温教案</p><a class="text-link" href="/web/knowledge/'
+            '<div class="review-note" id="review-mode-end"><p>正在重温教案</p><a class="text-link" href="/web/knowledge/'
             + review["knowledge_id"]
             + '">'
             + escape(review["title"])
-            + "</a></div>"
+            + '</a><p>原主题的进度与书籍位置保留；结束重温后可继续。</p><form method="post" action="/web/review/end"><input type="hidden" name="knowledge_id" value="'
+            + review["knowledge_id"]
+            + '"><input type="hidden" name="revision" value="'
+            + str(review_guard["revision"])
+            + '"><input type="hidden" name="csrf" value="'
+            + library_csrf(
+                key,
+                token,
+                "end-review",
+                review["knowledge_id"] + "." + str(review_guard["revision"]),
+            )
+            + '"><button class="history-load" type="submit"'
+            + (" disabled" if pending else "")
+            + ">结束重温，继续主题学习</button></form></div>"
             if review
             else ""
         )
+        if review:
+            source_content = (
+                "<p>当前以《"
+                + escape(review["title"])
+                + "》的已保存正文重温；以下为整理时的引用快照。</p>"
+            )
+            source_content += "".join(
+                '<details class="citation"><summary>'
+                + escape(s["title"] + " · " + s["locator"])
+                + "</summary><p>"
+                + escape(s["excerpt"])
+                + "</p></details>"
+                for s in review["citations"]
+            )
+            if not review["citations"]:
+                source_content += (
+                    '<p class="source-empty">这份教案没有保留原书引用。</p>'
+                )
         panel = (
             '<section class="learning-status" aria-labelledby="learning-title"><p class="eyebrow">LEARNING COMPANION</p><h2 id="learning-title">当前学习主题</h2>'
             + details
             + button
             + '<a class="text-link study-directory-link" href="/web/studies">查看全部学习主题 →</a>'
             + '<p class="learning-return-note">临时聊别的，也会保留这里的学习位置。</p>'
-            + '<div class="learning-sources"><h3>正在引用的书籍资料</h3>'
+            + (
+                '<div class="learning-sources"><h3>教案整理时的引用</h3>'
+                if review
+                else '<div class="learning-sources"><h3>正在引用的书籍资料</h3>'
+            )
             + source_content
             + "</div>"
             + '<details class="workspace-help"><summary>对话记录与使用说明</summary><p>每批加载 40 轮（一问一答为一轮），上滑可继续加载更早记录。记录按账户保存在本机，不因超过 40 轮自动删除；实际容量取决于磁盘空间。每次可输入 2000 字。</p><p>学习进度由教练整理供你核对。教案先形成草稿，经你确认后保存到知识库。</p><p id="conversation-availability">'
@@ -631,8 +706,16 @@ def register_account_pages(
         assets_panel += review_content
         return body, panel, assets_panel
 
-    def dialogue_problem(message, code):
+    def dialogue_problem(message, code, *, input_text=None):
         body = f'<main id="main-content" class="verification-layout"><section class="verification-card"><h1>对话暂未完成</h1><p role="alert">{escape(message)}</p><a class="button button-primary" href="/web/welcome#conversation-input">返回对话</a></section></main>'
+        if input_text is not None:
+            body = body.replace(
+                "</section>",
+                '<label for="unsent-message">本次未发送文字（可复制）</label><textarea id="unsent-message" readonly rows="8">'
+                + escape(input_text[:2000])
+                + "</textarea></section>",
+                1,
+            )
         return HTMLResponse(
             _render_layout("对话提示 · 知行", body, signed_in=True),
             status_code=code,
@@ -640,7 +723,14 @@ def register_account_pages(
         )
 
     def perform_dialogue(
-        user_id, message, nonce, action, *, study_id=None, part_id=None
+        user_id,
+        message,
+        nonce,
+        action,
+        *,
+        study_id=None,
+        part_id=None,
+        review_guard=None,
     ):
         if not dialogue_slots.acquire(blocking=False):
             return "busy"
@@ -655,6 +745,7 @@ def register_account_pages(
                 materials=materials_repository,
                 study_id=study_id,
                 part_id=part_id,
+                review_guard=review_guard,
             )
         finally:
             dialogue_slots.release()
@@ -677,7 +768,7 @@ def register_account_pages(
             request,
             {"csrf", "nonce", "action", "message"},
             max_bytes=24576,
-            optional={"study_id", "part_id"},
+            optional={"study_id", "part_id", "review_id", "review_revision"},
         )
         if values is None:
             return dialogue_problem("消息格式无法读取，请返回对话重新填写。", 400)
@@ -698,12 +789,28 @@ def register_account_pages(
             )
         ):
             return dialogue_problem("页面无法核对，请返回对话后重新发送。", 403)
+        if (("review_id" in values) != ("review_revision" in values)) or (
+            "review_id" in values
+            and (
+                re.fullmatch(r"(?:[0-9a-f]{32})?", values["review_id"]) is None
+                or re.fullmatch(
+                    r"0|[1-9][0-9]{0,8}|1000000000", values["review_revision"]
+                )
+                is None
+            )
+        ):
+            return dialogue_problem("页面无法核对，请重新打开对话。", 403)
         token = request.cookies.get(SESSION_COOKIE)
         expected = signature(
             "dialogue",
             f"{token}.{values['nonce']}.{values['action']}"
             + ("." + values["study_id"] if values.get("study_id") else "")
-            + (".part:" + values["part_id"] if "part_id" in values else ""),
+            + (".part:" + values["part_id"] if "part_id" in values else "")
+            + (
+                ".review:" + values["review_id"] + ":" + values["review_revision"]
+                if "review_id" in values
+                else ""
+            ),
         )
         if not hmac.compare_digest(expected, values["csrf"]):
             return dialogue_problem("页面无法核对，请返回对话后重新发送。", 403)
@@ -725,6 +832,12 @@ def register_account_pages(
                 values["action"],
                 study_id=values.get("study_id") or None,
                 part_id=values.get("part_id"),
+                review_guard={
+                    "knowledge_id": values["review_id"],
+                    "revision": int(values["review_revision"]),
+                }
+                if "review_id" in values
+                else None,
             )
         except ValueError:
             return dialogue_problem(
@@ -737,6 +850,22 @@ def register_account_pages(
             )
         if outcome == "busy":
             return dialogue_problem("还有回复正在处理中，请稍后返回查看。", 409)
+        if outcome == "review_changed":
+            if request.headers.get("accept") == "application/json":
+                return JSONResponse(
+                    {
+                        "code": "review_state_changed",
+                        "sent": False,
+                        "error": "重温状态已在其他页面改变，本次未发送。输入仍保留，请复制后刷新对话，核对再发送。",
+                    },
+                    status_code=409,
+                    headers=_HEADERS,
+                )
+            return dialogue_problem(
+                "重温状态已在其他页面改变，本次未发送。请先复制尚未发送的文字，再重新打开对话核对。",
+                409,
+                input_text=values["message"],
+            )
         if outcome == "daily_limit":
             try:
                 snapshot = dialogue_repository.ai_usage(account.user_id)

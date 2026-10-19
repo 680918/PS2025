@@ -278,9 +278,9 @@ def test_export_includes_owned_actual_part_locator_and_old_database_still_works(
     archive.close()
 
 
-def test_reviewing_saved_lesson_clears_stale_part_but_preserves_other_topic_pin(setup):
+def test_reviewing_saved_lesson_preserves_original_and_other_topic_pins(setup):
     repo, materials, a, b = setup
-    first, _ = select(repo, materials, a)
+    first, part_a = select(repo, materials, a)
     second, part_b = select(repo, materials, b)
     repo.activate_topic("one", first)
     nonce = secrets.token_urlsafe(32)
@@ -300,5 +300,5 @@ def test_reviewing_saved_lesson_clears_stale_part_but_preserves_other_topic_pin(
     lesson = repo.list_knowledge("one", status="pending")[0]["knowledge_id"]
     repo.confirm_knowledge("one", lesson)
     repo.select_review("one", lesson, material_id=a)
-    assert repo.topic_part("one") is None
+    assert repo.topic_part("one")["chunk_id"] == part_a["chunk_id"]
     assert repo.topic_part("one", topic_id=second)["chunk_id"] == part_b["chunk_id"]

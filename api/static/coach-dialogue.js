@@ -155,17 +155,21 @@
                     window.location.assign("/web/login");
                     return;
                 }
-                if (response.status === 429 && (response.headers.get("content-type") || "").includes("application/json")) {
+                if ((response.status === 429 || response.status === 409) && (response.headers.get("content-type") || "").includes("application/json")) {
                     const rejection = await response.json();
-                    if (rejection.code === "daily_ai_limit" && rejection.sent === false && typeof rejection.error === "string" && rejection.error.length <= 400) {
+                    if (((response.status === 429 && rejection.code === "daily_ai_limit") || (response.status === 409 && rejection.code === "review_state_changed")) && rejection.sent === false && typeof rejection.error === "string" && rejection.error.length <= 400) {
                         if (optimistic) optimistic.remove();
                         history.removeAttribute("aria-busy");
                         waiting.className = "dialogue-message dialogue-coach dialogue-state";
                         waiting.textContent = rejection.error;
                         const usage = document.createElement("a");
                         usage.className = "text-link";
-                        usage.href = "/web/usage";
-                        usage.textContent = " 查看 AI 用量 →";
+                        usage.href = response.status === 409 ? "/web/welcome#coach-dialog" : "/web/usage";
+                        usage.textContent = response.status === 409 ? " 复制填写后刷新对话 →" : " 查看 AI 用量 →";
+                        if (response.status === 409) usage.addEventListener("click", event => {
+                            event.preventDefault();
+                            window.location.reload();
+                        });
                         waiting.append(usage);
                         if (input) input.readOnly = false;
                         for (const button of document.querySelectorAll('form[action="/web/coach/message"] button')) button.disabled = false;
@@ -190,6 +194,10 @@
                 link.className = "text-link";
                 link.href = "/web/welcome#coach-dialog";
                 link.textContent = " 刷新查看记录 →";
+                link.addEventListener("click", event => {
+                    event.preventDefault();
+                    window.location.reload();
+                });
                 waiting.append(link);
                 showBeginning(waiting);
             }

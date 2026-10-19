@@ -1703,6 +1703,37 @@ def register_library_pages(
         except sqlite3.Error:
             return problem("暂时无法更新资料选择。", 503)
 
+    @app.post("/web/review/end", include_in_schema=False)
+    async def end_review(request: Request):
+        account, denied = await run_in_threadpool(auth, request, write=True)
+        if denied is not None:
+            return denied
+        values = await fields(request, {"csrf", "knowledge_id", "revision"})
+        identity, version = (
+            (values.get("knowledge_id", ""), values.get("revision", ""))
+            if values
+            else ("", "")
+        )
+        if (
+            re.fullmatch(r"[a-f0-9]{32}", identity) is None
+            or re.fullmatch(r"0|[1-9][0-9]{0,8}|1000000000", version) is None
+            or not valid_csrf(request, values, "end-review", identity + "." + version)
+        ):
+            return problem("页面无法核对，请重新打开对话。", 403)
+        try:
+            result = await run_in_threadpool(
+                dialogue.end_review, account.user_id, identity, int(version)
+            )
+        except TopicBusy as error:
+            return problem(str(error), 409)
+        except sqlite3.Error:
+            return problem("暂时无法核对重温状态，请先回到对话查看。", 503)
+        if result != "ended":
+            return problem(
+                "重温状态已在其他页面改变，本次没有退出新的重温。请回到对话核对。", 409
+            )
+        return redirect("/web/welcome#coach-dialog")
+
     @app.get("/web/knowledge-favorites", include_in_schema=False)
     @app.get("/web/knowledge-removed", include_in_schema=False)
     @app.get("/web/knowledge", include_in_schema=False)

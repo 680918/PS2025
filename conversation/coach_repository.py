@@ -100,6 +100,9 @@ class CoachRepository:
                     PRIMARY KEY(user_id,knowledge_id)
                 );
                 CREATE TABLE IF NOT EXISTS coach_review (user_id TEXT PRIMARY KEY, knowledge_id TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS coach_review_versions (
+                    user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0)
+                );
                 CREATE TABLE IF NOT EXISTS coach_knowledge_versions (
                     user_id TEXT NOT NULL, knowledge_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0),
                     title TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL,
@@ -1007,6 +1010,8 @@ class CoachRepository:
         detached=False,
         unit_guard=None,
         ai_kind=None,
+        review_guard=None,
+        end_review=False,
     ):
         if ai_kind not in {None, "dialogue", "unit_lesson"}:
             raise ValueError("invalid AI request kind")
@@ -1019,6 +1024,11 @@ class CoachRepository:
             ).fetchone()
             if existing:
                 return "duplicate"
+            if (
+                review_guard is not None
+                and self._review_state(connection, user_id) != review_guard
+            ):
+                return "review_changed"
             if connection.execute(
                 "SELECT 1 FROM coach_turns WHERE user_id=? AND status='pending'",
                 (user_id,),
@@ -1045,6 +1055,10 @@ class CoachRepository:
             usage = budget(connection, user_id, now) if ai_kind else None
             if usage and usage["reason"]:
                 return "daily_limit"
+            if end_review:
+                connection.execute(
+                    "DELETE FROM coach_review WHERE user_id=?", (user_id,)
+                )
             if study_id is not None:
                 self._activate_topic(connection, user_id, study_id)
             if part_id is not None:
@@ -1604,13 +1618,6 @@ class CoachRepository:
             return "updated"
 
     def select_review(self, user_id, knowledge_id=None, *, material_id=None):
-        lesson = (
-            self.knowledge(user_id, knowledge_id, saved_only=True)
-            if knowledge_id
-            else None
-        )
-        if knowledge_id is not None and lesson is None:
-            raise ValueError("saved lesson unavailable")
         with closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             now = int(time())
@@ -1618,25 +1625,71 @@ class CoachRepository:
             if knowledge_id is None:
                 db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
             else:
-                topic_id = self._store_topic(
-                    db,
-                    user_id,
-                    {
-                        "topic": lesson["topic"],
-                        "progress": "已打开教案《" + lesson["title"] + "》，准备重温。",
-                        "next_step": "从教案的核心知识点开始，结合具体例子回顾。",
-                    },
-                    now,
-                    material_id,
-                )
+                lesson = db.execute(
+                    "SELECT title,topic FROM coach_knowledge WHERE user_id=? AND knowledge_id=? AND status='saved'",
+                    (user_id, knowledge_id),
+                ).fetchone()
+                if lesson is None:
+                    raise ValueError("saved lesson unavailable")
+                target = db.execute(
+                    "SELECT topic_id FROM coach_topics WHERE user_id=? AND topic_key=?",
+                    (user_id, topic_key(lesson["topic"])),
+                ).fetchone()
+                if target:
+                    self._activate_topic(db, user_id, target[0])
+                else:
+                    self._store_topic(
+                        db,
+                        user_id,
+                        {
+                            "topic": lesson["topic"],
+                            "progress": "已打开教案《"
+                            + lesson["title"]
+                            + "》，准备重温。",
+                            "next_step": "从教案的核心知识点开始，结合具体例子回顾。",
+                        },
+                        now,
+                        material_id,
+                    )
                 db.execute(
-                    "DELETE FROM coach_topic_parts WHERE user_id=? AND topic_id=?",
-                    (user_id, topic_id),
+                    "INSERT INTO coach_review_versions(user_id,revision) VALUES(?,1) ON CONFLICT(user_id) DO UPDATE SET revision=revision+1",
+                    (user_id,),
                 )
                 db.execute(
                     "INSERT INTO coach_review VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET knowledge_id=excluded.knowledge_id",
                     (user_id, knowledge_id),
                 )
+
+    @staticmethod
+    def _review_state(db, user_id):
+        row = db.execute(
+            "SELECT (SELECT knowledge_id FROM coach_review WHERE user_id=?) AS knowledge_id,COALESCE((SELECT revision FROM coach_review_versions WHERE user_id=?),0) AS revision",
+            (user_id, user_id),
+        ).fetchone()
+        return {"knowledge_id": row["knowledge_id"] or "", "revision": row["revision"]}
+
+    def review_state(self, user_id):
+        with closing(self._connect()) as db:
+            return self._review_state(db, user_id)
+
+    def end_review(self, user_id, knowledge_id, revision):
+        if (
+            not isinstance(knowledge_id, str)
+            or re.fullmatch(r"[a-f0-9]{32}", knowledge_id) is None
+            or type(revision) is not int
+            or not 0 <= revision <= 1000000000
+        ):
+            raise ValueError("invalid review state")
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            if self._review_state(db, user_id) != {
+                "knowledge_id": knowledge_id,
+                "revision": revision,
+            }:
+                return "conflict"
+            self._require_idle(db, user_id, int(time()))
+            db.execute("DELETE FROM coach_review WHERE user_id=?", (user_id,))
+        return "ended"
 
     def review(self, user_id):
         with closing(self._connect()) as db:
