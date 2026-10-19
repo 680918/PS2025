@@ -36,6 +36,7 @@ from coach.book_study import study_directory, unit_chunks
 from coach.unit_lessons import unit_lesson_plan, send_unit_lesson, unit_scope_text
 from coach.knowledge_search import search_query, literal_ranges, match_contexts
 from coach.ai_usage import usage_message
+from coach.draft_edit import draft_version
 import json
 from uuid import uuid4
 from coach.learning_topics import (
@@ -1808,6 +1809,74 @@ def register_library_pages(
             + "</nav>",
         )
 
+    def draft_controls(request, item, *, values=None, message="", can_write=True):
+        values = {**item, **(values or {})}
+        can_write = can_write and item["status"] == "pending"
+        identity, version = item["knowledge_id"], draft_version(item)
+        body = (
+            '<p class="library-intro">这是待确认草稿。可以先暂存修改，下次继续整理；只有点击“确认保存到知识库”才正式收入知识库。</p>'
+            if can_write
+            else '<p class="library-intro">本页内容的状态已改变，请先查看当前教案或草稿目录。下面保留本次填写，供你复制。</p>'
+        )
+        if message:
+            body += (
+                '<p class="form-error-summary" role="alert">' + escape(message) + "</p>"
+            )
+            body += (
+                '<details class="lesson-current-comparison"><summary>查看当前内容，核对后再决定</summary><h2>'
+                + escape(item["title"])
+                + '</h2><article class="lesson-document markdown-content">'
+                + lesson_html(item["content"])
+                + "</article></details>"
+            )
+        if not can_write:
+            return (
+                body
+                + '<p class="library-intro">这份草稿已被另一页面处理，本次填写没有覆盖它。需要的内容可以从下面复制，再打开当前教案或草稿目录核对。</p><label for="draft-copy-title">本次标题</label><input id="draft-copy-title" readonly value="'
+                + escape(values.get("title", item["title"]), quote=True)
+                + '"><label for="draft-copy-content">本次正文</label><textarea id="draft-copy-content" readonly rows="18">'
+                + escape(values.get("content", item["content"]))
+                + '</textarea><div class="library-actions"><a class="button button-outline" href="/web/knowledge/'
+                + identity
+                + '">查看当前教案</a><a class="text-link" href="/web/knowledge?status=pending">返回草稿目录</a></div>'
+            )
+        body += (
+            '<article class="lesson-document markdown-content">'
+            + lesson_html(item["content"])
+            + "</article>"
+        )
+        body += (
+            '<form class="draft-editor" method="post" action="/web/knowledge/'
+            + identity
+            + '/save">'
+        )
+        body += input_csrf(request, "draft-content", identity + "." + version)
+        body += '<input type="hidden" name="version" value="' + version + '">'
+        body += (
+            '<details class="lesson-edit"'
+            + (" open" if message else "")
+            + '><summary>修改草稿标题和正文</summary><label for="lesson-title">教案标题</label><input id="lesson-title" name="title" maxlength="120" required value="'
+            + escape(values["title"], quote=True)
+            + '"><label for="lesson-content">教案正文（可以修改）</label><textarea id="lesson-content" name="content" rows="22" maxlength="12000" required>'
+            + escape(values["content"])
+            + "</textarea></details>"
+        )
+        body += (
+            '<p class="lesson-revision-note">暂存只保留当前草稿内容，不创建已保存教案的版本记录。未点击暂存或确认的填写不会自动保存。修改和暂存不调用 AI。</p><div class="library-actions"><button class="button button-outline" type="submit" formaction="/web/knowledge/'
+            + identity
+            + '/draft">暂存草稿，稍后继续</button><button class="button button-primary" type="submit">确认保存到知识库</button></div></form>'
+        )
+        body += (
+            '<form method="post" action="/web/knowledge/'
+            + identity
+            + '/dismiss">'
+            + input_csrf(request, "draft-dismiss", identity + "." + version)
+            + '<input type="hidden" name="version" value="'
+            + version
+            + '"><button class="button button-outline" type="submit">移出草稿目录</button></form><p class="lesson-revision-note">移出后不再显示在草稿目录；想下次继续整理，请使用“暂存草稿”。</p>'
+        )
+        return body
+
     @app.get("/web/knowledge/{identity}", include_in_schema=False)
     def knowledge_preview(request: Request, identity: str):
         account, denied = auth(request)
@@ -1881,25 +1950,10 @@ def register_library_pages(
             matching += "</section>"
         if item["status"] == "pending":
             controls = (
-                '<p class="library-intro">这是待确认草稿，尚未进入已保存知识库。可以修改后确认，也可以暂不保存。</p><article class="lesson-document markdown-content">'
-                + lesson_html(item["content"])
-                + '</article><form method="post" action="/web/knowledge/'
-                + identity
-                + '/save">'
-                + input_csrf(request, "save", identity)
-                + '<details class="lesson-edit"><summary>修改草稿标题和正文</summary><label for="lesson-title">教案标题</label><input id="lesson-title" name="title" maxlength="120" required value="'
-                + escape(item["title"], quote=True)
-                + '"><label for="lesson-content">教案正文（可以修改）</label><textarea id="lesson-content" name="content" rows="22" maxlength="12000" required>'
-                + escape(item["content"])
-                + '</textarea></details><button class="button button-primary" type="submit">确认保存到知识库</button></form>'
-                + action(
-                    request,
-                    f"/web/knowledge/{identity}/dismiss",
-                    "dismiss",
-                    identity,
-                    "暂不保存这份草稿",
-                )
-            )
+                '<p class="lesson-version-notice" role="status">草稿已暂存，尚未确认收入知识库。下次打开可以继续整理。</p>'
+                if request.query_params.get("notice") == "draft-staged"
+                else ""
+            ) + draft_controls(request, item)
         else:
             controls = (
                 '<p class="library-intro">已由你确认保存。当前为第 '
@@ -2272,10 +2326,12 @@ def register_library_pages(
         account, denied = await run_in_threadpool(auth, request, write=True)
         if denied is not None:
             return denied
-        if operation not in {"save", "dismiss", "review", "revise", "restore"}:
+        if operation not in {"draft", "save", "dismiss", "review", "revise", "restore"}:
             return problem("找不到这项操作。", 404)
         if operation in {"revise", "restore"}:
             return await revision_action(request, account.user_id, identity, operation)
+        if operation in {"draft", "save", "dismiss"}:
+            return await draft_action(request, account.user_id, identity, operation)
         values = await fields(
             request, {"csrf", "title", "content"} if operation == "save" else {"csrf"}
         )
@@ -2300,25 +2356,89 @@ def register_library_pages(
                     material_id=source or "",
                 )
                 return redirect("/web/welcome#coach-dialog")
-            await run_in_threadpool(
-                dialogue.confirm_knowledge,
-                account.user_id,
-                identity,
-                save=operation == "save",
-                title=values.get("title"),
-                content=values.get("content"),
-            )
-            return redirect(
-                "/web/knowledge/" + identity
-                if operation == "save"
-                else "/web/knowledge?status=pending"
-            )
         except TopicBusy as error:
             return problem(str(error), 409)
         except ValueError:
             return problem("请检查标题和正文长度，或确认教案已经保存。")
         except sqlite3.Error:
             return problem("教案暂时无法保存，请稍后重试。", 503)
+
+    async def draft_action(request, user_id, identity, operation):
+        values = await fields(
+            request,
+            {"csrf", "version"}
+            if operation == "dismiss"
+            else {"csrf", "version", "title", "content"},
+        )
+        version = values.get("version", "") if values else ""
+        purpose = "draft-dismiss" if operation == "dismiss" else "draft-content"
+        if re.fullmatch(r"[a-f0-9]{64}", version) is None or not valid_csrf(
+            request, values, purpose, identity + "." + version
+        ):
+            return problem("页面无法核对，请重新打开教案。", 403)
+        try:
+            item = await run_in_threadpool(dialogue.knowledge, user_id, identity)
+        except sqlite3.Error:
+            return problem("暂时无法读取草稿，请稍后重试。", 503)
+        if item is None:
+            return problem("找不到这份教案。", 404)
+        try:
+            result = await run_in_threadpool(
+                dialogue.change_draft,
+                user_id,
+                identity,
+                "stage" if operation == "draft" else operation,
+                version,
+                title=values.get("title"),
+                content=values.get("content"),
+            )
+        except ValueError as error:
+            return page(
+                "草稿暂未保存",
+                draft_controls(request, item, values=values, message=str(error)),
+                code=400,
+            )
+        except sqlite3.Error:
+            return page(
+                "草稿结果暂无法核对",
+                draft_controls(
+                    request,
+                    item,
+                    values=values,
+                    message="暂时无法核对保存结果。填写保留在下面，请先查看当前教案再决定是否重试。",
+                ),
+                code=503,
+            )
+        if result in {"conflict", "saved", "missing"}:
+            current = None
+            try:
+                current = await run_in_threadpool(dialogue.knowledge, user_id, identity)
+            except sqlite3.Error:
+                pass
+            # Never replace a confirmed lesson with an old pending editor.
+            can_write = (
+                result == "conflict"
+                and current is not None
+                and current["status"] == "pending"
+            )
+            return page(
+                "请核对草稿",
+                draft_controls(
+                    request,
+                    current or item,
+                    values=values,
+                    message="草稿已在其他页面更新或处理，请核对当前内容；本次填写仍保留。",
+                    can_write=can_write,
+                ),
+                code=409,
+            )
+        if operation == "dismiss":
+            return redirect("/web/knowledge?status=pending")
+        return redirect(
+            "/web/knowledge/"
+            + identity
+            + ("?notice=draft-staged" if operation == "draft" else "")
+        )
 
     @app.get("/web/knowledge/{identity}/download", include_in_schema=False)
     def download(request: Request, identity: str):

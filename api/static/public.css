@@ -246,6 +246,8 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .lesson-document pre { white-space: pre-wrap; padding: 14px; background: var(--tint); border-radius: 8px; }
 .lesson-edit { margin: 24px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); }
 .lesson-edit summary { cursor: pointer; color: var(--green); font-size: 13px; }
+.draft-editor input, .draft-editor textarea { box-sizing: border-box; }
+.draft-editor .library-actions { margin-bottom: 18px; }
 @media (max-width: 720px) {
     .library-list, .library-add-grid { grid-template-columns: 1fr; }
     .library-item, .library-card { padding: 18px; }

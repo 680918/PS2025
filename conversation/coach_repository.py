@@ -25,6 +25,7 @@ from coach.learning_topics import (
 )
 from coach.knowledge_search import search_query, lesson_match, match_contexts
 from coach.ai_usage import USAGE_SCHEMA, budget
+from coach.draft_edit import draft_version, draft_text
 
 
 PENDING_LIFETIME = 180
@@ -1221,6 +1222,56 @@ class CoachRepository:
                 )
             result.append(item)
         return result
+
+    def change_draft(
+        self,
+        user_id,
+        knowledge_id,
+        operation,
+        expected_version,
+        *,
+        title=None,
+        content=None,
+    ):
+        """Stage, confirm or dismiss an owned pending draft in one transaction."""
+        if (
+            operation not in {"stage", "save", "dismiss"}
+            or not isinstance(expected_version, str)
+            or re.fullmatch(r"[a-f0-9]{64}", expected_version) is None
+        ):
+            raise ValueError("草稿操作或版本无法核对。")
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT * FROM coach_knowledge WHERE user_id=? AND knowledge_id=?",
+                (user_id, knowledge_id),
+            ).fetchone()
+            if row is None or row["status"] == "dismissed":
+                return "missing"
+            if row["status"] != "pending":
+                return "saved"
+            if draft_version(row) != expected_version:
+                return "conflict"
+            if operation == "dismiss":
+                db.execute(
+                    "UPDATE coach_knowledge SET status='dismissed' WHERE user_id=? AND knowledge_id=? AND status='pending'",
+                    (user_id, knowledge_id),
+                )
+                return "dismissed"
+            title, content = draft_text(title, content)
+            if operation == "stage":
+                if (title, content) == (row["title"], row["content"]):
+                    return "unchanged"
+                db.execute(
+                    "UPDATE coach_knowledge SET title=?,content=? WHERE user_id=? AND knowledge_id=? AND status='pending'",
+                    (title, content, user_id, knowledge_id),
+                )
+                return "staged"
+            db.execute(
+                "UPDATE coach_knowledge SET title=?,content=?,status='saved',saved_at=? WHERE user_id=? AND knowledge_id=? AND status='pending'",
+                (title, content, int(time()), user_id, knowledge_id),
+            )
+        return "saved_now"
 
     def confirm_knowledge(
         self, user_id, knowledge_id, *, save=True, title=None, content=None
