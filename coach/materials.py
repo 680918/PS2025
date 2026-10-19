@@ -27,6 +27,37 @@ class MaterialError(ValueError):
     pass
 
 
+def original_download_name(title, kind):
+    """A portable attachment name, never a filesystem path or MIME decision."""
+    extension = {"pdf": ".pdf", "txt": ".txt", "md": ".md", "paste": ".txt"}.get(kind)
+    if extension is None:
+        raise MaterialError("这份原件类型暂不支持取回。")
+    title = title if isinstance(title, str) else ""
+    stem = "".join(
+        "_"
+        if char in '<>:"/\\|?*' or unicodedata.category(char) in {"Cc", "Cs", "Cf"}
+        else char
+        for char in title
+    ).strip(" .")
+    if stem.lower().endswith(extension):
+        stem = stem[: -len(extension)].strip(" .")
+    stem = stem[:80].rstrip(" .") or "资料"
+    reserved = {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+    if (
+        unicodedata.normalize("NFKC", stem.split(".")[0]).upper().rstrip(" .")
+        in reserved
+    ):
+        stem = "资料-" + stem
+    return stem + extension
+
+
 def parse_material(filename, raw, *, pasted=False):
     if not isinstance(raw, bytes) or not 1 <= len(raw) <= MAX_FILE_BYTES:
         raise MaterialError("文件不能为空，单份资料最多 10 MB。")
@@ -214,6 +245,29 @@ class MaterialRepository:
             (item for item in self.list(user_id) if item["material_id"] == material_id),
             None,
         )
+
+    def original(self, user_id, material_id):
+        """Read one owned, bounded original and verify its stored fingerprint."""
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT title,kind,digest,CASE WHEN typeof(raw)='blob' AND length(raw) BETWEEN 1 AND ? THEN raw END AS content FROM materials WHERE user_id=? AND material_id=?",
+                (MAX_FILE_BYTES, user_id, material_id),
+            ).fetchone()
+        if row is None:
+            return None
+        content = row["content"]
+        if content is None:
+            raise MaterialError("原文件暂时无法完整读取。")
+        verified = False
+        for prefix in (b"file\0", b"paste\0"):
+            digest = hashlib.sha256(prefix)
+            digest.update(content)
+            if digest.hexdigest() == row["digest"]:
+                verified = True
+                break
+        if not verified:
+            raise MaterialError("原文件校验未通过，请先核对备份。")
+        return {"title": row["title"], "kind": row["kind"], "content": content}
 
     def rename(self, user_id, material_id, title, *, expected_title):
         """Update only an owned title; False means a stale editor must be reviewed."""

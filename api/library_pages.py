@@ -31,6 +31,7 @@ from coach.materials import (
     MAX_FILE_BYTES,
     MAX_MATERIALS,
     MAX_LIBRARY_BYTES,
+    original_download_name,
 )
 from coach.book_study import study_directory, unit_chunks
 from coach.unit_lessons import unit_lesson_plan, send_unit_lesson, unit_scope_text
@@ -131,6 +132,7 @@ def register_library_pages(
     upload_slots = BoundedSemaphore(2)
     export_slots = BoundedSemaphore(2)
     export_limit = RegistrationRateLimiter(per_client_limit=2, total_limit=10)
+    original_limit = RegistrationRateLimiter(per_client_limit=6, total_limit=60)
 
     def page(title, content, *, code=200, interactive=False):
         body = (
@@ -429,6 +431,70 @@ def register_library_pages(
             background=BackgroundTask(cleanup),
         )
 
+    @app.get("/web/materials/{identity}/original", include_in_schema=False)
+    async def material_original(request: Request, identity: str):
+        account, denied = await run_in_threadpool(auth, request)
+        if denied is not None:
+            return denied
+        if not origin_ok(request):
+            return problem("无法核对请求来源，请从资料页面取回原件。", 403)
+        if re.fullmatch(r"[a-f0-9]{32}", identity) is None:
+            return problem("找不到这份本人资料。", 404)
+        if request.query_params:
+            return problem("原件下载不接受额外参数，请从资料页面重新打开。")
+        wait = original_limit.admit(account.user_id)
+        if wait:
+            result = problem("原件下载较频繁，请稍后再试。", 429)
+            result.headers["Retry-After"] = str(wait)
+            return result
+        if not export_slots.acquire(blocking=False):
+            return problem("已有资料正在准备，请稍后再试。", 503)
+        cleanup_lock = Lock()
+        cleaned = False
+
+        def cleanup():
+            nonlocal cleaned
+            with cleanup_lock:
+                if not cleaned:
+                    cleaned = True
+                    export_slots.release()
+
+        try:
+            item = await run_in_threadpool(
+                materials.original, account.user_id, identity
+            )
+            if item is None:
+                cleanup()
+                return problem("找不到这份本人资料。", 404)
+            name = original_download_name(item["title"], item["kind"])
+            extension = name[name.rfind(".") :]
+        except (sqlite3.Error, MaterialError):
+            cleanup()
+            return problem("原件暂时无法取回，请稍后重试或核对备份。", 503)
+        except BaseException:
+            cleanup()
+            raise
+
+        def stream():
+            try:
+                content = item["content"]
+                for start in range(0, len(content), 65536):
+                    yield content[start : start + 65536]
+            finally:
+                cleanup()
+
+        return StreamingResponse(
+            stream(),
+            media_type="application/octet-stream",
+            headers={
+                **HEADERS,
+                "Content-Length": str(len(item["content"])),
+                "Content-Disposition": f"attachment; filename=\"material-{identity}{extension}\"; filename*=UTF-8''"
+                + quote(name, safe=""),
+            },
+            background=BackgroundTask(cleanup),
+        )
+
     def material_find_values(request, *, preview=False):
         names = (
             ("find", "find_material", "find_page")
@@ -650,6 +716,7 @@ def register_library_pages(
                 + "<p>"
                 + escape(item["filename"])
                 + f' · {item["char_count"]} 字 · {size_text(item["raw_bytes"])}</p><div class="library-actions"><a class="text-link" href="/web/materials/{identity}">预览文字</a><a class="text-link" href="/web/materials/{identity}/plan">学习目录</a>'
+                + f'<a class="text-link" href="/web/materials/{identity}/original">下载原件</a>'
                 + '<a class="text-link" href="'
                 + escape(f"/web/materials/{identity}/edit" + edit_query, quote=True)
                 + '">修改名称</a>'
@@ -1019,7 +1086,9 @@ def register_library_pages(
                 + identity
                 + '/plan/new">添加学习单元</a><a class="text-link" href="/web/materials/'
                 + identity
-                + '">查看原文与定位 →</a></div></section>'
+                + '">查看原文与定位 →</a><a class="text-link" href="/web/materials/'
+                + identity
+                + '/original">下载原件</a></div></section>'
             )
             if item["kind"] == "pdf" and item["readable_pages"] < item["page_count"]:
                 body += '<p class="lesson-revision-note">部分 PDF 页没有可提取文字，进度仅涵盖可读片段；这不代表整本书已被完整处理。</p>'
@@ -1622,6 +1691,9 @@ def register_library_pages(
                 + escape(chunk["locator"])
                 + f" · 共 {len(chunks)} 个片段</p>"
                 + note
+                + '<div class="library-actions"><a class="button button-outline" href="/web/materials/'
+                + identity
+                + '/original">下载原件</a><span class="lesson-revision-note">取回当初保存的完整原文件；不调用 AI。</span></div>'
                 + '<p><a class="text-link" href="/web/materials/'
                 + identity
                 + '/plan">书籍学习目录与进度 →</a> · <a class="text-link" href="/web/materials/'
