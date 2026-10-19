@@ -122,9 +122,11 @@
             // Stay on this page while awaiting the one request, so waiting is visible.
             const fields = new URLSearchParams(new FormData(form));
             const input = form.querySelector('textarea[name="message"]');
+            let optimistic = null;
             if (input) {
                 input.readOnly = true;
-                messages.append(message("user", input.value));
+                optimistic = message("user", input.value);
+                messages.append(optimistic);
             }
             for (const button of document.querySelectorAll('form[action="/web/coach/message"] button')) {
                 button.disabled = true;
@@ -152,6 +154,26 @@
                 if (response.redirected && new URL(response.url).pathname === "/web/login") {
                     window.location.assign("/web/login");
                     return;
+                }
+                if (response.status === 429 && (response.headers.get("content-type") || "").includes("application/json")) {
+                    const rejection = await response.json();
+                    if (rejection.code === "daily_ai_limit" && rejection.sent === false && typeof rejection.error === "string" && rejection.error.length <= 400) {
+                        if (optimistic) optimistic.remove();
+                        history.removeAttribute("aria-busy");
+                        waiting.className = "dialogue-message dialogue-coach dialogue-state";
+                        waiting.textContent = rejection.error;
+                        const usage = document.createElement("a");
+                        usage.className = "text-link";
+                        usage.href = "/web/usage";
+                        usage.textContent = " 查看 AI 用量 →";
+                        waiting.append(usage);
+                        if (input) input.readOnly = false;
+                        for (const button of document.querySelectorAll('form[action="/web/coach/message"] button')) button.disabled = false;
+                        sending = false;
+                        showBeginning(waiting);
+                        return;
+                    }
+                    throw new Error("request not completed");
                 }
                 if (!response.ok) throw new Error("request not completed");
                 const result = await response.json();

@@ -21,6 +21,8 @@ from api.coach_markdown import coach_markdown
 from api.memory_pages import register_memory_pages
 from api.study_pages import register_study_pages
 from api.conversation_pages import register_conversation_pages
+from api.usage_pages import register_usage_pages
+from coach.ai_usage import usage_message
 from coach.book_study import study_directory
 from coach.learning_topics import discussion_material, discussion_part
 from api.public_pages import _render_layout
@@ -121,6 +123,7 @@ def register_account_pages(
         )
 
     if dialogue_repository is not None:
+        register_usage_pages(app, repository, dialogue_repository)
         register_conversation_pages(app, repository, dialogue_repository, csrf_key=key)
         register_booklet_pages(app, repository, dialogue_repository, csrf_key=key)
         register_memory_pages(app, repository, dialogue_repository, csrf_key=key)
@@ -730,6 +733,21 @@ def register_account_pages(
             )
         if outcome == "busy":
             return dialogue_problem("还有回复正在处理中，请稍后返回查看。", 409)
+        if outcome == "daily_limit":
+            try:
+                snapshot = dialogue_repository.ai_usage(account.user_id)
+            except sqlite3.Error:
+                return dialogue_problem(
+                    "本次尚未受理，暂时无法核对每日用量，请稍后查看。", 503
+                )
+            text = usage_message(snapshot)
+            if request.headers.get("accept") == "application/json":
+                return JSONResponse(
+                    {"code": "daily_ai_limit", "sent": False, "error": text},
+                    status_code=429,
+                    headers=_HEADERS,
+                )
+            return dialogue_problem(text, 429)
         if request.headers.get("accept") == "application/json":
             return JSONResponse(
                 {"redirect": "/web/welcome#coach-dialog"}, headers=_HEADERS

@@ -18,6 +18,7 @@ from coach.learning_memory import MAX_MEMORIES, validate_memory
 from time import time
 from coach.learning_topics import topic_key, validate_topic_title, TopicBusy
 from coach.knowledge_search import search_query, lesson_match, match_contexts
+from coach.ai_usage import USAGE_SCHEMA, budget
 
 
 PENDING_LIFETIME = 180
@@ -133,6 +134,7 @@ class CoachRepository:
                     UNIQUE(user_id,content)
                 );
             """)
+            connection.executescript(USAGE_SCHEMA)
             if "citations_json" not in {
                 row[1] for row in connection.execute("PRAGMA table_info(coach_turns)")
             }:
@@ -929,7 +931,10 @@ class CoachRepository:
         part_material_id=None,
         detached=False,
         unit_guard=None,
+        ai_kind=None,
     ):
+        if ai_kind not in {None, "dialogue", "unit_lesson"}:
+            raise ValueError("invalid AI request kind")
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             self._expire(connection, user_id, now)
@@ -962,6 +967,9 @@ class CoachRepository:
                     or covered != unit_guard["coverage_ids"]
                 ):
                     raise ValueError("单元或讲解记录已变化，请重新核对整理范围。")
+            usage = budget(connection, user_id, now) if ai_kind else None
+            if usage and usage["reason"]:
+                return "daily_limit"
             if study_id is not None:
                 self._activate_topic(connection, user_id, study_id)
             if part_id is not None:
@@ -997,7 +1005,26 @@ class CoachRepository:
                     "INSERT INTO coach_turn_topics SELECT turn.turn_id,turn.user_id,active.topic_id FROM coach_turns AS turn JOIN coach_active_topic AS active ON active.user_id=turn.user_id WHERE turn.user_id=? AND turn.nonce=?",
                     (user_id, nonce),
                 )
+            if ai_kind:
+                connection.execute(
+                    "INSERT INTO coach_ai_usage(user_id,nonce,day,kind,started_at) VALUES(?,?,?,?,?)",
+                    (user_id, nonce, usage["day"], ai_kind, now),
+                )
         return "claimed"
+
+    def ai_usage(self, user_id, *, now=None):
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN")
+            snapshot = budget(db, user_id, now)
+            rows = [
+                dict(row)
+                for row in db.execute(
+                    "SELECT day,kind,COUNT(*) AS count FROM coach_ai_usage WHERE user_id=? AND day>=date(?,'-6 days') AND day<=? GROUP BY day,kind ORDER BY day DESC,kind",
+                    (user_id, snapshot["day"], snapshot["day"]),
+                )
+            ]
+        return {**snapshot, "recent": rows}
 
     def finish(
         self,

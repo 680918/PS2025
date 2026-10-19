@@ -30,6 +30,7 @@ from coach.materials import MaterialError, MAX_FILE_BYTES
 from coach.book_study import study_directory, unit_chunks
 from coach.unit_lessons import unit_lesson_plan, send_unit_lesson, unit_scope_text
 from coach.knowledge_search import search_query, literal_ranges, match_contexts
+from coach.ai_usage import usage_message
 import json
 from uuid import uuid4
 from coach.learning_topics import (
@@ -1091,6 +1092,18 @@ def register_library_pages(
             )
             if outcome == "busy":
                 return problem("教练还有回复未完成，请等本轮结束后再整理。", 409)
+            if outcome == "daily_limit":
+                return page(
+                    "今天先把已有内容读扎实",
+                    '<p role="alert">'
+                    + escape(usage_message(dialogue.ai_usage(account.user_id)))
+                    + '</p><a class="button button-outline" href="/web/materials/'
+                    + identity
+                    + "/plan/"
+                    + unit_id
+                    + '/lessons">返回单元整理</a><a class="text-link" href="/web/usage">查看 AI 用量 →</a>',
+                    code=429,
+                )
             result = dialogue.unit_lesson_result(account.user_id, values["nonce"])
             if result:
                 return redirect("/web/knowledge/" + result)

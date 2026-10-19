@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from api.library_pages import HEADERS, library_csrf
 from api.public_pages import _render_layout
 from coach.learning_topics import TopicBusy, validate_topic_title, discussion_part
+from coach.ai_usage import usage_message
 from security.login_sessions import signed_in_account
 from security.registration_rate_limit import RegistrationRateLimiter
 
@@ -325,6 +326,10 @@ def register_study_pages(
                 )
                 if outcome == "busy":
                     return problem("教练还在回复，请稍后再继续。", 409)
+                if outcome == "daily_limit":
+                    return problem(
+                        usage_message(dialogue.ai_usage(account.user_id)), 429
+                    )
         except TopicBusy as error:
             return problem(str(error), 409)
         except ValueError:

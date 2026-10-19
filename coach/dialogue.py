@@ -124,6 +124,7 @@ def send_dialogue(
     if not isinstance(text, str) or not 1 <= len(text.strip()) <= 2000:
         raise ValueError("invalid message")
     text = text.strip()
+    requested_memory = memory_request(text) if action == "message" else None
     claimed = repository.claim(
         user_id,
         nonce,
@@ -132,11 +133,11 @@ def send_dialogue(
         study_id=study_id,
         part_id=part_id,
         part_material_id=part_material_id,
+        ai_kind=None if requested_memory is not None else "dialogue",
     )
     if claimed != "claimed":
         return claimed
     try:
-        requested_memory = memory_request(text) if action == "message" else None
         if requested_memory is not None:
             try:
                 content = validate_memory(requested_memory)

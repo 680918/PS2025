@@ -151,7 +151,13 @@ def send_unit_lesson(
         + " 批整理为可重温的教案草稿，先由我确认保存。"
     )
     claimed = repository.claim(
-        user_id, nonce, message, now=clock(), detached=True, unit_guard=plan["guard"]
+        user_id,
+        nonce,
+        message,
+        now=clock(),
+        detached=True,
+        unit_guard=plan["guard"],
+        ai_kind="unit_lesson",
     )
     if claimed != "claimed":
         return claimed
