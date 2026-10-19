@@ -214,7 +214,9 @@ def register_study_pages(
                 + identity
                 + '/open">'
                 + hidden(request, "open", identity)
-                + '<button class="button button-outline" type="submit">只切换主题</button></form></div></article>'
+                + '<button class="button button-outline" type="submit">只切换主题</button></form><a class="text-link" href="/web/conversations?topic='
+                + identity
+                + '">回看主题对话</a></div></article>'
             )
         body += '</div><nav class="library-paging" aria-label="主题目录分页">'
         base = "/web/studies?q=" + quote(query, safe="") + "&amp;page="

@@ -20,6 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from api.coach_markdown import coach_markdown
 from api.memory_pages import register_memory_pages
 from api.study_pages import register_study_pages
+from api.conversation_pages import register_conversation_pages
 from coach.book_study import study_directory
 from coach.learning_topics import discussion_material, discussion_part
 from api.public_pages import _render_layout
@@ -120,6 +121,7 @@ def register_account_pages(
         )
 
     if dialogue_repository is not None:
+        register_conversation_pages(app, repository, dialogue_repository, csrf_key=key)
         register_booklet_pages(app, repository, dialogue_repository, csrf_key=key)
         register_memory_pages(app, repository, dialogue_repository, csrf_key=key)
         register_study_pages(

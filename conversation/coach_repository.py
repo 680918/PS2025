@@ -17,11 +17,32 @@ from pathlib import Path
 from coach.learning_memory import MAX_MEMORIES, validate_memory
 from time import time
 from coach.learning_topics import topic_key, validate_topic_title, TopicBusy
-from coach.knowledge_search import search_query, lesson_match
+from coach.knowledge_search import search_query, lesson_match, match_contexts
 
 
 PENDING_LIFETIME = 180
 HISTORY_PAGE_SIZE = 40
+
+_REVIEW_FROM = (
+    " FROM coach_turns AS turn "
+    "LEFT JOIN coach_turn_topics AS tag ON tag.turn_id=turn.turn_id AND tag.user_id=turn.user_id "
+    "LEFT JOIN coach_topics AS topic ON topic.topic_id=tag.topic_id AND topic.user_id=turn.user_id "
+)
+_REVIEW_FIELDS = (
+    "turn.turn_id,turn.user_content,turn.assistant_content,turn.status,turn.created_at,"
+    "topic.topic_id,topic.title AS topic_title"
+)
+
+
+def _review_scope(topic_id):
+    if not isinstance(topic_id, str) or (
+        topic_id not in {"", "unfiled"}
+        and re.fullmatch(r"[a-f0-9]{32}", topic_id) is None
+    ):
+        raise ValueError("请选择有效的对话主题。")
+    if topic_id == "unfiled":
+        return " AND topic.topic_id IS NULL", []
+    return (" AND topic.topic_id=?", [topic_id]) if topic_id else ("", [])
 
 
 class CoachRepository:
@@ -800,6 +821,90 @@ class CoachRepository:
             raise ValueError("invalid history cursor")
         with closing(self._connect()) as connection:
             return self._history_page(connection, user_id, before)
+
+    def conversation_records(self, user_id, *, query="", topic_id="", page=1):
+        """Read owned stored messages without expiring requests or changing learning state."""
+        query = search_query(query)
+        scope, scope_values = _review_scope(topic_id)
+        if type(page) is not int or not 1 <= page <= 10000:
+            raise ValueError("请输入有效的对话记录页码。")
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT "
+                + _REVIEW_FIELDS
+                + _REVIEW_FROM
+                + "WHERE turn.user_id=?"
+                + scope
+                + " AND (instr(lower(turn.user_content),lower(?))>0 "
+                "OR instr(lower(COALESCE(turn.assistant_content,'')),lower(?))>0) "
+                "ORDER BY turn.turn_id DESC LIMIT 21 OFFSET ?",
+                (user_id, *scope_values, query, query, (page - 1) * 20),
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            excerpts = []
+            for key, label in (("user_content", "你"), ("assistant_content", "知行")):
+                text = item.pop(key) or ""
+                if not text:
+                    continue
+                excerpt = (
+                    match_contexts(text, query, limit=1)["contexts"]
+                    if query
+                    else [
+                        {"text": text[:160], "before": False, "after": len(text) > 160}
+                    ]
+                )
+                if excerpt:
+                    excerpts.append({"speaker": label, **excerpt[0]})
+            results.append({**item, "excerpts": excerpts})
+        return results
+
+    def conversation_record(self, user_id, turn_id):
+        if type(turn_id) is not int or not 1 <= turn_id <= 9223372036854775807:
+            raise ValueError("请输入有效的对话记录编号。")
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN")
+            row = db.execute(
+                "SELECT "
+                + _REVIEW_FIELDS
+                + ",turn.citations_json"
+                + _REVIEW_FROM
+                + "WHERE turn.user_id=? AND turn.turn_id=?",
+                (user_id, turn_id),
+            ).fetchone()
+            if row is None:
+                return None
+            item = dict(row)
+            scope, values = _review_scope(item["topic_id"] or "unfiled")
+            neighbors = {}
+            for key, comparison, ordering in (
+                ("previous", "<", "DESC"),
+                ("next", ">", "ASC"),
+            ):
+                neighbor = db.execute(
+                    "SELECT turn.turn_id"
+                    + _REVIEW_FROM
+                    + "WHERE turn.user_id=?"
+                    + scope
+                    + " AND turn.turn_id"
+                    + comparison
+                    + "? ORDER BY turn.turn_id "
+                    + ordering
+                    + " LIMIT 1",
+                    (user_id, *values, turn_id),
+                ).fetchone()
+                neighbors[key] = neighbor[0] if neighbor else None
+            lessons = [
+                dict(lesson)
+                for lesson in db.execute(
+                    "SELECT knowledge_id,title,status FROM coach_knowledge "
+                    "WHERE user_id=? AND turn_id=? AND status IN ('pending','saved')",
+                    (user_id, turn_id),
+                )
+            ]
+        item["citations"] = json.loads(item.pop("citations_json"))
+        return {**item, "neighbors": neighbors, "lessons": lessons}
 
     def view(self, user_id, *, now=None):
         now = int(time()) if now is None else now
