@@ -8,7 +8,8 @@ import unicodedata
 def draft_version(item):
     return hashlib.sha256(
         json.dumps(
-            [item[key] for key in ("knowledge_id", "status", "title", "content")],
+            [item[key] for key in ("knowledge_id", "status", "title", "content")]
+            + [item["draft_generation"] if "draft_generation" in item.keys() else 0],
             ensure_ascii=True,
             separators=(",", ":"),
         ).encode("ascii")

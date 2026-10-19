@@ -1703,16 +1703,20 @@ def register_library_pages(
         except sqlite3.Error:
             return problem("暂时无法更新资料选择。", 503)
 
+    @app.get("/web/knowledge-removed", include_in_schema=False)
     @app.get("/web/knowledge", include_in_schema=False)
     def knowledge_list(request: Request):
         account, denied = auth(request)
         if denied is not None:
             return denied
-        status = request.query_params.get("status", "saved")
+        removed = request.url.path == "/web/knowledge-removed"
+        status = "dismissed" if removed else request.query_params.get("status", "saved")
         try:
             query = search_query(request.query_params.get("q", ""))
             number = int(request.query_params.get("page", "1"))
-            if status not in {"saved", "pending"} or not 1 <= number <= 1000000:
+            if (
+                not removed and status not in {"saved", "pending"}
+            ) or not 1 <= number <= 1000000:
                 return problem("查询条件无法读取。")
         except ValueError as error:
             return problem(str(error))
@@ -1724,8 +1728,12 @@ def register_library_pages(
             return problem("暂时无法读取知识库。", 503)
         cards = ""
         for item in items[:20]:
-            url = "/web/knowledge/" + item["knowledge_id"]
-            if query:
+            url = ("/web/knowledge-removed/" if removed else "/web/knowledge/") + item[
+                "knowledge_id"
+            ]
+            if removed:
+                url += "?" + urlencode({"q": query, "page": number})
+            elif query:
                 url += (
                     "?"
                     + urlencode({"find": query, "result_page": number})
@@ -1733,7 +1741,13 @@ def register_library_pages(
                 )
             cards += (
                 '<article class="library-item"><span class="library-badge">'
-                + ("待你确认" if status == "pending" else "已保存教案")
+                + (
+                    "已移出草稿"
+                    if removed
+                    else "待你确认"
+                    if status == "pending"
+                    else "已保存教案"
+                )
                 + '</span><h2><a href="'
                 + escape(url, quote=True)
                 + '">'
@@ -1745,7 +1759,13 @@ def register_library_pages(
                 + '<a class="text-link" href="'
                 + escape(url, quote=True)
                 + '">'
-                + ("预览与保存教案 →" if status == "pending" else "调阅、修订与重温 →")
+                + (
+                    "查看与找回 →"
+                    if removed
+                    else "预览与保存教案 →"
+                    if status == "pending"
+                    else "调阅、修订与重温 →"
+                )
                 + "</a></article>"
             )
         paging = ""
@@ -1781,6 +1801,10 @@ def register_library_pages(
             if query
             else "这里还没有内容。可以在对话中说“把这个知识点整理成教案”。草稿先在这里预览、修改并确认保存，之后进入已保存目录。"
         )
+        if removed:
+            empty = (
+                "没有找到匹配的已移出草稿。" if query else "这里还没有已移出的草稿。"
+            )
         tabs = '<nav class="library-tabs">'
         for state, label in (
             ("saved", "已保存的教案目录"),
@@ -1791,16 +1815,32 @@ def register_library_pages(
                 '<a href="'
                 + escape(target, quote=True)
                 + '"'
-                + (' aria-current="page"' if status == state else "")
+                + (' aria-current="page"' if not removed and status == state else "")
                 + ">"
                 + label
                 + "</a>"
             )
-        tabs += '<a href="/web/booklets">我的学习手册 · 教案成册</a></nav>'
+        tabs += (
+            '<a href="'
+            + escape("/web/knowledge-removed?" + urlencode({"q": query}), quote=True)
+            + '"'
+            + (' aria-current="page"' if removed else "")
+            + '>已移出草稿 · 找回</a><a href="/web/booklets">我的学习手册 · 教案成册</a></nav>'
+        )
+        notice = (
+            '<p class="lesson-version-notice" role="status">草稿已移出，需要时可到“已移出草稿 · 找回”中恢复。</p>'
+            if not removed and request.query_params.get("notice") == "removed"
+            else ""
+        )
         return page(
-            "知识资产沉淀",
-            '<p class="library-intro">经你确认的教案、知识点和学习册，留在这里，随时可以重温。</p>'
+            "已移出草稿" if removed else "知识资产沉淀",
+            (
+                '<p class="library-intro">移出的草稿保留在这里，可以查看并恢复到待确认目录。恢复不代表确认保存，也不调用 AI。</p>'
+                if removed
+                else '<p class="library-intro">经你确认的教案、知识点和学习册，留在这里，随时可以重温。</p>'
+            )
             + tabs
+            + notice
             + search
             + '<div class="library-list">'
             + (cards or '<p class="library-empty">' + empty + "</p>")
@@ -1873,9 +1913,94 @@ def register_library_pages(
             + input_csrf(request, "draft-dismiss", identity + "." + version)
             + '<input type="hidden" name="version" value="'
             + version
-            + '"><button class="button button-outline" type="submit">移出草稿目录</button></form><p class="lesson-revision-note">移出后不再显示在草稿目录；想下次继续整理，请使用“暂存草稿”。</p>'
+            + '"><button class="button button-outline" type="submit">移出草稿目录</button></form><p class="lesson-revision-note">移出后可到“已移出草稿 · 找回”恢复；想下次继续整理，请使用“暂存草稿”。</p>'
         )
         return body
+
+    @app.get("/web/knowledge-removed/{identity}", include_in_schema=False)
+    def removed_preview(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            query = search_query(request.query_params.get("q", ""))
+            number = int(request.query_params.get("page", "1"))
+            if not 1 <= number <= 1000000:
+                return problem("返回结果的页码无法读取。")
+        except ValueError as error:
+            return problem(str(error))
+        back = "/web/knowledge-removed?" + urlencode({"q": query, "page": number})
+        try:
+            item = dialogue.knowledge(account.user_id, identity, include_dismissed=True)
+        except sqlite3.Error:
+            return problem("暂时无法读取已移出草稿。", 503)
+        if item is None:
+            return problem("找不到这份本人草稿。", 404)
+        if item["status"] != "dismissed":
+            return redirect("/web/knowledge/" + identity)
+        version = draft_version(item)
+        body = (
+            '<p class="library-intro">这份草稿已移出待确认目录。恢复后可以继续修改；只有另行点击确认保存，才会收入知识库。</p><div class="library-actions"><form method="post" action="/web/knowledge-removed/'
+            + identity
+            + '/restore">'
+            + input_csrf(request, "restore-draft", identity + "." + version)
+            + '<input type="hidden" name="version" value="'
+            + version
+            + '"><button class="button button-primary" type="submit">恢复到草稿目录</button></form><a class="text-link" href="'
+            + escape(back, quote=True)
+            + '">返回已移出草稿</a></div><section class="library-card"><p class="lesson-revision-note">原学习主题：'
+            + escape(item["topic"])
+            + "</p>"
+        )
+        if item.get("unit_summary"):
+            body += (
+                '<p class="book-study-summary">'
+                + escape(unit_scope_text(item["unit_summary"])).replace("\n", "<br>")
+                + "</p>"
+            )
+        body += (
+            '<article class="lesson-document markdown-content">'
+            + lesson_html(item["content"])
+            + "</article>"
+        )
+        for source in item["citations"]:
+            body += (
+                '<details class="citation"><summary>整理时参考：'
+                + escape(source["title"] + " · " + source["locator"])
+                + "</summary><p>"
+                + escape(source["excerpt"])
+                + "</p></details>"
+            )
+        return page(item["title"], body + "</section>")
+
+    @app.post("/web/knowledge-removed/{identity}/restore", include_in_schema=False)
+    async def removed_restore(request: Request, identity: str):
+        account, denied = await run_in_threadpool(auth, request, write=True)
+        if denied is not None:
+            return denied
+        values = await fields(request, {"csrf", "version"})
+        version = values.get("version", "") if values else ""
+        if re.fullmatch(r"[a-f0-9]{64}", version) is None or not valid_csrf(
+            request, values, "restore-draft", identity + "." + version
+        ):
+            return problem("页面无法核对，请重新打开已移出草稿。", 403)
+        try:
+            result = await run_in_threadpool(
+                dialogue.restore_draft, account.user_id, identity, version
+            )
+        except sqlite3.Error:
+            return problem(
+                "暂时无法核对恢复结果，请先查看草稿目录，再决定是否重试。", 503
+            )
+        if result == "missing":
+            return problem("找不到这份本人草稿。", 404)
+        if result != "restored":
+            return page(
+                "请核对草稿状态",
+                '<p class="form-error-summary" role="alert">草稿已在其他页面恢复或处理，本次没有重复恢复。请重新打开已移出草稿或草稿目录核对。</p><div class="library-actions"><a class="button button-outline" href="/web/knowledge-removed">已移出草稿</a><a class="text-link" href="/web/knowledge?status=pending">待确认草稿目录</a></div>',
+                code=409,
+            )
+        return redirect("/web/knowledge/" + identity + "?notice=draft-restored")
 
     @app.get("/web/knowledge/{identity}", include_in_schema=False)
     def knowledge_preview(request: Request, identity: str):
@@ -1952,6 +2077,8 @@ def register_library_pages(
             controls = (
                 '<p class="lesson-version-notice" role="status">草稿已暂存，尚未确认收入知识库。下次打开可以继续整理。</p>'
                 if request.query_params.get("notice") == "draft-staged"
+                else '<p class="lesson-version-notice" role="status">已恢复到草稿目录，尚未确认保存到知识库。</p>'
+                if request.query_params.get("notice") == "draft-restored"
                 else ""
             ) + draft_controls(request, item)
         else:
@@ -2433,7 +2560,7 @@ def register_library_pages(
                 code=409,
             )
         if operation == "dismiss":
-            return redirect("/web/knowledge?status=pending")
+            return redirect("/web/knowledge?status=pending&notice=removed")
         return redirect(
             "/web/knowledge/"
             + identity

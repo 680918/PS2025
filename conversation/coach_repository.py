@@ -87,6 +87,11 @@ class CoachRepository:
                     citations_json TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','saved','dismissed')),
                     created_at INTEGER NOT NULL, saved_at INTEGER, UNIQUE(user_id,turn_id)
                 );
+                CREATE TABLE IF NOT EXISTS coach_draft_restores (
+                    user_id TEXT NOT NULL, knowledge_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL CHECK(generation>0),
+                    PRIMARY KEY(user_id,knowledge_id)
+                );
                 CREATE TABLE IF NOT EXISTS coach_review (user_id TEXT PRIMARY KEY, knowledge_id TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS coach_knowledge_versions (
                     user_id TEXT NOT NULL, knowledge_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0),
@@ -1185,10 +1190,13 @@ class CoachRepository:
             ).fetchone()
         return row[0] if row else None
 
-    def knowledge(self, user_id, knowledge_id, *, saved_only=False):
+    def knowledge(
+        self, user_id, knowledge_id, *, saved_only=False, include_dismissed=False
+    ):
         with closing(self._connect()) as db:
             row = db.execute(
-                "SELECT lesson.*, COALESCE((SELECT MAX(revision) FROM coach_knowledge_versions WHERE user_id=lesson.user_id AND knowledge_id=lesson.knowledge_id),1) AS revision, COALESCE((SELECT created_at FROM coach_knowledge_versions WHERE user_id=lesson.user_id AND knowledge_id=lesson.knowledge_id ORDER BY revision DESC LIMIT 1),lesson.saved_at) AS revised_at FROM coach_knowledge AS lesson WHERE user_id=? AND knowledge_id=? AND status<> 'dismissed'",
+                "SELECT lesson.*, COALESCE((SELECT generation FROM coach_draft_restores WHERE user_id=lesson.user_id AND knowledge_id=lesson.knowledge_id),0) AS draft_generation, COALESCE((SELECT MAX(revision) FROM coach_knowledge_versions WHERE user_id=lesson.user_id AND knowledge_id=lesson.knowledge_id),1) AS revision, COALESCE((SELECT created_at FROM coach_knowledge_versions WHERE user_id=lesson.user_id AND knowledge_id=lesson.knowledge_id ORDER BY revision DESC LIMIT 1),lesson.saved_at) AS revised_at FROM coach_knowledge AS lesson WHERE user_id=? AND knowledge_id=?"
+                + ("" if include_dismissed else " AND status<>'dismissed'"),
                 (user_id, knowledge_id),
             ).fetchone()
         if not row or (saved_only and row["status"] != "saved"):
@@ -1243,7 +1251,7 @@ class CoachRepository:
         with closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
-                "SELECT * FROM coach_knowledge WHERE user_id=? AND knowledge_id=?",
+                "SELECT lesson.*, COALESCE((SELECT generation FROM coach_draft_restores WHERE user_id=lesson.user_id AND knowledge_id=lesson.knowledge_id),0) AS draft_generation FROM coach_knowledge AS lesson WHERE user_id=? AND knowledge_id=?",
                 (user_id, knowledge_id),
             ).fetchone()
             if row is None or row["status"] == "dismissed":
@@ -1272,6 +1280,35 @@ class CoachRepository:
                 (title, content, int(time()), user_id, knowledge_id),
             )
         return "saved_now"
+
+    def restore_draft(self, user_id, knowledge_id, expected_version):
+        """Recover only an owned removed draft; invalidate all pre-recovery forms."""
+        if (
+            not isinstance(expected_version, str)
+            or re.fullmatch(r"[a-f0-9]{64}", expected_version) is None
+        ):
+            raise ValueError("草稿版本无法核对。")
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT lesson.*, COALESCE((SELECT generation FROM coach_draft_restores WHERE user_id=lesson.user_id AND knowledge_id=lesson.knowledge_id),0) AS draft_generation FROM coach_knowledge AS lesson WHERE user_id=? AND knowledge_id=?",
+                (user_id, knowledge_id),
+            ).fetchone()
+            if row is None:
+                return "missing"
+            if row["status"] != "dismissed":
+                return "processed"
+            if draft_version(row) != expected_version:
+                return "conflict"
+            db.execute(
+                "UPDATE coach_knowledge SET status='pending',saved_at=NULL WHERE user_id=? AND knowledge_id=? AND status='dismissed'",
+                (user_id, knowledge_id),
+            )
+            db.execute(
+                "INSERT INTO coach_draft_restores(user_id,knowledge_id,generation) VALUES(?,?,1) ON CONFLICT(user_id,knowledge_id) DO UPDATE SET generation=generation+1",
+                (user_id, knowledge_id),
+            )
+        return "restored"
 
     def confirm_knowledge(
         self, user_id, knowledge_id, *, save=True, title=None, content=None
