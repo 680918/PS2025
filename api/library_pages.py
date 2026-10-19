@@ -26,7 +26,12 @@ from starlette.formparsers import MultiPartParser, MultiPartException
 from api.coach_markdown import coach_markdown
 
 from api.public_pages import _render_layout
-from coach.materials import MaterialError, MAX_FILE_BYTES
+from coach.materials import (
+    MaterialError,
+    MAX_FILE_BYTES,
+    MAX_MATERIALS,
+    MAX_LIBRARY_BYTES,
+)
 from coach.book_study import study_directory, unit_chunks
 from coach.unit_lessons import unit_lesson_plan, send_unit_lesson, unit_scope_text
 from coach.knowledge_search import search_query, literal_ranges, match_contexts
@@ -536,11 +541,65 @@ def register_library_pages(
         body += '<p><a class="text-link" href="/web/materials">返回资料与书籍 →</a></p>'
         return page("查找资料原文", body)
 
+    def catalog_values(values):
+        if hasattr(values, "getlist") and any(
+            len(values.getlist(name)) > 1 for name in ("name", "kind")
+        ):
+            raise ValueError("筛选条件重复，请重新选择。")
+        name = search_query(values.get("name", ""))
+        kind = values.get("kind", "")
+        if kind not in {"", "pdf", "txt", "md", "paste"}:
+            raise ValueError("请选择有效的资料类型。")
+        return name, kind
+
+    def catalog_url(name="", kind=""):
+        return "/web/materials" + (
+            "?" + urlencode({"name": name, "kind": kind}) if name or kind else ""
+        )
+
+    def catalog_form(name, kind):
+        options = "".join(
+            '<option value="'
+            + value
+            + '"'
+            + (" selected" if value == kind else "")
+            + ">"
+            + label
+            + "</option>"
+            for value, label in (
+                ("", "全部类型"),
+                ("pdf", "PDF"),
+                ("txt", "TXT"),
+                ("md", "Markdown"),
+                ("paste", "粘贴文字"),
+            )
+        )
+        return (
+            '<form class="material-search-form library-card" method="get" action="/web/materials">'
+            '<div><label for="catalog-name">按名称找资料</label><input id="catalog-name" name="name" maxlength="120" value="'
+            + escape(name, quote=True)
+            + '" placeholder="资料名称或原文件名"></div><div><label for="catalog-kind">资料类型</label><select id="catalog-kind" name="kind">'
+            + options
+            + '</select></div><button class="button button-primary" type="submit">筛选资料</button>'
+            + '<a class="text-link" href="/web/materials">查看全部</a></form>'
+        )
+
+    def size_text(count):
+        if count < 1024:
+            return str(count) + " B"
+        if count < 1024**2:
+            return f"{count / 1024:.1f} KB"
+        return f"{count / 1024**2:.2f} MB"
+
     @app.get("/web/materials", response_class=HTMLResponse, include_in_schema=False)
     def list_materials(request: Request):
         account, denied = auth(request)
         if denied is not None:
             return denied
+        try:
+            name, kind = catalog_values(request.query_params)
+        except ValueError as error:
+            return problem(str(error))
         try:
             selected, items = (
                 discussion_material(dialogue, materials, account.user_id),
@@ -548,8 +607,21 @@ def register_library_pages(
             )
         except sqlite3.Error:
             return problem("暂时无法读取资料。", 503)
+        visible = [
+            item
+            for item in items
+            if (not kind or item["kind"] == kind)
+            and (
+                not name
+                or name.casefold() in item["title"].casefold()
+                or name.casefold() in item["filename"].casefold()
+            )
+        ]
+        edit_query = (
+            "?" + urlencode({"name": name, "kind": kind}) if name or kind else ""
+        )
         cards = []
-        for item in items:
+        for item in visible:
             identity = item["material_id"]
             label = (
                 '<span class="library-badge">当前参与讨论</span>'
@@ -565,7 +637,10 @@ def register_library_pages(
                 + label
                 + "<p>"
                 + escape(item["filename"])
-                + f' · {item["char_count"]} 字</p><div class="library-actions"><a class="text-link" href="/web/materials/{identity}">预览文字</a><a class="text-link" href="/web/materials/{identity}/plan">学习目录</a>'
+                + f' · {item["char_count"]} 字 · {size_text(item["raw_bytes"])}</p><div class="library-actions"><a class="text-link" href="/web/materials/{identity}">预览文字</a><a class="text-link" href="/web/materials/{identity}/plan">学习目录</a>'
+                + '<a class="text-link" href="'
+                + escape(f"/web/materials/{identity}/edit" + edit_query, quote=True)
+                + '">修改名称</a>'
                 + action(
                     request,
                     f"/web/materials/{identity}/select",
@@ -593,18 +668,144 @@ def register_library_pages(
         return page(
             "资料与书籍",
             '<p class="library-intro">原始资料留在这里。选择一份资料后，回到同一个聊天框讨论。资料在本机保存；提问时，相关片段会交给你启用的 AI。</p>'
-            + material_search_form(items)
+            + (
+                '<p role="status" class="library-intro">资料名称已更新。原文件、学习位置和已保存成果保持不变。</p>'
+                if request.query_params.get("notice") == "renamed"
+                else ""
+            )
+            + '<section class="library-card material-capacity"><div class="material-capacity-summary"><h2>我的资料容量</h2><p>'
+            + f"已保存 {len(items)} / {MAX_MATERIALS} 份 · 原始资料 {size_text(sum(item['raw_bytes'] for item in items))} / {size_text(MAX_LIBRARY_BYTES)}"
+            + "</p></div><details><summary>容量计算说明</summary><p>容量按上传原文件和粘贴文字计算，重复上传相同内容不重复占用。提取文字、对话和教案另占本机磁盘空间；此处不是整个账户的磁盘用量。</p></details></section>"
+            + catalog_form(name, kind)
+            + f'<div class="library-actions"><h2 class="material-results-title">资料目录 · {len(visible)} / {len(items)} 份</h2>'
             + clear
+            + "</div>"
             + '<div class="library-list">'
             + (
                 "".join(cards)
-                or '<p class="library-empty">还没有资料。可以上传文件，或粘贴一段想学习的文字。</p>'
+                or '<p class="library-empty">'
+                + (
+                    "没有符合条件的资料。可以修改名称关键词或类型，或点击“查看全部”。"
+                    if items
+                    else "还没有资料。可以上传文件，或粘贴一段想学习的文字。"
+                )
+                + "</p>"
             )
-            + '</div><div class="library-add-grid">'
+            + '</div><details class="material-source-search"><summary>在资料原文中查找关键词</summary>'
+            + material_search_form(items)
+            + '</details><div class="library-add-grid">'
             + upload
             + paste
             + "</div>",
         )
+
+    def material_name_editor(
+        request, item, name, kind, *, title=None, error="", code=200
+    ):
+        body = (
+            '<section class="library-card"><p>当前名称：'
+            + escape(item["title"])
+            + "</p><p>原文件："
+            + escape(item["filename"])
+            + "</p><p>仅修改资料在目录中的名称。原文、学习单元和续学位置保留；历史问答与教案的引用保留当时的名称。</p>"
+            + (
+                '<p class="form-error-summary" role="alert">' + escape(error) + "</p>"
+                if error
+                else ""
+            )
+            + '<form method="post" action="/web/materials/'
+            + item["material_id"]
+            + '/edit">'
+            + input_csrf(request, "rename-material", item["material_id"])
+            + "".join(
+                '<input type="hidden" name="'
+                + key
+                + '" value="'
+                + escape(value, quote=True)
+                + '">'
+                for key, value in (
+                    ("expected_title", item["title"]),
+                    ("name", name),
+                    ("kind", kind),
+                )
+            )
+            + '<label for="rename-title">资料名称</label><input id="rename-title" name="title" maxlength="120" required value="'
+            + escape(item["title"] if title is None else title, quote=True)
+            + '"><div class="library-actions"><button class="button button-primary" type="submit">保存名称</button>'
+            + '<a class="button button-outline" href="'
+            + escape(catalog_url(name, kind), quote=True)
+            + '">取消并返回目录</a></div></form></section>'
+        )
+        return page("修改资料名称", body, code=code)
+
+    @app.get("/web/materials/{identity}/edit", include_in_schema=False)
+    def edit_material_name(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            name, kind = catalog_values(request.query_params)
+            item = materials.get(account.user_id, identity)
+            if item is None:
+                return problem("找不到这份资料。", 404)
+            return material_name_editor(request, item, name, kind)
+        except ValueError as error:
+            return problem(str(error))
+        except sqlite3.Error:
+            return problem("暂时无法读取资料名称。", 503)
+
+    @app.post("/web/materials/{identity}/edit", include_in_schema=False)
+    async def rename_material(request: Request, identity: str):
+        account, denied = await run_in_threadpool(auth, request, write=True)
+        if denied is not None:
+            return denied
+        values = await fields(
+            request, {"csrf", "title", "expected_title", "name", "kind"}, limit=16384
+        )
+        if not valid_csrf(request, values, "rename-material", identity):
+            return problem("页面无法核对，请重新打开资料名称编辑页。", 403)
+        try:
+            name, kind = catalog_values(values)
+            item = await run_in_threadpool(materials.get, account.user_id, identity)
+            if item is None:
+                return problem("找不到这份资料。", 404)
+            try:
+                saved = await run_in_threadpool(
+                    materials.rename,
+                    account.user_id,
+                    identity,
+                    values["title"],
+                    expected_title=values["expected_title"],
+                )
+            except MaterialError as error:
+                return material_name_editor(
+                    request,
+                    item,
+                    name,
+                    kind,
+                    title=values["title"],
+                    error=str(error),
+                    code=400,
+                )
+            if not saved:
+                item = await run_in_threadpool(materials.get, account.user_id, identity)
+                if item is None:
+                    return problem("找不到这份资料。", 404)
+                return material_name_editor(
+                    request,
+                    item,
+                    name,
+                    kind,
+                    title=values["title"],
+                    error="名称已在其他页面更新。请核对当前名称和本次输入，再决定是否保存。",
+                    code=409,
+                )
+            url = catalog_url(name, kind)
+            return redirect(url + ("&" if "?" in url else "?") + "notice=renamed")
+        except ValueError as error:
+            return problem(str(error))
+        except sqlite3.Error:
+            return problem("资料名称暂时无法保存，请稍后重试。", 503)
 
     @app.post(
         "/web/materials/upload", response_class=HTMLResponse, include_in_schema=False
@@ -1411,7 +1612,9 @@ def register_library_pages(
                 + note
                 + '<p><a class="text-link" href="/web/materials/'
                 + identity
-                + '/plan">书籍学习目录与进度 →</a></p>'
+                + '/plan">书籍学习目录与进度 →</a> · <a class="text-link" href="/web/materials/'
+                + identity
+                + '/edit">修改名称</a></p>'
                 + material_search_form([item], scope=identity, query=query)
                 + navigation
                 + matching

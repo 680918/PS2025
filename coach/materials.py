@@ -8,6 +8,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import unicodedata
 from contextlib import closing
 from pathlib import Path
 from time import time
@@ -17,6 +18,8 @@ from coach.knowledge_search import match_contexts, search_query
 
 
 MAX_FILE_BYTES = 10 * 1024**2
+MAX_MATERIALS = 20
+MAX_LIBRARY_BYTES = 50 * 1024**2
 MAX_TEXT = 500000
 
 
@@ -175,7 +178,7 @@ class MaterialRepository:
                 "SELECT COUNT(*),COALESCE(SUM(length(raw)),0) FROM materials WHERE user_id=?",
                 (user_id,),
             ).fetchone()
-            if count >= 20 or used + len(raw) > 50 * 1024**2:
+            if count >= MAX_MATERIALS or used + len(raw) > MAX_LIBRARY_BYTES:
                 raise MaterialError("本机试用每个账户最多 20 份资料、合计 50 MB。")
             db.execute(
                 "INSERT INTO materials VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -201,7 +204,7 @@ class MaterialRepository:
             return [
                 dict(row)
                 for row in db.execute(
-                    "SELECT material_id,title,filename,kind,page_count,readable_pages,char_count,created_at FROM materials WHERE user_id=? ORDER BY created_at DESC,material_id",
+                    "SELECT material_id,title,filename,kind,page_count,readable_pages,char_count,created_at,length(raw) AS raw_bytes FROM materials WHERE user_id=? ORDER BY created_at DESC,material_id",
                     (user_id,),
                 )
             ]
@@ -211,6 +214,31 @@ class MaterialRepository:
             (item for item in self.list(user_id) if item["material_id"] == material_id),
             None,
         )
+
+    def rename(self, user_id, material_id, title, *, expected_title):
+        """Update only an owned title; False means a stale editor must be reviewed."""
+        if (
+            not isinstance(title, str)
+            or not 1 <= len(title.strip()) <= 120
+            or any(unicodedata.category(char) in {"Cc", "Cs"} for char in title)
+            or not isinstance(expected_title, str)
+        ):
+            raise MaterialError("请填写 1 至 120 字的资料名称，不含换行或控制字符。")
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT title FROM materials WHERE user_id=? AND material_id=?",
+                (user_id, material_id),
+            ).fetchone()
+            if row is None:
+                raise MaterialError("找不到这份资料。")
+            if row[0] != expected_title:
+                return False
+            db.execute(
+                "UPDATE materials SET title=? WHERE user_id=? AND material_id=?",
+                (title.strip(), user_id, material_id),
+            )
+        return True
 
     def find_chunks(self, user_id, query, *, material_id=None, page=1):
         """Return at most 21 owned literal hits; the last is a next-page sentinel."""
