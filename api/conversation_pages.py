@@ -12,7 +12,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from api.coach_markdown import coach_markdown
 from api.conversation_export import conversation_document
-from api.library_pages import HEADERS, library_csrf, search_highlight
+from api.library_pages import (
+    HEADERS,
+    library_csrf,
+    search_highlight,
+    reference_sections,
+)
 from api.public_pages import _render_layout
 from coach.knowledge_search import search_query, match_contexts
 from coach.conversation_dates import conversation_date_window
@@ -20,7 +25,7 @@ from security.login_sessions import signed_in_account
 from security.registration_rate_limit import RegistrationRateLimiter
 
 
-def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
+def register_conversation_pages(app, accounts, dialogue, *, csrf_key, materials=None):
     views = RegistrationRateLimiter(per_client_limit=40, total_limit=400)
     downloads = RegistrationRateLimiter(per_client_limit=6, total_limit=60)
     download_slots = BoundedSemaphore(2)
@@ -302,6 +307,58 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
         finally:
             download_slots.release()
 
+    @app.get("/web/conversations/{identity}/sources/{number}", include_in_schema=False)
+    def reference_check(request: Request, identity: str, number: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        if (
+            re.fullmatch(r"[1-9][0-9]{0,18}", identity) is None
+            or int(identity) > 9223372036854775807
+            or re.fullmatch(r"[1-9][0-9]{0,2}", number) is None
+        ):
+            return problem("找不到这条本人对话引用。", 404)
+        if set(request.query_params) - {"q", "topic", "page", "start", "end"}:
+            return problem("请从对话引用进入核对，不要附加其他查询参数。")
+        try:
+            values = filters(request)
+        except ValueError as error:
+            return problem(str(error))
+        try:
+            item = dialogue.conversation_record(account.user_id, int(identity))
+            if (
+                item is None
+                or item["status"] != "complete"
+                or (
+                    values["topic"]
+                    and values["topic"] != (item["topic_id"] or "unfiled")
+                )
+                or int(number) > len(item["citations"])
+            ):
+                return problem("找不到这条本人对话引用。", 404)
+            source = item["citations"][int(number) - 1]
+            body = (
+                '<p><a class="text-link" href="'
+                + escape(
+                    url(values, turn=item["turn_id"]) + "#dialogue-source-" + number,
+                    quote=True,
+                )
+                + '">← 返回本轮完整问答中的这条引用</a></p>'
+                + '<section class="library-card"><h2>'
+                + escape(item["topic_title"] or "未归入学习主题")
+                + '</h2><p class="conversation-record-meta">'
+                + escape(stamp(item))
+                + " · 引用 "
+                + number
+                + "</p><p>核对只读取本轮保存的引用和对应资料片段，不切换当前主题、选择资料、重新发送问题或调用 AI；定位到原文不代表回复中的全部说法已经核实。</p></section>"
+            )
+            sources, code = reference_sections(
+                materials, account.user_id, source, snapshot_title="回答时保存的摘录"
+            )
+            return page("核对对话引用", body + sources, code=code)
+        except (sqlite3.Error, ValueError, TypeError, KeyError):
+            return problem("这条引用暂时无法核对，请稍后从问答重新打开。", 503)
+
     @app.get("/web/conversations/{identity}", include_in_schema=False)
     def detail(request: Request, identity: str):
         account, denied = auth(request)
@@ -372,13 +429,21 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
                 + coach_markdown(item["assistant_content"])
                 + "</div>"
             )
-            for source in item["citations"]:
+            for number, source in enumerate(item["citations"], 1):
                 body += (
-                    '<details class="citation"><summary>当时的引用：'
+                    '<details class="citation" id="dialogue-source-'
+                    + str(number)
+                    + '"><summary>当时的引用：'
                     + escape(source["title"] + " · " + source["locator"])
                     + "</summary><p>"
                     + escape(source["excerpt"])
-                    + "</p></details>"
+                    + '</p><a class="text-link" href="/web/conversations/'
+                    + str(item["turn_id"])
+                    + "/sources/"
+                    + str(number)
+                    + "?"
+                    + escape(urlencode(values), quote=True)
+                    + '">核对这条引用的原文 →</a></details>'
                 )
         else:
             body += (

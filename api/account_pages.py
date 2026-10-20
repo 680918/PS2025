@@ -127,7 +127,13 @@ def register_account_pages(
     if dialogue_repository is not None:
         register_usage_pages(app, repository, dialogue_repository)
         register_growth_pages(app, repository, dialogue_repository)
-        register_conversation_pages(app, repository, dialogue_repository, csrf_key=key)
+        register_conversation_pages(
+            app,
+            repository,
+            dialogue_repository,
+            materials=materials_repository,
+            csrf_key=key,
+        )
         register_booklet_pages(app, repository, dialogue_repository, csrf_key=key)
         register_memory_pages(app, repository, dialogue_repository, csrf_key=key)
         register_study_pages(
@@ -380,6 +386,10 @@ def register_account_pages(
         for turn in page["turns"]:
             if turn["status"] == "complete":
                 turn["assistant_html"] = coach_markdown(turn["assistant_content"])
+                turn["citation_links"] = [
+                    f"/web/conversations/{turn['turn_id']}/sources/{number}"
+                    for number, _ in enumerate(turn.get("citations", []), 1)
+                ]
         return JSONResponse(page, headers=_HEADERS)
 
     @app.get("/web/coach/status", include_in_schema=False)
@@ -470,8 +480,12 @@ def register_account_pages(
                     + escape(source["title"] + " · " + source["locator"])
                     + "</summary><p>"
                     + escape(source["excerpt"])
-                    + "</p></details>"
-                    for source in turn.get("citations", [])
+                    + '</p><a class="text-link" target="_blank" rel="noopener" href="/web/conversations/'
+                    + str(turn["turn_id"])
+                    + "/sources/"
+                    + str(number)
+                    + '">核对原文（新标签页） →</a></details>'
+                    for number, source in enumerate(turn.get("citations", []), 1)
                 )
                 history.append(
                     f'<article{latest} class="dialogue-message dialogue-coach"><p class="message-author">知行 · 成长教练</p><div class="message-content markdown-content">{coach_markdown(turn["assistant_content"])}</div>{citations_html}</article>'
@@ -654,21 +668,24 @@ def register_account_pages(
             if active_topic
             else view["turns"]
         )
-        latest_sources = next(
-            (
-                turn.get("citations", [])
-                for turn in reversed(source_turns)
-                if turn["status"] == "complete"
-            ),
-            [],
+        latest_source_turn = next(
+            (turn for turn in reversed(source_turns) if turn["status"] == "complete"),
+            None,
+        )
+        latest_sources = (
+            latest_source_turn.get("citations", []) if latest_source_turn else []
         )
         source_content += "".join(
             '<details class="citation"><summary>最近回复引用：'
             + escape(source["title"] + " · " + source["locator"])
             + "</summary><p>"
             + escape(source["excerpt"])
-            + "</p></details>"
-            for source in latest_sources
+            + '</p><a class="text-link" target="_blank" rel="noopener" href="/web/conversations/'
+            + str(latest_source_turn["turn_id"])
+            + "/sources/"
+            + str(number)
+            + '">核对原文（新标签页） →</a></details>'
+            for number, source in enumerate(latest_sources, 1)
         )
         assets_panel = (
             '<section class="workspace-assets" aria-label="知识资产沉淀"><h2><a href="/web/knowledge">知识资产沉淀</a></h2>'

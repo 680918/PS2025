@@ -64,6 +64,62 @@ HEADERS = {
 }
 
 
+def reference_sections(
+    materials, user_id, source, *, snapshot_title="整理时保存的摘录"
+):
+    body = (
+        '<section class="library-card"><h2>'
+        + escape(snapshot_title)
+        + "</h2><p>"
+        + escape(source["title"] + " · " + source["locator"])
+        + '</p><div class="conversation-record-text">'
+        + escape(source["excerpt"])
+        + "</div></section>"
+    )
+    book, chunk, code = None, None, 200
+    message = "这条旧引用没有可核对的资料或片段编号；当时的摘录仍保留，不按名称或文字猜测来源。"
+    identifiers = (source.get("material_id", ""), source.get("source_id", ""))
+    if materials is not None and all(
+        isinstance(value, str) and re.fullmatch(r"[a-f0-9]{32}", value)
+        for value in identifiers
+    ):
+        try:
+            book = materials.get(user_id, identifiers[0])
+            chunk = materials.chunk(user_id, *identifiers) if book else None
+            message = "当前无法读取这条引用对应的本人资料片段；当时的摘录仍保留，不按名称或文字猜测来源。"
+        except sqlite3.Error:
+            message, code = (
+                "原文暂时无法读取，请稍后重试；当时保存的摘录仍可核对。",
+                503,
+            )
+    if book is not None and chunk is not None:
+        message = (
+            "以下原文按原资料编号和片段编号定位；当前名称可能与整理时不同。"
+            if source["excerpt"] and source["excerpt"] in chunk["content"]
+            else "当时摘录与当前片段文字未能完全对上，请分别核对，不据此认定引用内容已经核实。"
+        )
+        body += (
+            '<section class="library-card"><h2>对应的资料原文</h2><p>'
+            + escape(book["title"] + " · " + chunk["locator"])
+            + '</p><p class="lesson-revision-note">'
+            + message
+            + '</p><article class="library-document">'
+            + escape(chunk["content"])
+            + '</article><a class="text-link" href="/web/materials/'
+            + book["material_id"]
+            + "?part="
+            + str(chunk["chunk_index"])
+            + '">打开这段资料预览 →</a></section>'
+        )
+    else:
+        body += (
+            '<section class="library-card"><h2>对应原文暂不可用</h2><p role="status">'
+            + message
+            + "</p></section>"
+        )
+    return body, code
+
+
 def library_csrf(key, token, purpose, identity=""):
     return hmac.new(
         key, f"library.{purpose}.{identity}.{token}".encode("utf-8"), hashlib.sha256
@@ -2485,55 +2541,10 @@ def register_library_pages(
                 )
                 + " · 引用 "
                 + number
-                + '</p><p>核对只读取已有内容，不切换学习主题、选择资料或调用 AI。引用是整理时的参考，是否支持当前教案中的说法仍需核对。</p></section><section class="library-card"><h2>整理时保存的摘录</h2><p>'
-                + escape(source["title"] + " · " + source["locator"])
-                + '</p><div class="conversation-record-text">'
-                + escape(source["excerpt"])
-                + "</div></section>"
+                + "</p><p>核对只读取已有内容，不切换学习主题、选择资料或调用 AI。引用是整理时的参考，是否支持当前教案中的说法仍需核对。</p></section>"
             )
-            book, chunk, code = None, None, 200
-            message = "这条旧引用没有可核对的资料或片段编号；当时的摘录仍保留，不按名称或文字猜测来源。"
-            identifiers = (source.get("material_id", ""), source.get("source_id", ""))
-            if all(
-                isinstance(value, str) and re.fullmatch(r"[a-f0-9]{32}", value)
-                for value in identifiers
-            ):
-                try:
-                    book = materials.get(account.user_id, identifiers[0])
-                    chunk = (
-                        materials.chunk(account.user_id, *identifiers) if book else None
-                    )
-                    message = "当前无法读取这条引用对应的本人资料片段；当时的摘录仍保留，不按名称或文字猜测来源。"
-                except sqlite3.Error:
-                    message, code = (
-                        "原文暂时无法读取，请稍后重试；当时保存的摘录仍可核对。",
-                        503,
-                    )
-            if book is not None and chunk is not None:
-                message = (
-                    "以下原文按原资料编号和片段编号定位；当前名称可能与整理时不同。"
-                    if source["excerpt"] and source["excerpt"] in chunk["content"]
-                    else "当时摘录与当前片段文字未能完全对上，请分别核对，不据此认定教案内容已经核实。"
-                )
-                body += (
-                    '<section class="library-card"><h2>对应的资料原文</h2><p>'
-                    + escape(book["title"] + " · " + chunk["locator"])
-                    + '</p><p class="lesson-revision-note">'
-                    + message
-                    + '</p><article class="library-document">'
-                    + escape(chunk["content"])
-                    + '</article><a class="text-link" href="/web/materials/'
-                    + book["material_id"]
-                    + "?part="
-                    + str(chunk["chunk_index"])
-                    + '">打开这段资料预览 →</a></section>'
-                )
-            else:
-                body += (
-                    '<section class="library-card"><h2>对应原文暂不可用</h2><p role="status">'
-                    + message
-                    + "</p></section>"
-                )
+            sources, code = reference_sections(materials, account.user_id, source)
+            body += sources
             return page("核对教案引用", body, code=code)
         except (sqlite3.Error, ValueError, TypeError, KeyError):
             return problem("这条引用暂时无法核对，请稍后从教案重新打开。", 503)

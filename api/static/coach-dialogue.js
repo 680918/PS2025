@@ -167,7 +167,7 @@
                 fragment.append(message("user", turn.user_content));
                 if (turn.status === "complete") {
                     const reply = message("coach", turn.assistant_content, turn.assistant_html);
-                    for (const source of (turn.citations || [])) {
+                    for (const [index, source] of (turn.citations || []).entries()) {
                         const details = document.createElement("details");
                         details.className = "citation";
                         const summary = document.createElement("summary");
@@ -175,6 +175,16 @@
                         const excerpt = document.createElement("p");
                         excerpt.textContent = source.excerpt;
                         details.append(summary, excerpt);
+                        const href = (turn.citation_links || [])[index];
+                        if (typeof href === "string" && /^\/web\/conversations\/[1-9][0-9]{0,18}\/sources\/[1-9][0-9]{0,2}$/.test(href)) {
+                            const link = document.createElement("a");
+                            link.className = "text-link";
+                            link.href = href;
+                            link.target = "_blank";
+                            link.rel = "noopener";
+                            link.textContent = "核对原文（新标签页） →";
+                            details.append(link);
+                        }
                         reply.append(details);
                     }
                     fragment.append(reply);
