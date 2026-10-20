@@ -2414,12 +2414,18 @@ def register_library_pages(
                 + controls
             )
         citations = "".join(
-            '<details class="citation"><summary>整理时参考：'
+            '<details class="citation" id="lesson-source-'
+            + str(number)
+            + '"><summary>整理时参考：'
             + escape(source["title"] + " · " + source["locator"])
             + "</summary><p>"
             + escape(source["excerpt"])
-            + "</p></details>"
-            for source in item["citations"]
+            + '</p><a class="text-link" href="/web/knowledge/'
+            + identity
+            + "/sources/"
+            + str(number)
+            + '">核对这条引用的原文 →</a></details>'
+            for number, source in enumerate(item["citations"], 1)
         )
         return page(
             item["title"],
@@ -2446,6 +2452,91 @@ def register_library_pages(
             )
             + "</section>",
         )
+
+    @app.get("/web/knowledge/{identity}/sources/{number}", include_in_schema=False)
+    def reference_check(request: Request, identity: str, number: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        if (
+            re.fullmatch(r"[a-f0-9]{32}", identity) is None
+            or re.fullmatch(r"[1-9][0-9]{0,2}", number) is None
+        ):
+            return problem("找不到这条本人教案引用。", 404)
+        if request.query_params:
+            return problem("请从教案引用进入核对，不要附加查询参数。")
+        try:
+            item = dialogue.knowledge(account.user_id, identity)
+            if item is None or int(number) > len(item["citations"]):
+                return problem("找不到这条本人教案引用。", 404)
+            source = item["citations"][int(number) - 1]
+            body = (
+                '<p><a class="text-link" href="/web/knowledge/'
+                + identity
+                + "#lesson-source-"
+                + number
+                + '">← 返回教案中的这条引用</a></p><section class="library-card"><h2>'
+                + escape(item["title"])
+                + '</h2><p class="lesson-revision-note">'
+                + (
+                    "待你确认的草稿"
+                    if item["status"] == "pending"
+                    else "当前教案 · 第 " + str(item["revision"]) + " 版"
+                )
+                + " · 引用 "
+                + number
+                + '</p><p>核对只读取已有内容，不切换学习主题、选择资料或调用 AI。引用是整理时的参考，是否支持当前教案中的说法仍需核对。</p></section><section class="library-card"><h2>整理时保存的摘录</h2><p>'
+                + escape(source["title"] + " · " + source["locator"])
+                + '</p><div class="conversation-record-text">'
+                + escape(source["excerpt"])
+                + "</div></section>"
+            )
+            book, chunk, code = None, None, 200
+            message = "这条旧引用没有可核对的资料或片段编号；当时的摘录仍保留，不按名称或文字猜测来源。"
+            identifiers = (source.get("material_id", ""), source.get("source_id", ""))
+            if all(
+                isinstance(value, str) and re.fullmatch(r"[a-f0-9]{32}", value)
+                for value in identifiers
+            ):
+                try:
+                    book = materials.get(account.user_id, identifiers[0])
+                    chunk = (
+                        materials.chunk(account.user_id, *identifiers) if book else None
+                    )
+                    message = "当前无法读取这条引用对应的本人资料片段；当时的摘录仍保留，不按名称或文字猜测来源。"
+                except sqlite3.Error:
+                    message, code = (
+                        "原文暂时无法读取，请稍后重试；当时保存的摘录仍可核对。",
+                        503,
+                    )
+            if book is not None and chunk is not None:
+                message = (
+                    "以下原文按原资料编号和片段编号定位；当前名称可能与整理时不同。"
+                    if source["excerpt"] and source["excerpt"] in chunk["content"]
+                    else "当时摘录与当前片段文字未能完全对上，请分别核对，不据此认定教案内容已经核实。"
+                )
+                body += (
+                    '<section class="library-card"><h2>对应的资料原文</h2><p>'
+                    + escape(book["title"] + " · " + chunk["locator"])
+                    + '</p><p class="lesson-revision-note">'
+                    + message
+                    + '</p><article class="library-document">'
+                    + escape(chunk["content"])
+                    + '</article><a class="text-link" href="/web/materials/'
+                    + book["material_id"]
+                    + "?part="
+                    + str(chunk["chunk_index"])
+                    + '">打开这段资料预览 →</a></section>'
+                )
+            else:
+                body += (
+                    '<section class="library-card"><h2>对应原文暂不可用</h2><p role="status">'
+                    + message
+                    + "</p></section>"
+                )
+            return page("核对教案引用", body, code=code)
+        except (sqlite3.Error, ValueError, TypeError, KeyError):
+            return problem("这条引用暂时无法核对，请稍后从教案重新打开。", 503)
 
     def lesson_favorite_notice(notice):
         message = {
