@@ -15,6 +15,7 @@ from api.library_pages import HEADERS, library_csrf
 from api.public_pages import _render_layout
 from coach.learning_topics import (
     TopicBusy,
+    topic_key,
     validate_topic_title,
     discussion_part,
     topic_edit_version,
@@ -143,7 +144,11 @@ def register_study_pages(
             return denied
         query = request.query_params.get("q", "").strip()
         number = request.query_params.get("page", "1")
-        if len(query) > 120 or re.fullmatch(r"[1-9][0-9]{0,4}", number) is None:
+        if (
+            len(query) > 120
+            or re.fullmatch(r"[1-9][0-9]{0,4}", number) is None
+            or any(len(request.query_params.getlist(key)) > 1 for key in ("q", "page"))
+        ):
             return problem("请检查主题搜索文字和目录页码。")
         try:
             records = dialogue.list_topics(
@@ -154,12 +159,15 @@ def register_study_pages(
         except sqlite3.Error:
             return problem("暂时无法读取学习主题。", 503)
         by_id = {item["material_id"]: item for item in books}
+        needle = topic_key(query)
         body = '<p class="study-intro">每个学习主题分别保留已讨论内容、下一步和关联资料。选择一个主题，就能回到自己的学习位置。</p>'
         body += (
             '<form class="study-search" method="get" action="/web/studies"><label for="study-query">查找学习主题</label><input id="study-query" type="search" name="q" maxlength="120" value="'
             + escape(query, quote=True)
-            + '"><button class="button button-outline" type="submit">查找</button></form>'
+            + '" placeholder="主题、已讨论内容或下一步" aria-describedby="study-search-help"><button class="button button-outline" type="submit">查找</button></form><p id="study-search-help" class="study-note">按当前保存的主题名称、已讨论内容和下一步查找。</p>'
         )
+        if query:
+            body += '<a class="text-link" href="/web/studies">查看全部主题 →</a>'
         if request.query_params.get("notice") == "existing":
             body += '<p class="study-notice" role="status">同名主题已经存在，已回到原来的位置，没有覆盖原进度或关联资料。</p>'
         if request.query_params.get("notice") == "edited":
@@ -167,7 +175,7 @@ def register_study_pages(
         if not records:
             body += (
                 '<section class="library-card"><h2>'
-                + ("没有找到这个主题" if query else "从一个想学的主题开始")
+                + ("没有找到匹配的学习记录" if query else "从一个想学的主题开始")
                 + "</h2><p>可以在下方新建，也可以回到对话说“我想学习……”；教练明确记录新的学习主题后，会出现在这里。</p></section>"
             )
         body += '<div class="study-list">'
@@ -190,12 +198,29 @@ def register_study_pages(
             stamp = datetime.fromtimestamp(
                 item["updated_at"], timezone(timedelta(hours=8))
             ).strftime("%Y-%m-%d %H:%M")
+            matched = (
+                '<p class="study-note">匹配位置：'
+                + "、".join(
+                    label
+                    for field, label in (
+                        ("title", "主题名称"),
+                        ("progress", "已讨论"),
+                        ("next_step", "下一步"),
+                    )
+                    if needle in topic_key(item[field])
+                )
+                + "</p>"
+                if query
+                else ""
+            )
             body += (
                 '<article class="library-card study-card"><div class="study-card-title"><h2>'
                 + escape(item["title"])
                 + "</h2>"
                 + ('<span class="study-current">当前主题</span>' if active else "")
-                + "</div><dl><dt>已讨论</dt><dd>"
+                + "</div>"
+                + matched
+                + "<dl><dt>已讨论</dt><dd>"
                 + escape(item["progress"])
                 + "</dd><dt>下一步</dt><dd>"
                 + escape(item["next_step"])

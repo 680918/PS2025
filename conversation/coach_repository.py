@@ -588,12 +588,17 @@ class CoachRepository:
         return dict(row) if row else None
 
     def list_topics(self, user_id, *, query="", offset=0, limit=11):
+        needle = topic_key(query)
         with closing(self._connect()) as db:
+            db.create_function("study_text", 1, topic_key, deterministic=True)
             return [
                 dict(row)
                 for row in db.execute(
-                    "SELECT * FROM coach_topics WHERE user_id=? AND instr(topic_key,?)>0 ORDER BY updated_at DESC,topic_id LIMIT ? OFFSET ?",
-                    (user_id, topic_key(query), limit, offset),
+                    "SELECT * FROM coach_topics WHERE user_id=? AND "
+                    "(instr(topic_key,?)>0 OR instr(study_text(progress),?)>0 "
+                    "OR instr(study_text(next_step),?)>0) "
+                    "ORDER BY updated_at DESC,topic_id LIMIT ? OFFSET ?",
+                    (user_id, needle, needle, needle, limit, offset),
                 )
             ]
 
