@@ -485,7 +485,7 @@ def register_account_pages(
                     f'<div{latest} class="dialogue-state dialogue-failed"><p>这次未能取得回复。你的消息已保留；需要时可以重新输入发送。系统不会自动重试。</p><button class="dialogue-recover" type="button"{" disabled" if pending or not enabled else ""}>放回输入框修改</button><p class="dialogue-recovery-note" role="status"></p></div>'
                 )
         disabled = "" if enabled and not pending else " disabled"
-        composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability"{disabled}></textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials#add-material">＋ 添加资料</a><button class="button button-primary" type="submit"{disabled}>发送</button></div></div>'
+        composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability coach-input-help"{disabled}></textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials#add-material">＋ 添加资料</a><button class="button button-outline dialogue-latest" id="dialogue-latest" type="button" aria-controls="dialogue-history" hidden disabled>回到最新对话</button><button class="button button-primary" type="submit"{disabled}>发送</button></div><span id="coach-input-help" class="conversation-shortcut" hidden>Ctrl／⌘ + Enter 发送 · Enter 换行</span></div>'
         if enabled:
             composer = dialogue_form(
                 token, "message", composer, study_id, form_part, review_guard
@@ -529,7 +529,7 @@ def register_account_pages(
             + "".join(history)
             + '</div></div><div id="conversation-input">'
             + composer
-            + '</div><script src="/static/content-copy.js?v=1" defer></script><script src="/static/coach-dialogue.js?v=content-copy-1" defer></script>'
+            + '</div><script src="/static/content-copy.js?v=1" defer></script><script src="/static/coach-dialogue.js?v=chat-efficiency-1" defer></script>'
         )
         if learning:
             details = f'<h3>{escape(learning["topic"])}</h3><dl><dt>学习进度 · 已讨论</dt><dd>{escape(learning["progress"])}</dd><dt>下一步</dt><dd>{escape(learning["next_step"])}</dd></dl><p class="learning-record-note">记录会随讨论更新，也可自行修正；不代表已经掌握。</p>'

@@ -9,6 +9,21 @@
     let loading = false;
     let autoLoadBlocked = false;
     let sending = false;
+    const latest = document.getElementById("dialogue-latest");
+    function updateReadingControl() {
+        if (!latest) return;
+        latest.hidden = false;
+        latest.disabled = !messages.querySelector(".dialogue-message");
+    }
+    if (latest) {
+        latest.addEventListener("click", () => {
+            const target = messages.lastElementChild;
+            if (!target || latest.disabled) return;
+            history.focus({preventScroll: true});
+            showBeginning(target);
+        });
+    }
+    updateReadingControl();
 
     function message(role, content, rendered) {
         const article = document.createElement("article");
@@ -176,6 +191,7 @@
             const top = history.scrollTop;
             messages.prepend(fragment);
             document.dispatchEvent(new Event("coach-content-ready"));
+            updateReadingControl();
             load.dataset.before = page.before === null ? "" : String(page.before);
             load.hidden = page.before === null;
             status.textContent = "";
@@ -206,6 +222,20 @@
     }
 
     for (const form of document.querySelectorAll('form[action="/web/coach/message"]')) {
+        const shortcutInput = form.querySelector('textarea[name="message"]');
+        if (shortcutInput) {
+            const help = document.getElementById("coach-input-help");
+            if (help) help.hidden = false;
+            shortcutInput.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
+            shortcutInput.addEventListener("keydown", event => {
+                if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) ||
+                    event.shiftKey || event.altKey || event.isComposing || event.keyCode === 229 || event.repeat) return;
+                event.preventDefault();
+                if (sending || shortcutInput.disabled || shortcutInput.readOnly) return;
+                const submit = form.querySelector('button[type="submit"]');
+                if (submit && !submit.disabled) form.requestSubmit(submit);
+            });
+        }
         form.addEventListener("submit", async event => {
             event.preventDefault();
             if (sending) {
@@ -222,7 +252,7 @@
                 optimistic = message("user", input.value);
                 messages.append(optimistic);
             }
-            for (const button of document.querySelectorAll('form[action="/web/coach/message"] button')) {
+            for (const button of document.querySelectorAll('form[action="/web/coach/message"] button[type="submit"]')) {
                 button.disabled = true;
             }
             for (const button of messages.querySelectorAll(".dialogue-recover")) button.disabled = true;
@@ -235,6 +265,7 @@
             for (let index = 0; index < 3; index++) dots.append(document.createElement("i"));
             waiting.append(dots, document.createTextNode("成长教练正在思考，请稍候…"));
             messages.append(waiting);
+            updateReadingControl();
             history.setAttribute("aria-busy", "true");
             showBeginning(waiting);
             const controller = new AbortController();
@@ -271,7 +302,7 @@
                         });
                         waiting.append(usage);
                         if (input) input.readOnly = false;
-                        for (const button of document.querySelectorAll('form[action="/web/coach/message"] button')) button.disabled = false;
+                        for (const button of document.querySelectorAll('form[action="/web/coach/message"] button[type="submit"]')) button.disabled = false;
                         for (const button of messages.querySelectorAll(".dialogue-recover")) button.disabled = false;
                         sending = false;
                         showBeginning(waiting);
