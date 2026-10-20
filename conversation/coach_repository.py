@@ -1313,6 +1313,26 @@ class CoachRepository:
             ).fetchone()
         return row[0] if row else None
 
+    def knowledge_origin(self, user_id, knowledge_id):
+        """Read only a bounded origin of an owned, currently visible lesson."""
+        if (
+            not isinstance(knowledge_id, str)
+            or re.fullmatch(r"[a-f0-9]{32}", knowledge_id) is None
+        ):
+            return None
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT turn.turn_id,turn.created_at,turn.status,"
+                "substr(turn.user_content,1,180) AS user_excerpt,"
+                "length(turn.user_content)>180 AS truncated "
+                "FROM coach_knowledge AS lesson JOIN coach_turns AS turn "
+                "ON turn.turn_id=lesson.turn_id AND turn.user_id=lesson.user_id "
+                "WHERE lesson.user_id=? AND lesson.knowledge_id=? "
+                "AND lesson.status IN ('pending','saved')",
+                (user_id, knowledge_id),
+            ).fetchone()
+        return {**dict(row), "truncated": bool(row["truncated"])} if row else None
+
     def knowledge(
         self, user_id, knowledge_id, *, saved_only=False, include_dismissed=False
     ):

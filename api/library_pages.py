@@ -2242,6 +2242,9 @@ def register_library_pages(
             return problem(str(error))
         try:
             item = dialogue.knowledge(account.user_id, identity)
+            origin = (
+                dialogue.knowledge_origin(account.user_id, identity) if item else None
+            )
             favorite = (
                 dialogue.lesson_favorite(account.user_id, identity)
                 if item and item["status"] == "saved"
@@ -2256,6 +2259,22 @@ def register_library_pages(
             return problem("暂时无法读取教案。", 503)
         if not item:
             return problem("找不到这份教案。", 404)
+        origin_details = (
+            '<details class="library-card lesson-origin"><summary>整理来源 · '
+            + lesson_time(origin["created_at"])
+            + '</summary><p class="lesson-revision-note">这里是生成这份教案时的对话记录；后续修改教案不会改写原来的问答。回看不会切换当前学习主题，也不调用 AI。</p><p class="lesson-revision-note">整理时的提问 · '
+            + {"complete": "已回复", "pending": "尚未完成", "failed": "未取得回复"}[
+                origin["status"]
+            ]
+            + '</p><p class="conversation-record-text">'
+            + escape(origin["user_excerpt"])
+            + ("…" if origin["truncated"] else "")
+            + '</p><a class="text-link" href="/web/conversations/'
+            + str(origin["turn_id"])
+            + '">查看整理时的完整问答与引用 →</a></details>'
+            if origin
+            else '<p class="lesson-revision-note">原始整理对话暂不可用，教案和已保存的引用仍可阅读。</p>'
+        )
         matching = (
             '<p><a class="text-link" href="'
             + escape(
@@ -2389,6 +2408,7 @@ def register_library_pages(
         return page(
             item["title"],
             matching
+            + origin_details
             + '<section class="library-card">'
             + (
                 '<div class="book-study-summary"><p>'
