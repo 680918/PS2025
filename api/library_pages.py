@@ -24,6 +24,7 @@ from api.asset_export import build_export, export_summary, ExportError, SCOPES, 
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartParser, MultiPartException
 from api.coach_markdown import coach_markdown
+from api.lesson_export import lesson_document
 
 from api.public_pages import _render_layout
 from coach.materials import (
@@ -133,6 +134,7 @@ def register_library_pages(
     export_slots = BoundedSemaphore(2)
     export_limit = RegistrationRateLimiter(per_client_limit=2, total_limit=10)
     original_limit = RegistrationRateLimiter(per_client_limit=6, total_limit=60)
+    lesson_download_limit = RegistrationRateLimiter(per_client_limit=6, total_limit=60)
 
     def page(title, content, *, code=200, interactive=False):
         body = (
@@ -2349,7 +2351,7 @@ def register_library_pages(
                     identity,
                     "在对话中重温",
                 )
-                + f'<a class="button button-outline" href="/web/knowledge/{identity}/download">导出教案</a><a class="button button-outline" href="/web/knowledge/{identity}/edit">修改教案</a><a class="text-link" href="/web/knowledge/{identity}/versions">版本记录</a></div><article class="lesson-document markdown-content">'
+                + f'<a class="button button-outline" href="/web/knowledge/{identity}/readable">下载阅读版</a><a class="button button-outline" href="/web/knowledge/{identity}/download">下载 Markdown</a><a class="button button-outline" href="/web/knowledge/{identity}/edit">修改教案</a><a class="text-link" href="/web/knowledge/{identity}/versions">版本记录</a></div><p class="lesson-revision-note">阅读版为可在本地打开的 HTML 文件，保留表格、代码和最初引用；下载的是当前版本副本，不会随之后的修订自动更新。</p><article class="lesson-document markdown-content">'
                 + lesson_html(item["content"])
                 + "</article>"
             )
@@ -2901,6 +2903,50 @@ def register_library_pages(
             + identity
             + ("?notice=draft-staged" if operation == "draft" else "")
         )
+
+    @app.get("/web/knowledge/{identity}/readable", include_in_schema=False)
+    def readable_lesson(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        origin = request.headers.get("origin")
+        site = request.headers.get("sec-fetch-site")
+        if site == "cross-site" or (
+            origin not in {None, f"{request.url.scheme}://{request.url.netloc}"}
+            and not (origin == "null" and site == "same-origin")
+        ):
+            return problem("请从本人已保存教案页面下载阅读版。", 403)
+        if re.fullmatch(r"[a-f0-9]{32}", identity) is None:
+            return problem("找不到已保存的教案。", 404)
+        if request.query_params:
+            return problem("请从教案页面下载阅读版，不要附加查询参数。")
+        wait = lesson_download_limit.admit(account.user_id)
+        if wait:
+            response = problem("教案阅读版下载较频繁，请稍后再试。", 429)
+            response.headers["Retry-After"] = str(wait)
+            return response
+        if not export_slots.acquire(blocking=False):
+            return problem("已有资料正在准备，请稍后再试。", 503)
+        try:
+            item = dialogue.knowledge(account.user_id, identity, saved_only=True)
+            if item is None:
+                return problem("找不到已保存的教案。", 404)
+            content, name = lesson_document(item)
+            return Response(
+                content,
+                media_type="application/octet-stream",
+                headers={
+                    **HEADERS,
+                    "Content-Disposition": f"attachment; filename=\"zhixing-lesson-{identity}.html\"; filename*=UTF-8''"
+                    + quote(name, safe=""),
+                },
+            )
+        except (sqlite3.Error, ValueError, TypeError, KeyError, OverflowError):
+            return problem(
+                "教案阅读版暂时无法下载，请稍后重试或使用完整学习资料导出。", 503
+            )
+        finally:
+            export_slots.release()
 
     @app.get("/web/knowledge/{identity}/download", include_in_schema=False)
     def download(request: Request, identity: str):
