@@ -43,7 +43,7 @@ from coach.knowledge_search import (
     lesson_topic,
 )
 from coach.ai_usage import usage_message
-from coach.draft_edit import draft_version
+from coach.draft_edit import draft_version, draft_text
 import json
 from uuid import uuid4
 from coach.learning_topics import (
@@ -135,6 +135,7 @@ def register_library_pages(
     export_limit = RegistrationRateLimiter(per_client_limit=2, total_limit=10)
     original_limit = RegistrationRateLimiter(per_client_limit=6, total_limit=60)
     lesson_download_limit = RegistrationRateLimiter(per_client_limit=6, total_limit=60)
+    preview_limit = RegistrationRateLimiter(per_client_limit=12, total_limit=120)
 
     def page(title, content, *, code=200, interactive=False):
         body = (
@@ -2063,7 +2064,20 @@ def register_library_pages(
             + "</nav>",
         )
 
-    def draft_controls(request, item, *, values=None, message="", can_write=True):
+    def editing_preview(title, content, target):
+        return (
+            '<section id="lesson-edit-preview" class="library-card"><p class="lesson-version-notice" role="status">排版预览 · 本次填写尚未保存</p><p class="lesson-revision-note">这里只预览本次标题和正文；引用保留原记录，预览不会确认草稿或创建修订版本。</p><a class="text-link" href="#'
+            + target
+            + '">返回编辑 →</a><h2>'
+            + escape(title)
+            + '</h2><article class="lesson-document markdown-content">'
+            + lesson_html(content)
+            + "</article></section>"
+        )
+
+    def draft_controls(
+        request, item, *, values=None, message="", can_write=True, preview=""
+    ):
         values = {**item, **(values or {})}
         can_write = can_write and item["status"] == "pending"
         identity, version = item["knowledge_id"], draft_version(item)
@@ -2094,7 +2108,7 @@ def register_library_pages(
                 + identity
                 + '">查看当前教案</a><a class="text-link" href="/web/knowledge?status=pending">返回草稿目录</a></div>'
             )
-        body += (
+        body += preview or (
             '<article class="lesson-document markdown-content">'
             + lesson_html(item["content"])
             + "</article>"
@@ -2108,7 +2122,7 @@ def register_library_pages(
         body += '<input type="hidden" name="version" value="' + version + '">'
         body += (
             '<details class="lesson-edit"'
-            + (" open" if message else "")
+            + (" open" if message or preview else "")
             + '><summary>修改草稿标题和正文</summary><label for="lesson-title">教案标题</label><input id="lesson-title" name="title" maxlength="120" required value="'
             + escape(values["title"], quote=True)
             + '"><label for="lesson-content">教案正文（可以修改）</label><textarea id="lesson-content" name="content" rows="22" maxlength="12000" required>'
@@ -2118,7 +2132,9 @@ def register_library_pages(
         body += (
             '<p class="lesson-revision-note">暂存只保留当前草稿内容，不创建已保存教案的版本记录。未点击暂存或确认的填写不会自动保存。修改和暂存不调用 AI。</p><div class="library-actions"><button class="button button-outline" type="submit" formaction="/web/knowledge/'
             + identity
-            + '/draft">暂存草稿，稍后继续</button><button class="button button-primary" type="submit">确认保存到知识库</button></div></form>'
+            + '/draft">暂存草稿，稍后继续</button><button class="button button-outline" type="submit" formaction="/web/lesson-preview/'
+            + identity
+            + '/draft#lesson-edit-preview">预览排版（不保存）</button><button class="button button-primary" type="submit">确认保存到知识库</button></div></form>'
         )
         body += (
             '<form method="post" action="/web/knowledge/'
@@ -2515,7 +2531,7 @@ def register_library_pages(
             else None
         )
 
-    def lesson_editor(request, item, values=None, *, message="", code=200):
+    def lesson_editor(request, item, values=None, *, message="", code=200, preview=""):
         values = values or item
         identity, revision = item["knowledge_id"], str(item["revision"])
         body = (
@@ -2533,7 +2549,7 @@ def register_library_pages(
                 + lesson_html(item["content"])
                 + "</article></details>"
             )
-        body += (
+        body += preview + (
             '<section class="library-card lesson-revision-editor"><form method="post" action="/web/knowledge/'
             + identity
             + '/revise">'
@@ -2546,7 +2562,9 @@ def register_library_pages(
             + escape(values["title"], quote=True)
             + '"><label for="revision-content">教案正文（支持 Markdown）</label><textarea id="revision-content" name="content" rows="24" maxlength="12000" required>'
             + escape(values["content"])
-            + '</textarea><p class="lesson-revision-note">保存前请核对内容；引用继续保留为最初整理时的参考。未保存的修改不会自动保留，离开前请先保存或自行复制。</p><div class="library-actions"><button class="button button-primary" type="submit">'
+            + '</textarea><p class="lesson-revision-note">保存前请核对内容；引用继续保留为最初整理时的参考。未保存的修改不会自动保留，离开前请先保存或自行复制。</p><div class="library-actions"><button class="button button-outline" type="submit" formaction="/web/lesson-preview/'
+            + identity
+            + '/saved#lesson-edit-preview">预览排版（不保存）</button><button class="button button-primary" type="submit">'
             + ("再次确认并保存修订" if code == 409 else "保存修订")
             + '</button><a class="button button-outline" href="/web/knowledge/'
             + identity
@@ -2804,6 +2822,113 @@ def register_library_pages(
             else "revised"
         )
         return redirect("/web/knowledge/" + identity + "?notice=" + notice)
+
+    @app.post("/web/lesson-preview/{identity}/{kind}", include_in_schema=False)
+    async def lesson_edit_preview(request: Request, identity: str, kind: str):
+        account, denied = await run_in_threadpool(auth, request)
+        if denied is not None:
+            return denied
+        if (
+            kind not in {"draft", "saved"}
+            or re.fullmatch(r"[a-f0-9]{32}", identity) is None
+        ):
+            return problem("找不到这份可编辑教案。", 404)
+        if request.query_params:
+            return problem("请从教案编辑表单预览，不要附加查询参数。")
+        key, purpose = (
+            ("version", "draft-content") if kind == "draft" else ("revision", "revise")
+        )
+        values = await fields(request, {"csrf", key, "title", "content"}, limit=200000)
+        version = values.get(key, "") if values else ""
+        if (
+            (
+                re.fullmatch(r"[a-f0-9]{64}", version) is None
+                if kind == "draft"
+                else revision_number(version) is None
+            )
+            or not valid_csrf(request, values, purpose, identity + "." + version)
+            or (
+                request.headers.get("origin") == "null"
+                and request.headers.get("sec-fetch-site") != "same-origin"
+            )
+        ):
+            return problem("页面无法核对，请重新打开教案再预览。", 403)
+
+        def copy_problem(message, code):
+            return page(
+                "预览暂未完成",
+                '<p class="form-error-summary" role="alert">'
+                + escape(message)
+                + '</p><p class="lesson-revision-note">本次填写尚未保存，保留在下面供你复制；可核对后返回原教案继续编辑。</p><label for="preview-copy-title">本次标题</label><input id="preview-copy-title" readonly value="'
+                + escape(values["title"], quote=True)
+                + '"><label for="preview-copy-content">本次正文</label><textarea id="preview-copy-content" readonly rows="18">'
+                + escape(values["content"])
+                + '</textarea><a class="text-link" href="/web/knowledge/'
+                + identity
+                + '">回到原教案 →</a>',
+                code=code,
+            )
+
+        wait = preview_limit.admit(account.user_id)
+        if wait:
+            response = copy_problem("预览较频繁，请稍后再试。", 429)
+            response.headers["Retry-After"] = str(wait)
+            return response
+        try:
+            item = await run_in_threadpool(
+                dialogue.knowledge, account.user_id, identity
+            )
+            if item is None or (kind == "saved" and item["status"] != "saved"):
+                return copy_problem(
+                    "这份教案已被处理或暂不可用，本次填写没有保存。", 404
+                )
+
+            def render(message="", code=200, preview=""):
+                return (
+                    page(
+                        "草稿排版预览",
+                        draft_controls(
+                            request,
+                            item,
+                            values=values,
+                            message=message,
+                            can_write=item["status"] == "pending",
+                            preview=preview,
+                        ),
+                        code=code,
+                    )
+                    if kind == "draft"
+                    else lesson_editor(
+                        request,
+                        item,
+                        values,
+                        message=message,
+                        code=code,
+                        preview=preview,
+                    )
+                )
+
+            if (
+                kind == "draft"
+                and (item["status"] != "pending" or draft_version(item) != version)
+            ) or (kind == "saved" and item["revision"] != int(version)):
+                return render(
+                    "另一页面已更新或处理这份教案。预览没有保存本次填写，请先核对当前内容，再决定如何继续。",
+                    409,
+                )
+            try:
+                title, content = draft_text(values["title"], values["content"])
+            except ValueError as error:
+                return render(str(error), 400)
+            return render(
+                preview=editing_preview(
+                    title,
+                    content,
+                    "lesson-title" if kind == "draft" else "revision-title",
+                )
+            )
+        except sqlite3.Error:
+            return copy_problem("暂时无法读取教案进行预览，请稍后再试。", 503)
 
     @app.post("/web/knowledge/{identity}/{operation}", include_in_schema=False)
     async def knowledge_action(request: Request, identity: str, operation: str):
