@@ -584,6 +584,9 @@ input[aria-invalid="true"] { border-color: #923f32; }
 
 /* Archived conversations stay separate from the live composer's scroll and state. */
 .conversation-record-list { display: grid; gap: 18px; }
+.material-search-form > .conversation-date-field { flex: 1 1 160px; }
+.conversation-date-field input { min-height: 44px; font: inherit; font-size: 13px; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 10px; }
+@media(max-width:520px) { .material-search-form > .conversation-date-field { flex-basis: 100%; } }
 .conversation-record-card, .conversation-record-answer, .conversation-record-question { min-width: 0; overflow-wrap: anywhere; }
 .conversation-record-meta { color: var(--muted); font-size: 12px; line-height: 1.9; }
 .conversation-record-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; }

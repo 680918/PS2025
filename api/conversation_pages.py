@@ -15,6 +15,7 @@ from api.conversation_export import conversation_document
 from api.library_pages import HEADERS, library_csrf, search_highlight
 from api.public_pages import _render_layout
 from coach.knowledge_search import search_query, match_contexts
+from coach.conversation_dates import conversation_date_window
 from security.login_sessions import signed_in_account
 from security.registration_rate_limit import RegistrationRateLimiter
 
@@ -79,7 +80,7 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
     def filters(request):
         if any(
             len(request.query_params.getlist(name)) > 1
-            for name in ("q", "topic", "page")
+            for name in ("q", "topic", "page", "start", "end")
         ):
             raise ValueError("查找条件重复，请重新输入。")
         query = search_query(request.query_params.get("q", ""))
@@ -92,7 +93,17 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
             raise ValueError("请选择有效的对话主题。")
         if re.fullmatch(r"[1-9][0-9]{0,4}", number) is None or int(number) > 10000:
             raise ValueError("请输入有效的对话记录页码。")
-        return {"q": query, "topic": topic, "page": int(number)}
+        start, end = (
+            request.query_params.get("start", ""),
+            request.query_params.get("end", ""),
+        )
+        conversation_date_window(start, end)
+        values = {"q": query, "topic": topic, "page": int(number)}
+        if start:
+            values["start"] = start
+        if end:
+            values["end"] = end
+        return values
 
     def url(values, *, turn=None, **changes):
         path = "/web/conversations" + ("/" + str(turn) if turn is not None else "")
@@ -141,6 +152,8 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
                 query=values["q"],
                 topic_id=values["topic"],
                 page=values["page"],
+                start_day=values.get("start", ""),
+                end_day=values.get("end", ""),
             )
             topics = dialogue.list_topics(account.user_id, limit=101)
         except ValueError as error:
@@ -172,9 +185,23 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
             + '" placeholder="输入关键词；留空查看全部"></div>'
             '<div><label for="conversation-topic">对话主题</label><select id="conversation-topic" name="topic">'
             + options
-            + '</select></div><button class="button button-primary" type="submit">查看记录</button></form>'
+            + "</select></div>"
+            + '<div class="conversation-date-field"><label for="conversation-start">开始日期（可选）</label><input id="conversation-start" type="date" name="start" value="'
+            + escape(values.get("start", ""), quote=True)
+            + '"></div>'
+            + '<div class="conversation-date-field"><label for="conversation-end">结束日期（可选）</label><input id="conversation-end" type="date" name="end" value="'
+            + escape(values.get("end", ""), quote=True)
+            + '"></div>'
+            + '<button class="button button-primary" type="submit">查看记录</button></form>'
             '<p class="lesson-search-label">按原文字词查找你的消息和已保存回复，每页最多 20 轮。回看不调用 AI，也不切换当前学习位置。早期未分类记录保留原状。</p>'
+            '<p class="lesson-search-label">日期按发起对话的北京时间计算，开始和结束当天都包含；留空则不限制这一端日期。</p>'
         )
+        if values.get("start") or values.get("end"):
+            body += (
+                '<p><a class="text-link" href="'
+                + escape(url(values, start="", end="", page=1), quote=True)
+                + '">清除日期限制</a></p>'
+            )
         if len(topics) > 100:
             body += '<p class="lesson-search-label">下拉显示最近更新的 100 个主题；其他主题可从“我的学习”的“回看主题对话”进入。</p>'
         body += (
@@ -312,6 +339,13 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
             + '/download">下载本轮问答</a>'
             + '<p class="lesson-search-label">保存为可离线阅读的网页，包含本轮问题、已保存回复与当时引用；不调用 AI。</p></section>'
         )
+        lower, upper = conversation_date_window(
+            values.get("start", ""), values.get("end", "")
+        )
+        if (lower is not None and item["created_at"] < lower) or (
+            upper is not None and item["created_at"] >= upper
+        ):
+            body += '<p class="lesson-search-label">本轮发起日期不在所选范围内；相邻问答按同一主题连接，可以阅读当前问答或返回原日期结果。</p>'
         query = values["q"]
         if query:
             matches = []

@@ -32,6 +32,7 @@ from coach.knowledge_search import (
     lesson_topic,
 )
 from coach.ai_usage import USAGE_SCHEMA, budget
+from coach.conversation_dates import conversation_date_window
 from coach.draft_edit import draft_version, draft_text
 
 
@@ -931,10 +932,20 @@ class CoachRepository:
             status = "expired"
         return {"status": status}
 
-    def conversation_records(self, user_id, *, query="", topic_id="", page=1):
+    def conversation_records(
+        self, user_id, *, query="", topic_id="", page=1, start_day="", end_day=""
+    ):
         """Read owned stored messages without expiring requests or changing learning state."""
         query = search_query(query)
         scope, scope_values = _review_scope(topic_id)
+        lower, upper = conversation_date_window(start_day, end_day)
+        date_scope, date_values = "", []
+        if lower is not None:
+            date_scope += " AND turn.created_at>=?"
+            date_values.append(lower)
+        if upper is not None:
+            date_scope += " AND turn.created_at<?"
+            date_values.append(upper)
         if type(page) is not int or not 1 <= page <= 10000:
             raise ValueError("请输入有效的对话记录页码。")
         with closing(self._connect()) as db:
@@ -944,10 +955,11 @@ class CoachRepository:
                 + _REVIEW_FROM
                 + "WHERE turn.user_id=?"
                 + scope
+                + date_scope
                 + " AND (instr(lower(turn.user_content),lower(?))>0 "
                 "OR instr(lower(COALESCE(turn.assistant_content,'')),lower(?))>0) "
                 "ORDER BY turn.turn_id DESC LIMIT 21 OFFSET ?",
-                (user_id, *scope_values, query, query, (page - 1) * 20),
+                (user_id, *scope_values, *date_values, query, query, (page - 1) * 20),
             ).fetchall()
         results = []
         for row in rows:
