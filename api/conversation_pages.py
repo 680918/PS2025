@@ -4,12 +4,14 @@ import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from html import escape
-from urllib.parse import urlencode
+from threading import BoundedSemaphore
+from urllib.parse import quote, urlencode
 
 from fastapi import Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from api.coach_markdown import coach_markdown
+from api.conversation_export import conversation_document
 from api.library_pages import HEADERS, library_csrf, search_highlight
 from api.public_pages import _render_layout
 from coach.knowledge_search import search_query, match_contexts
@@ -19,6 +21,8 @@ from security.registration_rate_limit import RegistrationRateLimiter
 
 def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
     views = RegistrationRateLimiter(per_client_limit=40, total_limit=400)
+    downloads = RegistrationRateLimiter(per_client_limit=6, total_limit=60)
+    download_slots = BoundedSemaphore(2)
 
     def page(title, body, code=200):
         content = (
@@ -220,6 +224,50 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
         body += "</nav>"
         return page("对话记录", body)
 
+    @app.get("/web/conversations/{identity}/download", include_in_schema=False)
+    def download(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        if request.headers.get("sec-fetch-site") == "cross-site" or request.headers.get(
+            "origin"
+        ) not in {None, f"{request.url.scheme}://{request.url.netloc}"}:
+            return problem("请从本人对话记录页面下载。", 403)
+        if (
+            re.fullmatch(r"[1-9][0-9]{0,18}", identity) is None
+            or int(identity) > 9223372036854775807
+        ):
+            return problem("找不到这轮对话。", 404)
+        if request.query_params:
+            return problem("下载不接受额外参数，请从完整问答页面重新打开。")
+        wait = downloads.admit(account.user_id)
+        if wait:
+            response = problem("问答下载较频繁，请稍后再试。", 429)
+            response.headers["Retry-After"] = str(wait)
+            return response
+        if not download_slots.acquire(blocking=False):
+            return problem("已有问答正在准备，请稍后再试。", 503)
+        try:
+            item = dialogue.conversation_record(account.user_id, int(identity))
+            if item is None:
+                return problem("找不到这轮对话。", 404)
+            content, name = conversation_document(item)
+            return Response(
+                content,
+                media_type="application/octet-stream",
+                headers={
+                    **HEADERS,
+                    "Content-Disposition": f"attachment; filename=\"zhixing-dialogue-{identity}.html\"; filename*=UTF-8''"
+                    + quote(name, safe=""),
+                },
+            )
+        except (sqlite3.Error, ValueError, TypeError, KeyError, OverflowError):
+            return problem(
+                "这轮问答暂时无法下载，可稍后重试或使用完整学习资料导出。", 503
+            )
+        finally:
+            download_slots.release()
+
     @app.get("/web/conversations/{identity}", include_in_schema=False)
     def detail(request: Request, identity: str):
         account, denied = auth(request)
@@ -251,7 +299,11 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
             + escape(stamp(item))
             + " · "
             + status(item)
-            + '</p><p class="lesson-search-label">这里只回看已有记录。当前学习位置保持不变。</p></section>'
+            + '</p><p class="lesson-search-label">这里只回看已有记录。当前学习位置保持不变。</p>'
+            + '<a class="button button-outline" href="/web/conversations/'
+            + str(item["turn_id"])
+            + '/download">下载本轮问答</a>'
+            + '<p class="lesson-search-label">保存为可离线阅读的网页，包含本轮问题、已保存回复与当时引用；不调用 AI。</p></section>'
         )
         query = values["q"]
         if query:
