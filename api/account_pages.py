@@ -529,7 +529,7 @@ def register_account_pages(
             + "".join(history)
             + '</div></div><div id="conversation-input">'
             + composer
-            + '</div><script src="/static/coach-dialogue.js?v=dialogue-recovery-1" defer></script>'
+            + '</div><script src="/static/content-copy.js?v=1" defer></script><script src="/static/coach-dialogue.js?v=content-copy-1" defer></script>'
         )
         if learning:
             details = f'<h3>{escape(learning["topic"])}</h3><dl><dt>学习进度 · 已讨论</dt><dd>{escape(learning["progress"])}</dd><dt>下一步</dt><dd>{escape(learning["next_step"])}</dd></dl><p class="learning-record-note">记录会随讨论更新，也可自行修正；不代表已经掌握。</p>'

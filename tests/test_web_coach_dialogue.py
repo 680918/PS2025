@@ -296,7 +296,8 @@ def test_clean_layout_has_scrolling_history_and_moves_help_to_learning_panel(set
     _, client, _, _, _ = setup
     page = login(client)
     assert 'id="dialogue-history"' in page.text
-    assert 'src="/static/coach-dialogue.js?v=dialogue-recovery-1"' in page.text
+    assert 'src="/static/coach-dialogue.js?v=content-copy-1"' in page.text
+    assert 'src="/static/content-copy.js?v=1"' in page.text
     assert "script-src 'self'" in page.headers["content-security-policy"]
     assert "connect-src 'self'" in page.headers["content-security-policy"]
     for removed in (

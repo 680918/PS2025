@@ -26,6 +26,12 @@ def records(text):
     ]
 
 
+def assert_safe_copy_page(text):
+    script = '<script src="/static/content-copy.js?v=1" defer></script>'
+    assert text.count(script) == 1
+    assert Links(text.replace(script, "")).active == []
+
+
 def test_old_dialogue_search_read_and_explicit_topic_switch_keep_the_same_chat(setup):
     _, client, repo, materials, user, _, calls = setup
     login(client)
@@ -136,7 +142,7 @@ def test_archive_source_snapshots_saved_assets_and_drafts_stay_separate(setup):
     detail = client.get(f"/web/conversations/{identity}")
     assert "后来修订的教案" in detail.text and "已保存教案" in detail.text
     assert "当时引用的原文" in detail.text and calls == []
-    assert Links(detail.text).active == []
+    assert_safe_copy_page(detail.text)
 
 
 def test_unclassified_failed_pending_and_no_match_pages_do_not_retry_or_expire(setup):
@@ -198,7 +204,12 @@ def test_html_queries_messages_topics_and_markdown_remain_inert(setup):
     found = client.get("/web/conversations", params={"q": query})
     detail = client.get(records(found.text)[0])
     for response in (found, detail):
-        assert response.status_code == 200 and Links(response.text).active == []
+        assert response.status_code == 200
+        if response is detail:
+            assert_safe_copy_page(response.text)
+            assert "script-src 'self'" in response.headers["content-security-policy"]
+        else:
+            assert Links(response.text).active == []
         assert "<mark>&lt;img src=x onerror=alert(2)&gt;</mark>" in response.text
         assert response.headers["cache-control"] == "no-store"
         assert response.headers["referrer-policy"] == "no-referrer"

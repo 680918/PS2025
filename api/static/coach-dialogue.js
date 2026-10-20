@@ -175,6 +175,7 @@
             const height = history.scrollHeight;
             const top = history.scrollTop;
             messages.prepend(fragment);
+            document.dispatchEvent(new Event("coach-content-ready"));
             load.dataset.before = page.before === null ? "" : String(page.before);
             load.hidden = page.before === null;
             status.textContent = "";

@@ -24,7 +24,7 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
     downloads = RegistrationRateLimiter(per_client_limit=6, total_limit=60)
     download_slots = BoundedSemaphore(2)
 
-    def page(title, body, code=200):
+    def page(title, body, code=200, *, copy=False):
         content = (
             '<main id="main-content" class="library-space conversation-review-space">'
             '<nav class="library-tabs" aria-label="工作区入口"><a href="/web/welcome">← 回到对话</a>'
@@ -33,10 +33,17 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
             '<a href="/web/knowledge">知识资产沉淀</a><a href="/web/export">导出学习资料</a></nav>'
             "<h1>" + escape(title) + "</h1>" + body + "</main>"
         )
+        if copy:
+            content += '<script src="/static/content-copy.js?v=1" defer></script>'
         return HTMLResponse(
             _render_layout(title + " · 知行", content, signed_in=True),
             status_code=code,
-            headers=HEADERS,
+            headers={
+                **HEADERS,
+                "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+            }
+            if copy
+            else HEADERS,
         )
 
     def problem(text, code=400):
@@ -400,4 +407,4 @@ def register_conversation_pages(app, accounts, dialogue, *, csrf_key):
             )
         else:
             body += '<p class="lesson-search-label">本轮没有可靠的主题归属；可以回到统一对话，说明你想继续讨论的内容。</p>'
-        return page("回看一轮对话", body)
+        return page("回看一轮对话", body, copy=True)
