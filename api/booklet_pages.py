@@ -16,7 +16,7 @@ from api.library_pages import HEADERS, library_csrf, search_excerpt
 from api.public_pages import _render_layout
 from coach.booklets import booklet_markdown, booklet_position_text
 from coach.unit_lessons import unit_scope_text
-from coach.knowledge_search import search_query
+from coach.knowledge_search import search_query, lesson_match
 from security.login_sessions import signed_in_account
 from security.registration_rate_limit import RegistrationRateLimiter
 import secrets
@@ -529,11 +529,118 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
             + ("#booklet-add" if operation == "add" else "")
         )
 
+    def find_form(identity, query=""):
+        return (
+            '<form class="library-search" method="get" action="/web/booklets/'
+            + identity
+            + '/find"><label class="visually-hidden" for="booklet-find-query">在本手册内查找</label><input id="booklet-find-query" name="q" maxlength="120" placeholder="查找本册标题、主题或正文" value="'
+            + escape(query, quote=True)
+            + '"><button class="button button-outline" type="submit">查找章节</button></form>'
+        )
+
+    @app.get("/web/booklets/{identity}/find", include_in_schema=False)
+    def find(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            if set(request.query_params) - {"q", "page"} or any(
+                len(request.query_params.getlist(key)) > 1 for key in ("q", "page")
+            ):
+                raise ValueError("查找条件无法核对，请重新填写。")
+            q, number = query_values(request.query_params)
+            results = dialogue.find_booklet(account.user_id, identity, q, page=number)
+        except ValueError as error:
+            return problem(str(error))
+        except sqlite3.Error:
+            return problem("暂时无法查找本手册，请稍后再试。", 503)
+        if results is None:
+            return problem("找不到这本本人手册。", 404)
+        url = "/web/booklets/" + identity
+        body = (
+            '<p><a class="text-link" href="'
+            + url
+            + '">← 返回手册阅读</a></p><h2>'
+            + escape(results["title"])
+            + '</h2><p class="library-intro">只查这本手册已收录且可用教案的当前标题、主题与正文；引用和其他教案不在范围内。每页最多20章，按手册顺序展示。查找与阅读不调用AI，也不改写续读位置。</p>'
+            + find_form(identity, q)
+        )
+        if q:
+            body += (
+                "<h2>找到 "
+                + str(results["total"])
+                + " 个章节 · 第 "
+                + str(number)
+                + " 页</h2>"
+            )
+            for item in results["items"]:
+                target = (
+                    url
+                    + "?"
+                    + urlencode(
+                        {"lesson": item["knowledge_id"], "find": q, "find_page": number}
+                    )
+                    + "#booklet-reading"
+                )
+                body += (
+                    '<article class="library-card"><p class="lesson-search-label">第 '
+                    + str(item["number"])
+                    + " 章 · 教案第 "
+                    + str(item["revision"])
+                    + " 版</p><h3>"
+                    + escape(item["title"])
+                    + "</h3>"
+                    + search_excerpt(item, q)
+                    + '<a class="text-link" href="'
+                    + escape(target, quote=True)
+                    + '">打开匹配章节 →</a></article>'
+                )
+            if not results["items"]:
+                body += '<p class="library-empty">这一页没有匹配章节，可以缩短关键词或返回上一页。</p>'
+            body += '<nav class="library-paging" aria-label="手册查找翻页">'
+            for target, label, visible in (
+                (number - 1, "← 上一页", number > 1),
+                (number + 1, "下一页 →", number * 20 < results["total"]),
+            ):
+                if visible:
+                    body += (
+                        '<a href="'
+                        + escape(
+                            url + "/find?" + urlencode({"q": q, "page": target}),
+                            quote=True,
+                        )
+                        + '">'
+                        + label
+                        + "</a>"
+                    )
+            body += "</nav>"
+        else:
+            body += '<p class="library-empty">输入关键词，开始查找这本手册。按原文字词匹配，英文字母不区分大小写。</p>'
+        return page("手册内查找", body)
+
     @app.get("/web/booklets/{identity}", include_in_schema=False)
     def read(request: Request, identity: str):
         account, denied = auth(request)
         if denied is not None:
             return denied
+        try:
+            if any(
+                len(request.query_params.getlist(key)) > 1
+                for key in ("chapter", "lesson", "find", "find_page")
+            ):
+                raise ValueError("章节或查找条件重复，请重新打开。")
+            q = search_query(request.query_params.get("find", ""))
+            find_page = request.query_params.get("find_page", "1")
+            if not re.fullmatch(r"[1-9][0-9]{0,3}|10000", find_page):
+                raise ValueError("查找结果页码无法核对。")
+            lesson = request.query_params.get("lesson")
+            if lesson is not None and (
+                re.fullmatch(r"[a-f0-9]{32}", lesson) is None
+                or "chapter" in request.query_params
+            ):
+                raise ValueError("请只选择一个有效章节。")
+        except ValueError as error:
+            return problem(str(error))
         try:
             value = request.query_params.get("chapter")
             if value is not None and not re.fullmatch(r"[1-9][0-9]{0,2}", value):
@@ -541,16 +648,41 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
             book = dialogue.booklet(
                 account.user_id,
                 identity,
-                chapter=int(value) if value is not None else "resume",
+                chapter=lesson or (int(value) if value is not None else "resume"),
             )
             if book is None:
                 return problem("找不到这本本人手册。", 404)
             number = book["selected_chapter"]
             if book["chapters"] and number > len(book["chapters"]):
                 return problem("找不到这个手册章节。", 404)
+        except LookupError:
+            target = (
+                "/web/booklets/"
+                + identity
+                + "/find?"
+                + urlencode({"q": q, "page": find_page})
+            )
+            return page(
+                "章节已变化",
+                '<p>这份教案已不在本手册目录中，请重新查找。</p><a class="text-link" href="'
+                + escape(target, quote=True)
+                + '">返回本册查找结果</a>',
+                code=404,
+            )
         except (sqlite3.Error, ValueError):
             return problem("暂时无法读取手册。", 503)
         url = "/web/booklets/" + identity
+
+        def chapter_link(target):
+            args = {"chapter": target}
+            if q and book["chapters"]:
+                args = {
+                    "lesson": book["chapters"][target - 1]["knowledge_id"],
+                    "find": q,
+                    "find_page": find_page,
+                }
+            return "?" + urlencode(args) + "#booklet-reading"
+
         body = (
             '<p class="library-intro">共 '
             + str(len(book["chapters"]))
@@ -562,7 +694,19 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
             + url
             + '/download?format=md">导出整册 Markdown</a><a class="text-link" href="'
             + url
-            + '?chapter=1#booklet-reading">从头阅读</a></div><p class="lesson-revision-note">'
+            + escape(chapter_link(1), quote=True)
+            + '">从头阅读</a></div>'
+            + find_form(identity, q)
+            + (
+                '<p><a class="text-link" href="'
+                + escape(
+                    url + "/find?" + urlencode({"q": q, "page": find_page}), quote=True
+                )
+                + '">← 返回本册查找结果</a></p>'
+                if q
+                else ""
+            )
+            + '<p class="lesson-revision-note">'
             + escape(booklet_position_text(book))
             + ' 阅读位置不代表学习完成或掌握程度。</p><details class="library-card booklet-toc" open><summary>手册目录</summary><ol>'
         )
@@ -570,9 +714,9 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
             body += (
                 "<li><a"
                 + (' aria-current="page"' if item["number"] == number else "")
-                + ' href="?chapter='
-                + str(item["number"])
-                + '#booklet-reading">'
+                + ' href="'
+                + escape(chapter_link(item["number"]), quote=True)
+                + '">'
                 + escape(item["title"])
                 + "</a></li>"
             )
@@ -590,9 +734,27 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
                 + escape(item["title"])
                 + "</h2>"
             )
+            if q:
+                body += (
+                    '<p><a class="text-link" href="'
+                    + escape(
+                        url + "/find?" + urlencode({"q": q, "page": find_page}),
+                        quote=True,
+                    )
+                    + '">← 返回本册查找结果</a></p>'
+                )
             if item.get("missing"):
                 body += "<p>原教案暂不可用，请回目录核对；系统不会改用其他教案。</p>"
             else:
+                if q:
+                    match = lesson_match(
+                        item["title"], item["topic"], item["content"], q
+                    )
+                    body += (
+                        search_excerpt({"search_match": match}, q)
+                        if match["fields"]
+                        else '<p class="lesson-search-label">本章内容可能已更新，当前未匹配关键词；可返回结果重新查找。</p>'
+                    )
                 position = book["reading_position"]
                 current = position["knowledge_id"] == item["knowledge_id"]
                 binding = (
@@ -665,15 +827,15 @@ def register_booklet_pages(app, accounts, dialogue, *, csrf_key):
             body += '</article><nav class="library-paging" aria-label="手册章节切换">'
             if number > 1:
                 body += (
-                    '<a href="?chapter='
-                    + str(number - 1)
-                    + '#booklet-reading">← 上一章</a>'
+                    '<a href="'
+                    + escape(chapter_link(number - 1), quote=True)
+                    + '">← 上一章</a>'
                 )
             if number < len(book["chapters"]):
                 body += (
-                    '<a href="?chapter='
-                    + str(number + 1)
-                    + '#booklet-reading">下一章 →</a>'
+                    '<a href="'
+                    + escape(chapter_link(number + 1), quote=True)
+                    + '">下一章 →</a>'
                 )
             body += "</nav>"
         return page(book["title"], body)

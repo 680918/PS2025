@@ -5,6 +5,7 @@ import re
 import unicodedata
 
 from coach.unit_lessons import unit_scope_text
+from coach.knowledge_search import search_query, lesson_match
 
 
 MAX_BOOKLETS = 50
@@ -48,6 +49,10 @@ def booklet_snapshot(database, user_id, identity, *, chapter=None):
     book["reading_position"] = booklet_position(database, user_id, identity, ids)
     if chapter == "resume":
         chapter = book["reading_position"]["number"] or 1
+    elif isinstance(chapter, str) and re.fullmatch(r"[a-f0-9]{32}", chapter):
+        if chapter not in ids:
+            raise LookupError("这份教案已不在本手册目录中。")
+        chapter = ids.index(chapter) + 1
     book["selected_chapter"] = chapter
     has_scope = (
         database.execute(
@@ -85,6 +90,50 @@ def booklet_snapshot(database, user_id, identity, *, chapter=None):
         chapters.append(item)
     book["chapters"] = chapters
     return book
+
+
+def booklet_search(database, user_id, identity, query, *, page=1):
+    """Current saved chapters only; the caller holds one read transaction."""
+    query = search_query(query)
+    if not isinstance(identity, str) or re.fullmatch(r"[a-f0-9]{32}", identity) is None:
+        raise ValueError("手册编号无法读取。")
+    if type(page) is not int or not 1 <= page <= 10000:
+        raise ValueError("请检查查找结果页码。")
+    row = database.execute(
+        "SELECT booklet_id,title,revision,lesson_ids_json FROM coach_booklets WHERE user_id=? AND booklet_id=?",
+        (user_id, identity),
+    ).fetchone()
+    if row is None:
+        return None
+    book = dict(row)
+    ids = booklet_ids(book.pop("lesson_ids_json"))
+    results = []
+    if query:
+        for number, lesson_id in enumerate(ids, 1):
+            lesson = database.execute(
+                "SELECT knowledge_id,title,topic,content,COALESCE((SELECT MAX(revision) FROM coach_knowledge_versions v WHERE v.user_id=k.user_id AND v.knowledge_id=k.knowledge_id),1) AS revision FROM coach_knowledge k WHERE user_id=? AND knowledge_id=? AND status='saved'",
+                (user_id, lesson_id),
+            ).fetchone()
+            if lesson is None:
+                continue
+            match = lesson_match(
+                lesson["title"], lesson["topic"], lesson["content"], query
+            )
+            if match["fields"]:
+                results.append(
+                    {
+                        key: lesson[key]
+                        for key in ("knowledge_id", "title", "topic", "revision")
+                    }
+                    | {"number": number, "search_match": match}
+                )
+    return book | {
+        "query": query,
+        "page": page,
+        "chapter_count": len(ids),
+        "total": len(results),
+        "items": results[(page - 1) * 20 : page * 20],
+    }
 
 
 def booklet_position(database, user_id, identity, ids):

@@ -7,6 +7,7 @@ from coach.booklets import (
     booklet_title,
     booklet_ids,
     booklet_snapshot,
+    booklet_search,
     booklet_position,
     MAX_BOOKLETS,
     MAX_CHAPTERS,
@@ -215,6 +216,11 @@ class CoachRepository:
         with closing(self._connect()) as db, db:
             db.execute("BEGIN")
             return booklet_snapshot(db, user_id, identity, chapter=chapter)
+
+    def find_booklet(self, user_id, identity, query, *, page=1):
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN")
+            return booklet_search(db, user_id, identity, query, page=page)
 
     def create_booklet(self, user_id, identity, title, *, now=None):
         title = booklet_title(title)
