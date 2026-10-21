@@ -63,12 +63,13 @@ def reader_response(item, total, number, *, ocr_csrf=""):
         + escape(item["title"])
         + '</h1><p class="reader-intro">阅读全书 · '
         + (
-            "PDF 原始页面，连续向下滚动；文件页码可能不同于书内印刷页码。"
+            "直接阅读原始 PDF，共 "
+            + str(total)
+            + " 页。向下滚动或输入页码阅读，无需先识别文字；文件页码可能不同于书内印刷页码。"
             if pdf
             else "文字连续阅读；阅读页按约 2400 字划分，保留原文换行。"
         )
         + "</p>"
-        + extraction_notice(item)
         + '<section id="book-reader" data-kind="'
         + escape(item["kind"], quote=True)
         + '" data-total="'
@@ -79,7 +80,7 @@ def reader_response(item, total, number, *, ocr_csrf=""):
         + base
         + '/original" data-text-pages="'
         + base
-        + '/read/pages">'
+        + '/read/pages" data-state="loading">'
         + '<div class="reader-toolbar"><button class="button button-outline" id="reader-previous" type="button" disabled>上一页</button><form id="reader-locate" method="get"><label for="reader-page-number">跳到阅读页</label><input id="reader-page-number" name="page" type="number" min="1" max="'
         + str(total)
         + '" value="'
@@ -98,8 +99,24 @@ def reader_response(item, total, number, *, ocr_csrf=""):
             else ""
         )
         + "</div>"
+        + (
+            '<p class="reader-alternative">书页未显示？<a id="reader-direct" class="button button-outline" href="'
+            + base
+            + "/read/pdf#page="
+            + str(number)
+            + '" target="_blank" rel="noopener noreferrer">直接打开原始 PDF</a><span>使用浏览器阅读器；不调用 AI。</span></p>'
+            + '<details class="reader-extraction"><summary>Coach 的文字依据 · '
+            + str(item["readable_pages"])
+            + " / "
+            + str(total)
+            + " 页（不影响原书阅读）</summary>"
+            + extraction_notice(item)
+            + "</details>"
+            if pdf
+            else ""
+        )
         + (ocr_panel(base, ocr_csrf) if pdf else "")
-        + '<p id="reader-status" role="status" aria-live="polite">正在准备阅读页面…</p><button id="reader-retry" class="button button-outline" type="button" hidden>重试当前页</button><div id="reader-pages" aria-label="全书连续阅读页面"></div>'
+        + '<progress id="reader-progress" aria-label="原书加载进度"></progress><p id="reader-status" role="status" aria-live="polite">正在打开原书，较大文件首次加载需要一点时间…</p><button id="reader-retry" class="button button-outline" type="button" hidden>重试当前页</button><div id="reader-pages" aria-label="全书连续阅读页面"></div>'
         + '<noscript><p>连续阅读需要开启 JavaScript。也可以<a class="text-link" href="'
         + base
         + '/original">下载原件阅读</a>。</p></noscript></section>'

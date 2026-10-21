@@ -560,8 +560,10 @@ def register_library_pages(
             background=BackgroundTask(cleanup),
         )
 
+    @app.get("/web/materials/{identity}/read/pdf", include_in_schema=False)
     @app.get("/web/materials/{identity}/original", include_in_schema=False)
     async def material_original(request: Request, identity: str):
+        inline_pdf = request.url.path.endswith("/read/pdf")
         account, denied = await run_in_threadpool(auth, request)
         if denied is not None:
             return denied
@@ -595,6 +597,9 @@ def register_library_pages(
             if item is None:
                 cleanup()
                 return problem("找不到这份本人资料。", 404)
+            if inline_pdf and item["kind"] != "pdf":
+                cleanup()
+                return problem("这份资料不是可直接打开的 PDF。", 404)
             name = original_download_name(item["title"], item["kind"])
             extension = name[name.rfind(".") :]
         except (sqlite3.Error, MaterialError):
@@ -614,11 +619,19 @@ def register_library_pages(
 
         return StreamingResponse(
             stream(),
-            media_type="application/octet-stream",
+            media_type="application/pdf" if inline_pdf else "application/octet-stream",
             headers={
                 **HEADERS,
+                **(
+                    {
+                        "Content-Security-Policy": "default-src 'none'; object-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+                    }
+                    if inline_pdf
+                    else {}
+                ),
                 "Content-Length": str(len(item["content"])),
-                "Content-Disposition": f"attachment; filename=\"material-{identity}{extension}\"; filename*=UTF-8''"
+                "Content-Disposition": ("inline" if inline_pdf else "attachment")
+                + f"; filename=\"material-{identity}{extension}\"; filename*=UTF-8''"
                 + quote(name, safe=""),
             },
             background=BackgroundTask(cleanup),
