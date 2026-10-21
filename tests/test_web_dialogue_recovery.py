@@ -45,7 +45,8 @@ def test_owned_status_is_private_read_only_and_stale_pending_does_not_expire_on_
         ai_kind="dialogue",
     )
     before = repo.database_path.read_bytes()
-    usage = repo.ai_usage(user.user_id)
+    snapshot_time = int(time())
+    usage = repo.ai_usage(user.user_id, now=snapshot_time)
     pending = client.get("/web/coach/status", params={"nonce": nonce})
     assert pending.status_code == 200 and pending.json() == {"status": "pending"}
     assert (
@@ -58,7 +59,7 @@ def test_owned_status_is_private_read_only_and_stale_pending_does_not_expire_on_
     ).json() == {"status": "missing"}
     assert (
         repo.database_path.read_bytes() == before
-        and repo.ai_usage(user.user_id) == usage
+        and repo.ai_usage(user.user_id, now=snapshot_time) == usage
         and calls == []
     )
     with sqlite3.connect(repo.database_path) as db:
