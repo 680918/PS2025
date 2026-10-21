@@ -81,13 +81,21 @@ def reader_response(item, total, number, *, ocr_csrf=""):
         + '/original" data-text-pages="'
         + base
         + '/read/pages" data-state="loading">'
-        + '<div class="reader-toolbar"><button class="button button-outline" id="reader-previous" type="button" disabled>上一页</button><form id="reader-locate" method="get"><label for="reader-page-number">跳到阅读页</label><input id="reader-page-number" name="page" type="number" min="1" max="'
+        + '<div class="reader-toolbar"><form id="reader-previous-form" class="reader-turn" method="get"><input id="reader-previous-page" type="hidden" name="page" value="'
+        + str(max(1, number - 1))
+        + '"><button class="button button-outline" id="reader-previous" type="submit"'
+        + (' disabled title="已到第一页"' if number == 1 else "")
+        + '>上一页</button></form><form id="reader-locate" method="get"><label for="reader-page-number">跳到阅读页</label><input id="reader-page-number" name="page" type="number" min="1" max="'
         + str(total)
         + '" value="'
         + str(number)
         + '" required><span> / '
         + str(total)
-        + '</span><button class="button button-outline" type="submit">前往</button></form><button class="button button-outline" id="reader-next" type="button" disabled>下一页</button>'
+        + '</span><button class="button button-outline" type="submit">前往</button></form><form id="reader-next-form" class="reader-turn" method="get"><input id="reader-next-page" type="hidden" name="page" value="'
+        + str(min(total, number + 1))
+        + '"><button class="button button-outline" id="reader-next" type="submit"'
+        + (' disabled title="已到最后一页"' if number == total else "")
+        + ">下一页</button></form>"
         + (
             '<label for="reader-zoom">显示大小</label><select id="reader-zoom"><option value="1">适合宽度</option><option value="1.25">放大 125%</option><option value="1.5">放大 150%</option></select>'
             if pdf
@@ -104,7 +112,7 @@ def reader_response(item, total, number, *, ocr_csrf=""):
             + base
             + "/read/pdf#page="
             + str(number)
-            + '" target="_blank" rel="noopener noreferrer">直接打开原始 PDF</a><span>使用浏览器阅读器；不调用 AI。</span></p>'
+            + '" target="_blank" rel="noopener noreferrer">直接打开原始 PDF</a><span>浏览器自带阅读器；知行翻页和 Enter 快捷键请在本页使用。</span></p>'
             + '<details class="reader-extraction"><summary>Coach 的文字依据 · '
             + str(item["readable_pages"])
             + " / "
@@ -116,11 +124,11 @@ def reader_response(item, total, number, *, ocr_csrf=""):
             else ""
         )
         + (ocr_panel(base, ocr_csrf) if pdf else "")
-        + '<progress id="reader-progress" aria-label="原书加载进度"></progress><p id="reader-status" role="status" aria-live="polite">正在打开原书，较大文件首次加载需要一点时间…</p><button id="reader-retry" class="button button-outline" type="button" hidden>重试当前页</button><div id="reader-pages" aria-label="全书连续阅读页面"></div>'
+        + '<p id="reader-shortcuts" class="reader-shortcuts">阅读时按 Enter 到下一页；输入框中保留原有输入操作。</p><progress id="reader-progress" aria-label="原书加载进度"></progress><p id="reader-status" role="status" aria-live="polite">正在打开原书，较大文件首次加载需要一点时间…</p><button id="reader-retry" class="button button-outline" type="button" hidden>重试当前页</button><div id="reader-pages" aria-label="全书连续阅读页面" aria-describedby="reader-shortcuts"></div>'
         + '<noscript><p>连续阅读需要开启 JavaScript。也可以<a class="text-link" href="'
         + base
         + '/original">下载原件阅读</a>。</p></noscript></section>'
-        + '<link rel="stylesheet" href="/static/vendor/pdfjs/web/pdf_viewer.css"><script type="module" src="/static/book-reader.mjs"></script></main>'
+        + '<link rel="stylesheet" href="/static/vendor/pdfjs/web/pdf_viewer.css"><script type="module" src="/static/book-reader.mjs?v=20261021-navigation"></script></main>'
     )
     return HTMLResponse(
         _render_layout("阅读全书 · 知行", body, signed_in=True),

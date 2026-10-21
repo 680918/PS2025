@@ -19,6 +19,7 @@ let running = false;
 let stopped = false;
 let readerReady = false;
 let loadingPhase = "准备阅读组件";
+let pageNavigationLocked = true;
 let firstViewport = {width: 600, height: 850};
 const sheets = new Map();
 const ready = new Map();
@@ -27,10 +28,16 @@ const batches = new Map();
 
 function announce(text) { status.textContent = text; }
 function position(number) {
+    if (sheets.has(current)) sheets.get(current).tabIndex = -1;
     current = number;
+    if (sheets.has(number)) sheets.get(number).tabIndex = 0;
     input.value = String(number);
     previous.disabled = number <= 1;
     next.disabled = number >= total;
+    previous.title = number <= 1 ? "已到第一页" : "上一页";
+    next.title = number >= total ? "已到最后一页" : "下一页";
+    document.getElementById("reader-previous-page").value = String(Math.max(1, number - 1));
+    document.getElementById("reader-next-page").value = String(Math.min(total, number + 1));
     if (direct) direct.hash = "page=" + number;
     announce("当前第 " + number + " / " + total + " 页 · 向下滚动继续阅读；阅读不会计为已讲解。");
     const url = new URL(location.href);
@@ -145,15 +152,60 @@ async function drain() {
         announce("这一页暂时无法显示。可重试当前页，或下载原件阅读；原书和学习记录保留。登录过期时请重新登录。");
     } finally { running = false; }
 }
-function jump(number) {
+function jump(number, focusReading = false) {
     if (!Number.isSafeInteger(number) || number < 1 || number > total) return;
+    pageNavigationLocked = true;
     position(number);
     enqueue(number);
-    sheets.get(number).scrollIntoView({block: "start", behavior: "instant"});
+    alignReadingPage(number);
+    if (focusReading) sheets.get(number).focus({preventScroll: true});
+}
+function readingLine() {
+    const toolbarHeight = root.querySelector(".reader-toolbar").getBoundingClientRect().height;
+    return Math.min(window.innerHeight - 1, Math.max(140, toolbarHeight + 12));
+}
+function alignReadingPage(number) {
+    const top = window.scrollY + sheets.get(number).getBoundingClientRect().top - readingLine() + 5;
+    window.scrollTo({top, behavior: "instant"});
 }
 retry.addEventListener("click", () => {
     if (!readerReady) { location.reload(); return; }
     queue.clear(); enqueue(current);
+});
+// Native GET forms remain usable if a component is still loading or fails.
+for (const [id, target] of [
+    ["reader-previous-form", () => current - 1],
+    ["reader-next-form", () => current + 1],
+    ["reader-locate", () => Number(input.value)],
+]) {
+    document.getElementById(id).addEventListener("submit", event => {
+        if (!readerReady) return;
+        event.preventDefault(); jump(target());
+    });
+}
+document.addEventListener("keydown", event => {
+    if (!readerReady || stopped || event.defaultPrevented || event.key !== "Enter" || event.repeat || event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    const target = event.target;
+    if (target instanceof Element && (target.isContentEditable || target.closest("input,textarea,select,button,a,summary,[contenteditable],[role='textbox'],[role='button']"))) return;
+    event.preventDefault();
+    if (current >= total) { announce("已到最后一页，可以向上滚动重读。"); return; }
+    jump(current + 1, true);
+});
+pagesNode.addEventListener("pointerdown", event => {
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest("a,button,input,textarea,select,[contenteditable]")) return;
+    const sheet = target.closest(".reader-sheet");
+    if (sheet) { pageNavigationLocked = false; sheet.focus({preventScroll: true}); }
+});
+window.addEventListener("wheel", () => {pageNavigationLocked = false;}, {passive: true});
+window.addEventListener("touchmove", () => {pageNavigationLocked = false;}, {passive: true});
+window.addEventListener("pointerdown", event => {
+    if (event.clientX >= document.documentElement.clientWidth || event.target === document.documentElement) pageNavigationLocked = false;
+});
+document.addEventListener("keydown", event => {
+    if (!["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) return;
+    if (event.target instanceof Element && event.target.closest("input,textarea,select,button,a,summary,[contenteditable]")) return;
+    pageNavigationLocked = false;
 });
 async function setup() {
     if (!root || !Number.isSafeInteger(total) || total < 1 || total > 1500 || initial < 1 || initial > total) {
@@ -184,6 +236,7 @@ async function setup() {
     for (let number = 1; number <= total; number++) {
         const sheet = document.createElement("article");
         sheet.className = "reader-sheet";
+        sheet.tabIndex = -1;
         sheet.dataset.page = String(number);
         sheet.id = "reading-page-" + number;
         const title = document.createElement("h2");
@@ -203,22 +256,22 @@ async function setup() {
     }, {rootMargin: "500px 0px"});
     let scrollFrame = false;
     window.addEventListener("scroll", () => {
-        if (scrollFrame) return;
+        if (scrollFrame || pageNavigationLocked) return;
         scrollFrame = true;
         requestAnimationFrame(() => {
             scrollFrame = false;
+            if (pageNavigationLocked) return;
             let nearest = current, distance = Infinity;
+            const line = readingLine();
             for (const [number, sheet] of sheets) {
                 const rect = sheet.getBoundingClientRect();
-                const gap = Math.abs(rect.top - 140);
-                if (rect.bottom > 120 && gap < distance) { nearest = number; distance = gap; }
+                if (rect.top <= line && rect.bottom > line) { nearest = number; break; }
+                const gap = rect.top - line;
+                if (gap >= 0 && gap < distance) { nearest = number; distance = gap; }
             }
             if (nearest !== current) { position(nearest); enqueue(nearest); trim(); }
         });
     }, {passive: true});
-    document.getElementById("reader-locate").addEventListener("submit", event => {event.preventDefault(); jump(Number(input.value));});
-    previous.addEventListener("click", () => jump(current - 1));
-    next.addEventListener("click", () => jump(current + 1));
     const zoomInput = document.getElementById("reader-zoom");
     let resizeTimer = null;
     const resize = () => {
@@ -247,7 +300,7 @@ async function setup() {
     readerReady = true;
     root.dataset.state = "ready";
     progress.hidden = true;
-    sheets.get(initial).scrollIntoView({block: "start", behavior: "instant"});
+    alignReadingPage(initial);
     for (const sheet of sheets.values()) observer.observe(sheet);
     if (isPDF) {
         try {
