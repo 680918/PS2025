@@ -29,7 +29,7 @@ SCOPES = {
     "memories": "学习记忆",
 }
 PERIODS = {"all": "全部时间", "30": "最近 30 天", "90": "最近 90 天"}
-MAX_BYTES = 100 * 1024**2
+MAX_BYTES = 512 * 1024**2
 MAX_ENTRIES = 5000
 LOCAL_ZONE = timezone(timedelta(hours=8))
 STYLE = """body{font:16px/1.85 system-ui,'Microsoft YaHei',sans-serif;color:#263f31;background:#faf9f5;margin:0}main{max-width:960px;margin:auto;padding:30px 20px}a{color:#365e46}h1{font-size:26px}h2{font-size:21px;margin-top:30px}p,ul,ol{margin:14px 0}.note,.meta{color:#657267;font-size:13px}.card,article{background:white;border:1px solid #e0e5d9;border-radius:10px;padding:20px;margin:20px 0;overflow-wrap:anywhere}.markdown-table-scroll{overflow-x:auto}table{border-collapse:collapse;min-width:100%;font-size:14px}th,td{border:1px solid #dce3d5;padding:10px;text-align:left;min-width:100px}th{background:#edf2e7}pre{white-space:pre;overflow-x:auto;background:#edf2e7;padding:14px;border-radius:8px;font:13px/1.8 Consolas,monospace}code{font-family:Consolas,monospace}.code-block{border:1px solid #dce3d5;border-radius:8px;margin:18px 0;overflow:hidden}.code-block-label{background:#e3ebdb;padding:6px 12px;font-size:12px}.code-block pre{margin:0}.plain,.citation{white-space:pre-wrap;overflow-wrap:anywhere}.citation{font-size:13px;background:#f3f5ef;padding:12px}blockquote{border-left:3px solid #a5b5a0;padding-left:16px}.user{background:#edf2e7}details{margin:15px 0}summary{cursor:pointer}li{margin:8px 0}"""
@@ -344,7 +344,7 @@ class _Writer:
                 self.size += len(raw)
                 if self.size > MAX_BYTES:
                     raise ExportError(
-                        "所选内容超过单次 100 MB 上限，请分类型导出，或缩短聊天时间范围。"
+                        "所选内容超过单次 512 MB 上限，请分类型导出，或缩短聊天时间范围。"
                     )
                 output.write(raw)
 

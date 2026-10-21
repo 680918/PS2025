@@ -79,6 +79,7 @@ def _memory_limit():
 
 def main():
     from pypdf import PdfReader, filters
+    from coach.material_limits import MAX_FILE_BYTES, MAX_PDF_PAGES, MAX_TEXT
 
     logging.disable(logging.CRITICAL)
     memory_handle = _memory_limit()
@@ -89,13 +90,13 @@ def main():
         "JBIG2_MAX_OUTPUT_LENGTH",
     ):
         setattr(filters, name, 4 * 1024**2)
-    raw = sys.stdin.buffer.read(10 * 1024**2 + 1)
-    if len(raw) > 10 * 1024**2:
+    raw = sys.stdin.buffer.read(MAX_FILE_BYTES + 1)
+    if len(raw) > MAX_FILE_BYTES:
         raise ValueError("size")
     reader = PdfReader(io.BytesIO(raw), strict=True)
     if reader.is_encrypted:
         return {"error": "encrypted"}
-    if not 1 <= len(reader.pages) <= 500:
+    if not 1 <= len(reader.pages) <= MAX_PDF_PAGES:
         return {"error": "pages"}
     pages, length = [], 0
     for index, page in enumerate(reader.pages):
@@ -104,7 +105,7 @@ def main():
             return {"error": "complex"}
         text = (page.extract_text() or "").strip()
         length += len(text)
-        if len(text) > 40000 or length > 500000:
+        if len(text) > 40000 or length > MAX_TEXT:
             return {"error": "text_size"}
         if text:
             pages.append({"page": index + 1, "text": text})

@@ -17,10 +17,14 @@ from uuid import uuid4
 from coach.knowledge_search import match_contexts, search_query
 
 
-MAX_FILE_BYTES = 10 * 1024**2
-MAX_MATERIALS = 20
-MAX_LIBRARY_BYTES = 50 * 1024**2
-MAX_TEXT = 500000
+from coach.material_limits import (
+    MAX_FILE_BYTES,
+    MAX_MATERIALS,
+    MAX_LIBRARY_BYTES,
+    MAX_TEXT,
+    MAX_PDF_PAGES,
+    PDF_TIMEOUT,
+)
 
 
 class MaterialError(ValueError):
@@ -60,7 +64,7 @@ def original_download_name(title, kind):
 
 def parse_material(filename, raw, *, pasted=False):
     if not isinstance(raw, bytes) or not 1 <= len(raw) <= MAX_FILE_BYTES:
-        raise MaterialError("文件不能为空，单份资料最多 10 MB。")
+        raise MaterialError("文件不能为空，单份资料最多 100 MB。")
     filename = str(filename).replace("\\", "/").rsplit("/", 1)[-1][:180]
     extension = Path(filename).suffix.lower()
     if extension not in {".pdf", ".txt", ".md"}:
@@ -89,7 +93,7 @@ def parse_material(filename, raw, *, pasted=False):
                 input=raw,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                timeout=20,
+                timeout=PDF_TIMEOUT,
                 env=environment,
                 creationflags=0x08000000 if sys.platform == "win32" else 0,
                 check=False,
@@ -97,14 +101,14 @@ def parse_material(filename, raw, *, pasted=False):
             parsed = json.loads(result.stdout)
         except (OSError, ValueError, subprocess.TimeoutExpired):
             raise MaterialError(
-                "PDF 未能在本机完成处理，请尝试较小文件或粘贴相关文字。"
+                "PDF 未能在本机完成处理（最多等待 60 秒），请按章节拆分或粘贴相关文字。"
             ) from None
         errors = {
             "encrypted": "暂不支持加密 PDF，请使用可直接打开的文字版。",
-            "pages": "PDF 最多支持 500 页。",
+            "pages": f"PDF 最多支持 {MAX_PDF_PAGES} 页。",
             "scan": "未提取到可读文字，可能是扫描版；目前可先粘贴相关文字。",
             "complex": "这份 PDF 页面过于复杂，请尝试较小文件或粘贴文字。",
-            "text_size": "提取文字超过本版限制，请按章节分成较小文件。",
+            "text_size": "提取文字超过本版 200 万字总量或单页 4 万字限制，请按章节拆分。",
         }
         if parsed.get("error") or not parsed.get("pages"):
             raise MaterialError(
@@ -130,7 +134,7 @@ def parse_material(filename, raw, *, pasted=False):
         or len(text) > (50000 if pasted else MAX_TEXT)
         or any(ord(char) < 32 and char not in "\n\t" for char in text)
     ):
-        raise MaterialError("请提供可读文字；粘贴最多 5 万字，文字文件最多 50 万字。")
+        raise MaterialError("请提供可读文字；粘贴最多 5 万字，文字文件最多 200 万字。")
     return (
         filename,
         "paste" if pasted else extension[1:],
@@ -176,7 +180,7 @@ class MaterialRepository:
         if not isinstance(title, str) or len(title.strip()) > 120:
             raise MaterialError("资料名称最多 120 字。")
         if not isinstance(raw, bytes) or len(raw) > MAX_FILE_BYTES:
-            raise MaterialError("单份资料最多 10 MB。")
+            raise MaterialError("单份资料最多 100 MB。")
         digest = hashlib.sha256((b"paste\0" if pasted else b"file\0") + raw).hexdigest()
         with closing(self._connect()) as db:
             existing = db.execute(
@@ -210,7 +214,9 @@ class MaterialRepository:
                 (user_id,),
             ).fetchone()
             if count >= MAX_MATERIALS or used + len(raw) > MAX_LIBRARY_BYTES:
-                raise MaterialError("本机试用每个账户最多 20 份资料、合计 50 MB。")
+                raise MaterialError(
+                    "本机试用每个账户最多 20 份资料、原文件合计 300 MB。"
+                )
             db.execute(
                 "INSERT INTO materials VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (

@@ -448,7 +448,7 @@ def register_library_pages(
             + "<fieldset><legend>选择导出的内容</legend>"
             + options
             + '</fieldset><div class="export-period"><label for="export-period">聊天记录时间范围</label><select id="export-period" name="period"><option value="all">全部时间</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select><p class="export-note">只影响聊天记录；教案、资料、学习记忆和各主题学习位置不受此选项影响。</p></div>'
-            '<p class="export-note">下载 ZIP 压缩包后，请先完整解压，再打开“打开这里.html”。资料较多时可按类型分别导出，单次内容上限 100 MB。</p>'
+            '<p class="export-note">下载 ZIP 压缩包后，请先完整解压，再打开“打开这里.html”。资料较多时可按类型分别导出，单次内容上限 512 MB。</p>'
             '<button class="button button-primary" type="submit">下载所选学习资料</button><p id="asset-export-status" role="status" aria-live="polite"></p></form></section>'
             '<p class="library-intro">下载的是当前内容副本。本地修改不会自动同步到 Coach；账户恢复和整库备份会在后续单独提供。</p><script src="/static/asset-export.js" defer></script>'
         )
@@ -863,9 +863,9 @@ def register_library_pages(
             else ""
         )
         upload = (
-            '<section id="add-material" class="library-card"><h2>添加一份资料</h2><p>文字型 PDF、TXT、Markdown；每份最多 10 MB，PDF 最多 500 页。扫描图片识别稍后接入。</p><form method="post" action="/web/materials/upload" enctype="multipart/form-data">'
+            '<section id="add-material" class="library-card"><h2>添加一份资料</h2><p>文字型 PDF、TXT、Markdown；每本最多 100 MB、1500 页，提取文字最多 200 万字。支持文字型文件；扫描图片暂不识别，可先粘贴已识别的文字。上传只保存和提取，不调用 AI。</p><form id="material-upload" method="post" action="/web/materials/upload" enctype="multipart/form-data" data-max-bytes="104857600">'
             + input_csrf(request, "upload")
-            + '<label for="material-title">资料名称（可选）</label><input id="material-title" name="title" maxlength="120"><label for="material-file">选择文件</label><input id="material-file" name="file" type="file" accept=".pdf,.txt,.md" required><button class="button button-primary" type="submit">上传并保存资料</button></form></section>'
+            + '<label for="material-title">资料名称（可选）</label><input id="material-title" name="title" maxlength="120"><label for="material-file">选择文件</label><input id="material-file" name="file" type="file" accept=".pdf,.txt,.md" required><button class="button button-primary" type="submit">上传并保存资料</button><p id="upload-status" role="status" aria-live="polite"></p></form></section>'
         )
         paste = (
             '<section class="library-card"><h2>也可以粘贴文字</h2><form method="post" action="/web/materials/paste">'
@@ -883,6 +883,7 @@ def register_library_pages(
             + '<section class="library-card material-capacity"><div class="material-capacity-summary"><h2>我的资料容量</h2><p>'
             + f"已保存 {len(items)} / {MAX_MATERIALS} 份 · 原始资料 {size_text(sum(item['raw_bytes'] for item in items))} / {size_text(MAX_LIBRARY_BYTES)}"
             + "</p></div><details><summary>容量计算说明</summary><p>容量按上传原文件和粘贴文字计算，重复上传相同内容不重复占用。提取文字、对话和教案另占本机磁盘空间；此处不是整个账户的磁盘用量。</p></details></section>"
+            + '<section class="library-card book-start"><h2>两种方式，开始读一本书</h2><p>手边没有电子书，也可以先按书名了解观点、讨论怎样应用；上传后可核对原文、按选段连续学习。</p><div class="library-actions"><a class="button button-primary" href="/web/studies#book-reading">按书名开始导读</a><a class="button button-outline" href="#add-material">上传原书并学习</a></div><p class="study-note">按书名导读依据 AI 通用知识，未核对原书；上传只建立资料，选择选段并点击讲解后才调用 AI。</p></section>'
             + catalog_form(name, kind)
             + f'<div class="library-actions"><h2 class="material-results-title">资料目录 · {len(visible)} / {len(items)} 份</h2>'
             + clear
@@ -903,7 +904,8 @@ def register_library_pages(
             + '</details><div class="library-add-grid">'
             + upload
             + paste
-            + "</div>",
+            + '</div><script src="/static/material-upload.js" defer></script>',
+            interactive=True,
         )
 
     def material_name_editor(
@@ -1033,7 +1035,7 @@ def register_library_pages(
                 async for chunk in request.stream():
                     total += len(chunk)
                     if total > MAX_FILE_BYTES + 16384:
-                        raise MultiPartException("size")
+                        raise MultiPartException("file_size")
                     yield chunk
 
             form = await MultiPartParser(
@@ -1050,6 +1052,8 @@ def register_library_pages(
             if not valid_csrf(request, form, "upload"):
                 return problem("页面无法核对，请返回资料页重试。", 403)
             raw = await form["file"].read(MAX_FILE_BYTES + 1)
+            if len(raw) > MAX_FILE_BYTES:
+                raise MultiPartException("file_size")
             identity = await run_in_threadpool(
                 materials.add,
                 account.user_id,
@@ -1060,8 +1064,14 @@ def register_library_pages(
             return redirect("/web/materials/" + identity)
         except MaterialError as error:
             return problem(str(error))
-        except (MultiPartException, UnicodeError, ValueError):
-            return problem("上传格式无法读取，或文件超过 10 MB。")
+        except MultiPartException as error:
+            if error.message == "file_size":
+                return problem("文件超过单本 100 MB 上限，请按章节拆分后上传。", 413)
+            return problem(
+                "上传表单无法读取，请返回资料页重新选择 PDF、TXT 或 Markdown 文件。"
+            )
+        except (UnicodeError, ValueError):
+            return problem("上传格式无法读取，请返回资料页重新选择文件。")
         except (OSError, sqlite3.Error):
             return problem("资料暂时无法保存，请稍后重试。", 503)
         finally:

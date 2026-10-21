@@ -40,7 +40,7 @@ def test_catalog_capacity_filters_and_empty_results_only_use_own_metadata(setup)
     repo, ids = seed(directory, user)
     login(client)
     response = client.get("/web/materials")
-    assert "已保存 3 / 20 份" in response.text and "50.00 MB" in response.text
+    assert "已保存 3 / 20 份" in response.text and "300.00 MB" in response.text
     assert "另一人的秘密" not in response.text and len(cards(response.text)) == 3
     for query, expected in (
         ({"name": "reading"}, ids[0]),

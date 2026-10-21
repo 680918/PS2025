@@ -285,7 +285,46 @@ def register_study_pages(
             + options
             + '</select><p class="study-note">新建后回到统一对话，由你决定何时开始提问。也可到“资料与书籍”为当前主题选择或取消资料。</p><button class="button button-primary" type="submit">创建并回到对话</button></form></section>'
         )
+        body += (
+            '<section id="book-reading" class="library-card book-start"><h2>按书名开始导读</h2><p>不必先上传电子书。先了解主要观点，再结合你的生活、工作或学习讨论应用。</p><form method="post" action="/web/studies/book">'
+            + hidden(request, "book")
+            + '<label for="book-title">书名</label><input id="book-title" name="title" maxlength="80" placeholder="例如：影响力" required><label for="book-author">作者或版本（可选）</label><input id="book-author" name="author" maxlength="24" placeholder="帮助区分同名书和不同版本"><p class="study-note">此方式依据 AI 通用知识，尚未核对原书，不提供虚构页码。创建后回到同一个聊天框，确认发送才调用 AI；以后也可以关联上传的原书。</p><button class="button button-primary" type="submit">建立阅读主题，回到对话</button></form></section>'
+        )
         return page("我的学习", body)
+
+    @app.post("/web/studies/book", include_in_schema=False)
+    async def create_book(request: Request):
+        account, denied = auth(request, True)
+        if denied is not None:
+            return denied
+        values = await fields(request, {"csrf", "title", "author"})
+        if not valid(request, values, "book"):
+            return problem("页面无法核对，请返回书名导读重新填写。", 403)
+        try:
+            book = validate_topic_title(values["title"])
+            author = values["author"].strip()
+            if len(book) > 80 or len(author) > 24:
+                raise ValueError("书名最多 80 字，作者或版本最多 24 字。")
+            if author:
+                validate_topic_title(author)
+            title = validate_topic_title(
+                "阅读《" + book + "》" + (" · " + author if author else "")
+            )
+            result = await run_in_threadpool(
+                dialogue.create_topic, account.user_id, title, ""
+            )
+        except TopicBusy as error:
+            return problem(str(error), 409)
+        except ValueError as error:
+            return problem(str(error))
+        except sqlite3.Error:
+            return problem("暂时无法建立阅读主题，请稍后再试。", 503)
+        # Existing topics keep any original book binding and selected passage.
+        return redirect(
+            "/web/studies?notice=existing"
+            if result == "existing"
+            else "/web/welcome?book_intro=1#coach-dialog"
+        )
 
     @app.post("/web/studies/new", include_in_schema=False)
     async def create(request: Request):
