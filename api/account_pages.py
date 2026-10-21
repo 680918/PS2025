@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.coach_markdown import coach_markdown
+from api.book_reader import extraction_notice
 from api.memory_pages import register_memory_pages
 from api.study_pages import register_study_pages
 from api.conversation_pages import register_conversation_pages
@@ -614,7 +615,11 @@ def register_account_pages(
                 + selected["material_id"]
                 + '">'
                 + escape(selected["title"])
-                + '</a></p><p>已选入讨论；回答将根据相关片段整理。</p><form method="post" action="/web/materials/clear"><input type="hidden" name="csrf" value="'
+                + '</a></p><a class="button button-outline" href="/web/materials/'
+                + selected["material_id"]
+                + '/read">阅读全书</a>'
+                + extraction_notice(selected)
+                + '<p>已选入讨论；回答将根据相关片段整理。</p><form method="post" action="/web/materials/clear"><input type="hidden" name="csrf" value="'
                 + library_csrf(key, token, "clear")
                 + '"><button class="history-load" type="submit">取消当前资料</button></form>'
             )

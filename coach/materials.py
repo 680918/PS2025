@@ -110,7 +110,7 @@ def parse_material(filename, raw, *, pasted=False):
             "complex": "这份 PDF 页面过于复杂，请尝试较小文件或粘贴文字。",
             "text_size": "提取文字超过本版 200 万字总量或单页 4 万字限制，请按章节拆分。",
         }
-        if parsed.get("error") or not parsed.get("pages"):
+        if parsed.get("error") or not isinstance(parsed.get("pages"), list):
             raise MaterialError(
                 errors.get(
                     parsed.get("error"), "PDF 无法解析，请检查文件或改用文字资料。"
@@ -368,6 +368,32 @@ class MaterialRepository:
                     (user_id, material_id),
                 )
             ]
+
+    def reading_pages(self, user_id, material_id, start):
+        """Bounded text reading, removing the retrieval chunks' 200-char overlap."""
+        item = self.get(user_id, material_id)
+        if item is None or item["kind"] == "pdf":
+            return None
+        total = max(1, (item["char_count"] + 2399) // 2400)
+        if type(start) is not int or not 1 <= start <= total:
+            raise ValueError("invalid reading page")
+        with closing(self._connect()) as db:
+            count = db.execute(
+                "SELECT COUNT(*) FROM material_chunks WHERE material_id=?",
+                (material_id,),
+            ).fetchone()[0]
+            rows = db.execute(
+                "SELECT chunk_index,content FROM material_chunks WHERE material_id=? ORDER BY chunk_index LIMIT 15 OFFSET ?",
+                (material_id, (start - 1) * 3),
+            ).fetchall()
+        pages = []
+        for offset in range(0, len(rows), 3):
+            text = "".join(
+                row["content"][:800] if row["chunk_index"] < count else row["content"]
+                for row in rows[offset : offset + 3]
+            )
+            pages.append({"number": start + offset // 3, "text": text})
+        return {"page_count": total, "pages": pages}
 
     def retrieve(self, user_id, query, *, material_id=None):
         material = (

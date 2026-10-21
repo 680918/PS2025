@@ -26,6 +26,7 @@ from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartParser, MultiPartException
 from api.coach_markdown import coach_markdown
 from api.lesson_export import lesson_document
+from api.book_reader import reader_response, extraction_notice
 
 from api.public_pages import _render_layout
 from coach.materials import (
@@ -837,13 +838,15 @@ def register_library_pages(
             cards.append(
                 '<article class="library-item"><h2><a href="/web/materials/'
                 + identity
-                + '">'
+                + '/read">'
                 + escape(item["title"])
                 + "</a></h2>"
                 + label
                 + "<p>"
                 + escape(item["filename"])
-                + f' · {item["char_count"]} 字 · {size_text(item["raw_bytes"])}</p><div class="library-actions"><a class="text-link" href="/web/materials/{identity}">预览文字</a><a class="text-link" href="/web/materials/{identity}/plan">学习目录</a>'
+                + f" · {item['char_count']} 字 · {size_text(item['raw_bytes'])}</p>"
+                + extraction_notice(item)
+                + f'<div class="library-actions"><a class="text-link" href="/web/materials/{identity}/read">阅读全书</a><a class="text-link" href="/web/materials/{identity}/plan">学习目录</a>'
                 + f'<a class="text-link" href="/web/materials/{identity}/original">下载原件</a>'
                 + '<a class="text-link" href="'
                 + escape(f"/web/materials/{identity}/edit" + edit_query, quote=True)
@@ -863,7 +866,7 @@ def register_library_pages(
             else ""
         )
         upload = (
-            '<section id="add-material" class="library-card"><h2>添加一份资料</h2><p>文字型 PDF、TXT、Markdown；每本最多 100 MB、1500 页，提取文字最多 200 万字。支持文字型文件；扫描图片暂不识别，可先粘贴已识别的文字。上传只保存和提取，不调用 AI。</p><form id="material-upload" method="post" action="/web/materials/upload" enctype="multipart/form-data" data-max-bytes="104857600">'
+            '<section id="add-material" class="library-card"><h2>添加一份资料</h2><p>文字型 PDF、TXT、Markdown；每本最多 100 MB、1500 页，提取文字最多 200 万字。扫描版也能按原页阅读；正文未识别时，Coach 暂不能依据图片内容讲解，可补充文字版或粘贴文字。上传只保存和提取，不调用 AI。</p><form id="material-upload" method="post" action="/web/materials/upload" enctype="multipart/form-data" data-max-bytes="104857600">'
             + input_csrf(request, "upload")
             + '<label for="material-title">资料名称（可选）</label><input id="material-title" name="title" maxlength="120"><label for="material-file">选择文件</label><input id="material-file" name="file" type="file" accept=".pdf,.txt,.md" required><button class="button button-primary" type="submit">上传并保存资料</button><p id="upload-status" role="status" aria-live="polite"></p></form></section>'
         )
@@ -1179,6 +1182,14 @@ def register_library_pages(
         try:
             item = materials.get(account.user_id, identity)
             chunks = materials.chunks(account.user_id, identity) if item else []
+            if item and item["kind"] == "pdf" and not chunks:
+                return page(
+                    "这本书尚未识别出正文文字",
+                    extraction_notice(item)
+                    + '<div class="library-actions"><a class="button button-primary" href="/web/materials/'
+                    + identity
+                    + '/read">阅读全书</a><a class="button button-outline" href="/web/materials#add-material">补充文字版资料</a></div>',
+                )
             if not item or not chunks:
                 return problem("找不到这份可读取资料。", 404)
             state = book_state(account.user_id, item, chunks)
@@ -1665,6 +1676,58 @@ def register_library_pages(
             return problem("目录暂时无法保存，请返回查看，避免重复操作。", 503)
         return redirect("/web/materials/" + identity + "/plan?notice=saved")
 
+    @app.get("/web/materials/{identity}/read", include_in_schema=False)
+    def read_book(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            item = materials.get(account.user_id, identity)
+            if item is None:
+                return problem("找不到这份本人资料。", 404)
+            if (
+                any(key != "page" for key in request.query_params)
+                or len(request.query_params.getlist("page")) > 1
+            ):
+                return problem("阅读位置无法读取，请从资料目录重新打开。")
+            number = request.query_params.get("page", "1")
+            total = (
+                item["page_count"]
+                if item["kind"] == "pdf"
+                else max(1, (item["char_count"] + 2399) // 2400)
+            )
+            if (
+                re.fullmatch(r"[1-9][0-9]{0,4}", number) is None
+                or not 1 <= int(number) <= total
+            ):
+                return problem("请输入这本书范围内的阅读页码。")
+            return reader_response(item, total, int(number))
+        except sqlite3.Error:
+            return problem("暂时无法打开这本书，请稍后再试。", 503)
+
+    @app.get("/web/materials/{identity}/read/pages", include_in_schema=False)
+    def read_text_pages(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            if (
+                any(key != "start" for key in request.query_params)
+                or len(request.query_params.getlist("start")) > 1
+            ):
+                raise ValueError("invalid reading page")
+            start = request.query_params.get("start", "1")
+            if re.fullmatch(r"[1-9][0-9]{0,4}", start) is None:
+                raise ValueError("invalid reading page")
+            result = materials.reading_pages(account.user_id, identity, int(start))
+            if result is None:
+                return problem("找不到这份本人文字资料。", 404)
+            return JSONResponse(result, headers=HEADERS)
+        except ValueError:
+            return problem("阅读页码无法读取，请从阅读全书页面重新打开。")
+        except sqlite3.Error:
+            return problem("暂时无法读取这一页，请稍后重试。", 503)
+
     @app.get("/web/materials/{identity}", include_in_schema=False)
     def material_preview(request: Request, identity: str):
         account, denied = auth(request)
@@ -1677,6 +1740,8 @@ def register_library_pages(
         try:
             item = materials.get(account.user_id, identity)
             chunks = materials.chunks(account.user_id, identity) if item else []
+            if item and item["kind"] == "pdf" and not chunks:
+                return redirect("/web/materials/" + identity + "/read")
             if not item or not chunks:
                 return problem("找不到这份可读取资料。", 404)
             if scope and materials.get(account.user_id, scope) is None:
@@ -1829,7 +1894,10 @@ def register_library_pages(
                 + escape(chunk["locator"])
                 + f" · 共 {len(chunks)} 个片段</p>"
                 + note
-                + '<div class="library-actions"><a class="button button-outline" href="/web/materials/'
+                + extraction_notice(item)
+                + '<div class="library-actions"><a class="button button-primary" href="/web/materials/'
+                + identity
+                + '/read">阅读全书</a><a class="button button-outline" href="/web/materials/'
                 + identity
                 + '/original">下载原件</a><span class="lesson-revision-note">取回当初保存的完整原文件；不调用 AI。</span></div>'
                 + '<p><a class="text-link" href="/web/materials/'

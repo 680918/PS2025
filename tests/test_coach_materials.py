@@ -48,12 +48,11 @@ def test_pdf_worker_reads_real_text_and_actual_page_number():
 @pytest.mark.parametrize(
     "raw, text",
     [
-        (pdf_bytes(blank=True), "扫描版"),
         (pdf_bytes(encrypted=True), "加密"),
         (b"not PDF", "不是"),
         (b"%PDF-invalid", "无法解析"),
     ],
-    ids=["scan", "encrypted", "wrong-header", "broken-pdf"],
+    ids=["encrypted", "wrong-header", "broken-pdf"],
 )
 def test_invalid_or_unsupported_pdf_is_rejected(raw, text):
     with pytest.raises(MaterialError, match=text):

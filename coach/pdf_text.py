@@ -109,8 +109,6 @@ def main():
             return {"error": "text_size"}
         if text:
             pages.append({"page": index + 1, "text": text})
-    if not pages:
-        return {"error": "scan"}
     return {
         "pages": pages,
         "page_count": len(reader.pages),
