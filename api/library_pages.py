@@ -6,6 +6,7 @@ import re
 import secrets
 import sqlite3
 from datetime import datetime, timezone, timedelta
+from difflib import SequenceMatcher
 from html import escape
 from threading import BoundedSemaphore, Lock
 from urllib.parse import parse_qs, quote, urlencode
@@ -118,6 +119,74 @@ def reference_sections(
             + "</p></section>"
         )
     return body, code
+
+
+def lesson_difference(before, after):
+    """Bounded plain-text line comparison; versions are never rewritten."""
+    left, right = before.splitlines(keepends=True), after.splitlines(keepends=True)
+    matcher = SequenceMatcher(None, left, right)
+    opcodes = matcher.get_opcodes()
+    added = sum(
+        j2 - j1 for tag, _, _, j1, j2 in opcodes if tag in {"insert", "replace"}
+    )
+    removed = sum(
+        i2 - i1 for tag, i1, i2, _, _ in opcodes if tag in {"delete", "replace"}
+    )
+    rows, count, truncated = [], 0, False
+    for group in matcher.get_grouped_opcodes(2):
+        block = []
+        for tag, i1, i2, j1, j2 in group:
+            if tag == "equal":
+                lines = [
+                    ("same", "保留", f"原 {i + 1} / 对照 {j1 + i - i1 + 1} 行", left[i])
+                    for i in range(i1, i2)
+                ]
+            else:
+                lines = []
+                if tag in {"delete", "replace"}:
+                    lines.extend(
+                        ("removed", "− 移除", f"原第 {i + 1} 行", left[i])
+                        for i in range(i1, i2)
+                    )
+                if tag in {"insert", "replace"}:
+                    lines.extend(
+                        ("added", "+ 新增", f"对照第 {j + 1} 行", right[j])
+                        for j in range(j1, j2)
+                    )
+            for kind, label, location, text in lines:
+                if count == 400:
+                    truncated = True
+                    break
+                ending = " · 行末无换行" if not text.endswith(("\n", "\r")) else ""
+                block.append(
+                    '<div class="lesson-diff-line lesson-diff-'
+                    + kind
+                    + '"><p>'
+                    + label
+                    + " · "
+                    + location
+                    + ending
+                    + "</p><pre>"
+                    + escape(text)
+                    + "</pre></div>"
+                )
+                count += 1
+            if truncated:
+                break
+        rows.append(
+            '<section class="lesson-diff-block" aria-label="一处修改及附近原文">'
+            + "".join(block)
+            + "</section>"
+        )
+        if truncated:
+            break
+    if not added and not removed:
+        rows = ['<p class="lesson-version-notice">两版正文相同。</p>']
+    if truncated:
+        rows.append(
+            '<p class="lesson-revision-note" role="status">修改较多，此页仅展示前 400 行对照；新增与移除统计覆盖完整正文。请用上方“阅读本版”查看两版完整内容。</p>'
+        )
+    return "".join(rows), added, removed
 
 
 def library_csrf(key, token, purpose, identity=""):
@@ -2694,7 +2763,25 @@ def register_library_pages(
             + identity
             + '">回到当前教案</a><a class="text-link" href="/web/knowledge/'
             + identity
-            + '/versions">全部版本记录</a></div><article class="library-card lesson-document markdown-content">'
+            + '/versions">全部版本记录</a>'
+            + (
+                '<a class="text-link" href="/web/knowledge/'
+                + identity
+                + "/compare?base="
+                + (target if current != target else str(max(1, int(current) - 1)))
+                + "&amp;target="
+                + current
+                + '">'
+                + (
+                    "查看与当前版的差异 →"
+                    if current != target
+                    else "查看与上一版的差异 →"
+                )
+                + "</a>"
+                if int(current) > 1
+                else ""
+            )
+            + '</div><article class="library-card lesson-document markdown-content">'
             + lesson_html(version["content"])
             + "</article>"
         )
@@ -2791,7 +2878,25 @@ def register_library_pages(
                 + identity
                 + "/versions/"
                 + revision
-                + '">查看本版内容 →</a></article>'
+                + '">查看本版内容 →</a>'
+                + (
+                    '<p><a class="text-link" href="/web/knowledge/'
+                    + identity
+                    + "/compare?base="
+                    + (
+                        revision
+                        if version["revision"] != item["revision"]
+                        else str(max(1, item["revision"] - 1))
+                    )
+                    + "&amp;target="
+                    + str(item["revision"])
+                    + "&amp;page="
+                    + str(number)
+                    + '">对比修订变化 →</a></p>'
+                    if item["revision"] > 1
+                    else ""
+                )
+                + "</article>"
             )
         body += '</div><nav class="library-paging" aria-label="教案版本分页">'
         if number > 1:
@@ -2799,6 +2904,103 @@ def register_library_pages(
         if len(versions) > 20:
             body += '<a href="?page=' + str(number + 1) + '">下一页 →</a>'
         return page("版本记录", body + "</nav>")
+
+    @app.get("/web/knowledge/{identity}/compare", include_in_schema=False)
+    def compare_lesson_versions(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        if re.fullmatch(r"[a-f0-9]{32}", identity) is None:
+            return problem("找不到这份本人已保存教案。", 404)
+        params = request.query_params
+        base, target, number = (
+            revision_number(params.get(key, default))
+            for key, default in (("base", ""), ("target", ""), ("page", "1"))
+        )
+        if (
+            set(params) - {"base", "target", "page"}
+            or any(len(params.getlist(key)) != 1 for key in params)
+            or base is None
+            or target is None
+            or number is None
+            or number > 100000
+        ):
+            return problem("请选择有效的两个版本编号；不要附加其他查询条件。")
+        try:
+            item = dialogue.knowledge(account.user_id, identity, saved_only=True)
+            if not item:
+                return problem("找不到这份本人已保存教案。", 404)
+            old = dialogue.knowledge_version(account.user_id, identity, base)
+            new = dialogue.knowledge_version(account.user_id, identity, target)
+            if old is None or new is None:
+                return problem("找不到所选教案版本，请从版本记录重新选择。", 404)
+            path = "/web/knowledge/" + identity
+            body = (
+                '<p><a class="text-link" href="'
+                + path
+                + "/versions?page="
+                + str(number)
+                + '">← 返回原来的版本记录</a></p><p class="library-intro">'
+                + escape(item["title"])
+                + "。此页固定对比已保存的第 "
+                + str(base)
+                + " 版与第 "
+                + str(target)
+                + " 版；后续修订不会自动加入本次对比。查看不保存、不恢复版本、不调用 AI。</p>"
+                + '<form class="library-card lesson-diff-form" method="get" action="'
+                + path
+                + '/compare">'
+                + '<input type="hidden" name="page" value="'
+                + str(number)
+                + '">'
+                + '<div><label for="compare-base">原版本编号</label><input id="compare-base" name="base" type="number" min="1" max="1000000000" required value="'
+                + str(base)
+                + '"></div>'
+                + '<div><label for="compare-target">对照版本编号</label><input id="compare-target" name="target" type="number" min="1" max="1000000000" required value="'
+                + str(target)
+                + '"></div>'
+                + '<button class="button button-outline" type="submit">查看差异</button></form>'
+                + '<p class="lesson-revision-note">版本编号可在版本记录中查看；也可选择同一版本，确认两边内容一致。正文按原始 Markdown 逐行对照，不代表知识质量或掌握程度。</p>'
+                + '<div class="lesson-diff-versions">'
+            )
+            for label, record in (("原版本", old), ("对照版本", new)):
+                body += (
+                    '<section class="library-card"><h2>'
+                    + label
+                    + " · 第 "
+                    + str(record["revision"])
+                    + " 版</h2><h3>"
+                    + escape(record["title"])
+                    + '</h3><p class="lesson-revision-note">'
+                    + lesson_time(record["created_at"])
+                    + '</p><a class="text-link" href="'
+                    + path
+                    + "/versions/"
+                    + str(record["revision"])
+                    + '">阅读本版完整内容 →</a></section>'
+                )
+            difference, added, removed = lesson_difference(
+                old["content"], new["content"]
+            )
+            body += (
+                '</div><section id="lesson-diff" class="library-card lesson-diff"><h2>正文修订变化</h2><p>'
+                + (
+                    "标题相同。"
+                    if old["title"] == new["title"]
+                    else "标题有变化，见上方两个版本。"
+                )
+                + "正文新增 "
+                + str(added)
+                + " 行、移除 "
+                + str(removed)
+                + " 行。</p>"
+                + '<p class="lesson-revision-note">+ 新增为对照版中的行，− 移除为原版中的行；仅保留修改处前后各两行上下文。重复段落的匹配和换行方式可能影响差异范围，统计为本次行级对照结果。</p>'
+                + difference
+                + "</section>"
+            )
+            return page("教案版本对比", body)
+        except (sqlite3.Error, ValueError, TypeError, KeyError):
+            return problem("暂时无法读取教案版本，请稍后从版本记录重新打开。", 503)
 
     @app.get("/web/knowledge/{identity}/versions/{version}", include_in_schema=False)
     def read_lesson_version(request: Request, identity: str, version: str):
