@@ -29,8 +29,10 @@ def _create_test_app(repository):
 
     from api.email_verification_pages import register_email_verification_pages
     from api.public_pages import PUBLIC_STATIC_DIRECTORY, render_public_page
+    from api.usage_help import register_usage_help
 
     app = FastAPI()
+    register_usage_help(app, kind="legacy")
     app.mount("/static", StaticFiles(directory=PUBLIC_STATIC_DIRECTORY), name="static")
     register_email_verification_pages(app, repository)
 

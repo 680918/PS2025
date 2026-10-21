@@ -73,7 +73,8 @@ def check_ready(directory, port, *, simulated=False, ai=False, register=False):
         print(f"[通过] 本机端口 {port} 当前可用；正式启动时会再次检查。")
     except OSError:
         ready = False
-        print(f"[需处理] 本机端口 {port} 无法使用；可用 --port 指定其他端口。")
+        print(f"[需处理] 本机端口 {port} 无法使用；先核对该地址是否已有知行运行。")
+        print("日常建议保持固定入口；独立测试才用 --port 指定其他端口。")
 
     if ai:
         try:
@@ -118,7 +119,7 @@ def build_app(directory, port, *, simulated=False, settings=None, responder=None
     if simulated or settings is not None:
         from api.account_test import create_trial_app
 
-        return create_trial_app(
+        app = create_trial_app(
             directory,
             simulated=simulated,
             settings=settings,
@@ -126,11 +127,18 @@ def build_app(directory, port, *, simulated=False, settings=None, responder=None
             dialogue_responder=responder,
             dialogue_label=label,
         )
-    from api.account_app import create_account_app
+    else:
+        from api.account_app import create_account_app
 
-    return create_account_app(
-        directory, dialogue_responder=responder, dialogue_label=label
-    )
+        app = create_account_app(
+            directory, dialogue_responder=responder, dialogue_label=label
+        )
+    app.state.usage_environment = {
+        "kind": "simulated" if simulated else "local",
+        "ai": responder is not None,
+        "mail": settings is not None,
+    }
+    return app
 
 
 def _serve(directory, port, *, simulated=False, settings=None, responder=None):
@@ -156,6 +164,10 @@ def _serve(directory, port, *, simulated=False, settings=None, responder=None):
                 settings=settings,
                 responder=responder,
             )
+            print(
+                "当前环境：" + ("模拟体验" if simulated else "本机日常使用"), flush=True
+            )
+            print(f"使用帮助：http://127.0.0.1:{port}/web/help", flush=True)
             print(f"成长空间：http://127.0.0.1:{port}/web/login", flush=True)
             print(f"记录保存在本机：{directory}；停止服务后仍保留。", flush=True)
             if simulated:
@@ -184,7 +196,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="知行本机持续对话（记录保留，不公开部署）"
     )
-    parser.add_argument("--port", type=parse_port, default=8784)
+    parser.add_argument("--port", type=parse_port, help="日常默认 8785；模拟默认 8784")
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument(
         "--check",
@@ -207,6 +219,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.simulate and (args.register or args.ai):
         parser.error("--simulate 不能与 --register 或 --ai 同时使用")
+    args.port = (
+        args.port if args.port is not None else (8784 if args.simulate else 8785)
+    )
     directory = (
         (
             args.data_dir

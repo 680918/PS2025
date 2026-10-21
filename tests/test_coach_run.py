@@ -29,6 +29,7 @@ def test_default_start_never_loads_ai_or_prompts_and_uses_persistent_directory(
     assert coach_run.main([]) == 0
     args, kwargs = seen[0]
     assert args[0] == coach_run.ROOT / "data/coach-local"
+    assert args[1] == 8785
     assert kwargs == {"simulated": False, "settings": None, "responder": None}
 
 
@@ -40,6 +41,7 @@ def test_simulation_has_independent_directory_and_never_requests_real_ai(monkeyp
     monkeypatch.setattr(coach_run, "_serve", lambda *a, **k: seen.append((a, k)) or 0)
     assert coach_run.main(["--simulate"]) == 0
     assert seen[0][0][0] == coach_run.ROOT / "data/coach-simulated"
+    assert seen[0][0][1] == 8784
     assert callable(seen[0][1]["responder"])
 
 

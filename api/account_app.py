@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from api.usage_help import register_usage_help
 from api.password_reset_pages import register_password_reset_pages
 from api.account_pages import register_account_pages
 from api.email_verification_pages import register_registration_verification_pages
@@ -20,6 +21,7 @@ def create_account_app(
     database_dir, *, registration_mail=None, dialogue_responder=None, dialogue_label=""
 ):
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    register_usage_help(app)
     repository = SQLiteUserRepository(Path(database_dir) / "users.db")
     app.mount("/static", StaticFiles(directory=PUBLIC_STATIC_DIRECTORY), name="static")
     register_registration_pages(app, repository, mail_config=registration_mail)

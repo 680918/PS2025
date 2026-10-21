@@ -96,7 +96,10 @@ def create_app(
     *,
     registration_mail=None,
 ):
+    from api.usage_help import register_usage_help
+
     app = FastAPI()
+    register_usage_help(app, kind="legacy")
     app.mount("/static", StaticFiles(directory=PUBLIC_STATIC_DIRECTORY), name="static")
 
     if curriculum_generator is _DEFAULT_CURRICULUM_GENERATOR:
