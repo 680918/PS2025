@@ -68,7 +68,7 @@ def parse_material(filename, raw, *, pasted=False):
     filename = str(filename).replace("\\", "/").rsplit("/", 1)[-1][:180]
     extension = Path(filename).suffix.lower()
     if extension not in {".pdf", ".txt", ".md"}:
-        raise MaterialError("目前支持文字型 PDF、TXT 和 Markdown 文件。")
+        raise MaterialError("目前支持 PDF、TXT 和 Markdown 文件。")
     if extension == ".pdf":
         if not raw.startswith(b"%PDF-"):
             raise MaterialError("这份文件不是可识别的 PDF。")
@@ -168,6 +168,12 @@ class MaterialRepository:
                 );
                 CREATE INDEX IF NOT EXISTS material_chunk_owner ON material_chunks(material_id,chunk_index);
                 CREATE TABLE IF NOT EXISTS selected_material (user_id TEXT PRIMARY KEY, material_id TEXT NOT NULL REFERENCES materials(material_id));
+                CREATE TABLE IF NOT EXISTS material_ocr_pages (
+                    material_id TEXT NOT NULL REFERENCES materials(material_id),
+                    page_number INTEGER NOT NULL, confidence INTEGER NOT NULL,
+                    engine TEXT NOT NULL, created_at INTEGER NOT NULL,
+                    PRIMARY KEY(material_id,page_number)
+                );
             """)
 
     def _connect(self):
@@ -368,6 +374,16 @@ class MaterialRepository:
                     (user_id, material_id),
                 )
             ]
+
+    def ocr_page(self, user_id, material_id, number):
+        from coach.material_ocr import page_status
+
+        return page_status(self, user_id, material_id, number)
+
+    def save_ocr_page(self, user_id, material_id, number, text, confidence, digest):
+        from coach.material_ocr import save_page
+
+        return save_page(self, user_id, material_id, number, text, confidence, digest)
 
     def reading_pages(self, user_id, material_id, start):
         """Bounded text reading, removing the retrieval chunks' 200-char overlap."""

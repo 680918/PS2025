@@ -230,6 +230,25 @@ async function setup() {
     await render(initial);
     sheets.get(initial).scrollIntoView({block: "start", behavior: "instant"});
     for (const sheet of sheets.values()) observer.observe(sheet);
+    if (isPDF) {
+        try {
+            const {initBookOCR} = await import("./book-ocr.mjs");
+            initBookOCR({getCurrentPage: () => current, jump, renderForOCR: async number => {
+                const page = await pdf.getPage(number);
+                const unit = page.getViewport({scale: 1});
+                const scale = Math.min(1800 / unit.width, Math.sqrt(5000000 / (unit.width * unit.height)));
+                const viewport = page.getViewport({scale});
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.max(1, Math.floor(viewport.width));
+                canvas.height = Math.max(1, Math.floor(viewport.height));
+                await page.render({canvasContext: canvas.getContext("2d", {alpha: false}), viewport, annotationMode: pdfjs.AnnotationMode.DISABLE}).promise;
+                return canvas;
+            }});
+        } catch (_) {
+            const button = document.getElementById("ocr-start");
+            if (button) button.textContent = "识别组件暂不可用";
+        }
+    }
     void drain();
 }
 setup().catch(() => {

@@ -866,7 +866,7 @@ def register_library_pages(
             else ""
         )
         upload = (
-            '<section id="add-material" class="library-card"><h2>添加一份资料</h2><p>文字型 PDF、TXT、Markdown；每本最多 100 MB、1500 页，提取文字最多 200 万字。扫描版也能按原页阅读；正文未识别时，Coach 暂不能依据图片内容讲解，可补充文字版或粘贴文字。上传只保存和提取，不调用 AI。</p><form id="material-upload" method="post" action="/web/materials/upload" enctype="multipart/form-data" data-max-bytes="104857600">'
+            '<section id="add-material" class="library-card"><h2>添加一份资料</h2><p>PDF、TXT、Markdown；每本最多 100 MB、1500 页，提取文字最多 200 万字。扫描版可在“阅读全书”中逐页本地识别，核对保存后再供 Coach 引用。上传只保存和提取，不调用 AI。</p><form id="material-upload" method="post" action="/web/materials/upload" enctype="multipart/form-data" data-max-bytes="104857600">'
             + input_csrf(request, "upload")
             + '<label for="material-title">资料名称（可选）</label><input id="material-title" name="title" maxlength="120"><label for="material-file">选择文件</label><input id="material-file" name="file" type="file" accept=".pdf,.txt,.md" required><button class="button button-primary" type="submit">上传并保存资料</button><p id="upload-status" role="status" aria-live="polite"></p></form></section>'
         )
@@ -1701,9 +1701,91 @@ def register_library_pages(
                 or not 1 <= int(number) <= total
             ):
                 return problem("请输入这本书范围内的阅读页码。")
-            return reader_response(item, total, int(number))
+            return reader_response(
+                item, total, int(number), ocr_csrf=csrf(request, "ocr-page", identity)
+            )
         except sqlite3.Error:
             return problem("暂时无法打开这本书，请稍后再试。", 503)
+
+    @app.get("/web/materials/{identity}/ocr", include_in_schema=False)
+    def ocr_status(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        if (
+            set(request.query_params) != {"page"}
+            or len(request.query_params.getlist("page")) != 1
+        ):
+            return JSONResponse(
+                {"error": "请核对文件页码。"}, status_code=400, headers=HEADERS
+            )
+        try:
+            raw_page = request.query_params["page"]
+            if re.fullmatch(r"[1-9][0-9]{0,3}", raw_page) is None:
+                raise MaterialError("请核对文件页码。")
+            result = materials.ocr_page(account.user_id, identity, int(raw_page))
+            if result is None:
+                return JSONResponse(
+                    {"error": "找不到这份本人PDF。"}, status_code=404, headers=HEADERS
+                )
+            return JSONResponse(result, headers=HEADERS)
+        except MaterialError as error:
+            return JSONResponse({"error": str(error)}, status_code=400, headers=HEADERS)
+        except sqlite3.Error:
+            return JSONResponse(
+                {"error": "暂时无法核对这一页。"}, status_code=503, headers=HEADERS
+            )
+
+    @app.post("/web/materials/{identity}/ocr", include_in_schema=False)
+    async def save_ocr(request: Request, identity: str):
+        account, denied = await run_in_threadpool(auth, request, write=True)
+        if denied is not None:
+            return denied
+        values = await fields(request, {"csrf", "page", "text", "confidence", "digest"})
+        if not valid_csrf(request, values, "ocr-page", identity):
+            return JSONResponse(
+                {"error": "页面无法核对，请复制识别结果后重新打开阅读页。"},
+                status_code=403,
+                headers=HEADERS,
+            )
+        try:
+            if (
+                re.fullmatch(r"[1-9][0-9]{0,3}", values["page"]) is None
+                or re.fullmatch(r"[0-9]{1,3}", values["confidence"]) is None
+            ):
+                raise MaterialError("请核对页码和识别置信度。")
+            number = int(values["page"])
+            result = await run_in_threadpool(
+                materials.save_ocr_page,
+                account.user_id,
+                identity,
+                number,
+                values["text"],
+                int(values["confidence"]),
+                values["digest"],
+            )
+            if result == "missing":
+                return JSONResponse(
+                    {"error": "找不到这份本人PDF。"}, status_code=404, headers=HEADERS
+                )
+            if result == "existing":
+                return JSONResponse(
+                    {"error": "这一页已有文字，本次未覆盖。请重新打开该页查看。"},
+                    status_code=409,
+                    headers=HEADERS,
+                )
+            current_page = await run_in_threadpool(
+                materials.ocr_page, account.user_id, identity, number
+            )
+            return JSONResponse({"status": "saved", **current_page}, headers=HEADERS)
+        except MaterialError as error:
+            return JSONResponse({"error": str(error)}, status_code=400, headers=HEADERS)
+        except sqlite3.Error:
+            return JSONResponse(
+                {"error": "识别文字暂时无法保存，请保留结果后重试。"},
+                status_code=503,
+                headers=HEADERS,
+            )
 
     @app.get("/web/materials/{identity}/read/pages", include_in_schema=False)
     def read_text_pages(request: Request, identity: str):
@@ -1824,6 +1906,18 @@ def register_library_pages(
             if not 1 <= number <= len(chunks):
                 return problem("找不到这份资料或片段。", 404)
             chunk = chunks[number - 1]
+            ocr_note = ""
+            if item["kind"] == "pdf":
+                source_page = re.fullmatch(
+                    r"PDF 第 ([1-9][0-9]*) 页 · 片段 [1-9][0-9]*", chunk["locator"]
+                )
+                info = (
+                    materials.ocr_page(account.user_id, identity, int(source_page[1]))
+                    if source_page
+                    else None
+                )
+                if info and info["state"] == "confirmed":
+                    ocr_note = '<p class="extraction-notice">本页文字来自本地 OCR，经用户核对保存；仍可能存在错字或排版差异。需要时请到“阅读全书”核对 PDF 原页。</p>'
             controls = action(
                 request,
                 f"/web/materials/{identity}/select",
@@ -1908,6 +2002,7 @@ def register_library_pages(
                 + material_search_form([item], scope=identity, query=query)
                 + navigation
                 + matching
+                + ocr_note
                 + '<p class="lesson-revision-note">当前仅预览。选中这段后，可在统一对话中点击“讲解并提炼这段”；浏览和选段不调用 AI。</p><div class="library-actions">'
                 + controls
                 + "</div>"

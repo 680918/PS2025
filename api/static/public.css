@@ -28,6 +28,13 @@
 .reader-toolbar .button { font-size: 12px; padding: 7px 10px; }
 .reader-toolbar .button:disabled { color: #657267; background: #f2f3ef; border-color: #e0e5d9; opacity: 1; }
 .book-reading-space [hidden] { display: none; }
+.book-ocr-panel { background: #fff; border: 1px solid #bdcdbf; border-radius: 10px; padding: 20px; margin: 16px 0; scroll-margin-top: 150px; }
+.book-ocr-panel h2 { font-size: 19px; font-weight: 500; }
+.book-ocr-panel p { font-size: 13px; line-height: 1.9; margin: 12px 0; overflow-wrap: anywhere; }
+.book-ocr-panel label { display: block; font-size: 13px; margin: 14px 0 7px; }
+.book-ocr-panel textarea { width: 100%; max-width: 100%; padding: 14px; border: 1px solid var(--line); border-radius: 8px; font: inherit; line-height: 1.9; resize: vertical; }
+.book-ocr-panel select { padding: 9px; font: inherit; border: 1px solid var(--line); border-radius: 7px; }
+.book-ocr-panel .ocr-note { color: var(--muted); font-size: 12px; }
 #reader-status { font-size: 12px; color: var(--muted); min-height: 24px; margin: 12px 0; }
 #reader-pages { background: #e8e9e5; padding: 12px; border-radius: 9px; }
 .reader-sheet { margin: 0 auto 20px; background: white; box-shadow: 0 1px 5px #0002; min-height: 600px; scroll-margin-top: 135px; overflow-x: auto; }

@@ -7,6 +7,27 @@ from fastapi.responses import HTMLResponse
 from api.public_pages import _render_layout
 
 
+def ocr_panel(base, token):
+    return (
+        '<section id="book-ocr" class="book-ocr-panel" aria-labelledby="ocr-title" hidden data-status-url="'
+        + base
+        + '/ocr" data-csrf="'
+        + escape(token, quote=True)
+        + '"><h2 id="ocr-title">扫描文字识别 · 本地核对</h2>'
+        + "<p>在本机识别当前页，核对并保存后才供 Coach 引用；不调用付费 AI。适合横排简体、繁体中文和英文，竖排、模糊扫描或复杂排版可能有误。</p>"
+        + '<label for="ocr-language">识别语言</label><select id="ocr-language"><option value="chi_sim">简体中文 + 英文</option><option value="chi_tra">繁体中文 + 英文</option></select>'
+        + '<p id="ocr-status" role="status" aria-live="polite">请在阅读工具栏点击“识别当前页”。</p>'
+        + '<button id="ocr-cancel" class="button button-outline" type="button" hidden>取消识别</button>'
+        + '<label for="ocr-text" id="ocr-result-label">识别结果（保存前可修改）</label><textarea id="ocr-text" rows="10" maxlength="40000" disabled></textarea>'
+        + '<p id="ocr-confidence" class="ocr-note"></p><div class="library-actions">'
+        + '<button id="ocr-original" class="button button-outline" type="button" disabled>回到这一页核对</button>'
+        + '<button id="ocr-save" class="button button-primary" type="button" disabled>核对无误，保存此页文字</button>'
+        + '<button id="ocr-discard" class="button button-outline" type="button" hidden>放弃这次未保存结果</button>'
+        + '<a id="ocr-study" class="button button-outline" hidden>选段学习这页文字</a></div>'
+        + '<p class="ocr-note">保存会增加这本书的可引用文字；原始 PDF 不变。已有文字的页面不重复写入或覆盖，避免改动历史引用。</p></section>'
+    )
+
+
 def extraction_notice(item):
     if item["kind"] != "pdf":
         return ""
@@ -26,11 +47,11 @@ def extraction_notice(item):
         + str(total)
         + " 页，"
         + str(item["char_count"])
-        + " 字。</strong>未提取文字的页面仍可在“阅读全书”查看原页；这些页面可能是扫描图片，尚需文字识别（OCR）。Coach 目前只能引用已提取的文字，不能据此逐章讲解未识别的正文。</p>"
+        + " 字。</strong>未提取文字的页面仍可在“阅读全书”查看原页；这些页面可能是扫描图片，尚需文字识别（OCR）。可点击“识别当前页”，核对并保存后供 Coach 引用。未识别的正文仍不能据此逐章讲解。</p>"
     )
 
 
-def reader_response(item, total, number):
+def reader_response(item, total, number, *, ocr_csrf=""):
     base = "/web/materials/" + item["material_id"]
     pdf = item["kind"] == "pdf"
     body = (
@@ -71,7 +92,14 @@ def reader_response(item, total, number):
             if pdf
             else ""
         )
-        + '</div><p id="reader-status" role="status" aria-live="polite">正在准备阅读页面…</p><button id="reader-retry" class="button button-outline" type="button" hidden>重试当前页</button><div id="reader-pages" aria-label="全书连续阅读页面"></div>'
+        + (
+            '<button id="ocr-start" class="button button-outline" type="button" disabled>识别当前页</button><button id="ocr-view" class="button button-outline" type="button" hidden>查看识别结果</button>'
+            if pdf
+            else ""
+        )
+        + "</div>"
+        + (ocr_panel(base, ocr_csrf) if pdf else "")
+        + '<p id="reader-status" role="status" aria-live="polite">正在准备阅读页面…</p><button id="reader-retry" class="button button-outline" type="button" hidden>重试当前页</button><div id="reader-pages" aria-label="全书连续阅读页面"></div>'
         + '<noscript><p>连续阅读需要开启 JavaScript。也可以<a class="text-link" href="'
         + base
         + '/original">下载原件阅读</a>。</p></noscript></section>'
