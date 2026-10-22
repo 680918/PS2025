@@ -167,8 +167,9 @@ function jump(number, focusReading = false) {
     if (focusReading) sheets.get(number).focus({preventScroll: true});
 }
 function readingLine() {
-    const toolbarHeight = root.querySelector(".reader-toolbar").getBoundingClientRect().height;
-    return Math.min(window.innerHeight - 1, Math.max(140, toolbarHeight + 12));
+    const toolbar = root.querySelector(".reader-toolbar");
+    const offset = getComputedStyle(toolbar).position === "sticky" ? Math.max(140, toolbar.getBoundingClientRect().height + 12) : 16;
+    return Math.min(window.innerHeight - 1, offset);
 }
 function alignReadingPage(number) {
     const top = window.scrollY + sheets.get(number).getBoundingClientRect().top - readingLine() + 5;
@@ -269,6 +270,8 @@ async function setup() {
             if (pageNavigationLocked) return;
             let nearest = current, distance = Infinity;
             const line = readingLine();
+            // OCR controls and book details above the first sheet are not a reading page.
+            if (sheets.get(1).getBoundingClientRect().top > line) return;
             for (const [number, sheet] of sheets) {
                 const rect = sheet.getBoundingClientRect();
                 if (rect.top <= line && rect.bottom > line) { nearest = number; break; }
@@ -317,7 +320,7 @@ async function setup() {
     for (const sheet of sheets.values()) observer.observe(sheet);
     if (isPDF) {
         try {
-            const {initBookOCR} = await import("./book-ocr.mjs");
+            const {initBookOCR} = await import("./book-ocr.mjs?v=20261022-range");
             initBookOCR({getCurrentPage: () => current, jump, renderForOCR: async number => {
                 const page = await pdf.getPage(number);
                 const unit = page.getViewport({scale: 1});
@@ -339,7 +342,7 @@ async function setup() {
         if (panel) {
             panel.hidden = false;
             document.getElementById("ocr-status").textContent = "这一页还没有可引用的正文。请点击工具栏“识别当前页”，核对保存后再选段学习。";
-            panel.scrollIntoView({block: "start"});
+            window.scrollTo({top: window.scrollY + panel.getBoundingClientRect().top - readingLine() + 5, behavior: "instant"});
         }
     }
     void drain();

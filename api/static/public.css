@@ -697,3 +697,12 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .reader-continuity .button { font-size: 12px; padding: 7px 12px; }
 
 .reader-toolbar .reader-position-status { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--muted); }
+
+.ocr-range-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 16px 0; }
+.ocr-range-form > div { flex: 1 1 140px; min-width: 0; }
+.ocr-range-form input { width: 100%; max-width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); font: inherit; }
+.ocr-results { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0; }
+.ocr-results .button { font-size: 12px; padding: 6px 10px; }
+.ocr-results [aria-pressed="true"] { background: var(--tint); border-color: var(--green); color: var(--green); }
+
+@media (max-width: 720px) { .reader-toolbar { position: static; } .book-ocr-panel { scroll-margin-top: 16px; } }

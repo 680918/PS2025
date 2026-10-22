@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from api.public_pages import _render_layout
 
 
-def ocr_panel(base, token):
+def ocr_panel(base, token, total):
     return (
         '<section id="book-ocr" class="book-ocr-panel" aria-labelledby="ocr-title" hidden data-status-url="'
         + base
@@ -16,13 +16,23 @@ def ocr_panel(base, token):
         + '"><h2 id="ocr-title">扫描文字识别 · 本地核对</h2>'
         + "<p>在本机识别当前页，核对并保存后才供 Coach 引用；不调用付费 AI。适合横排简体、繁体中文和英文，竖排、模糊扫描或复杂排版可能有误。</p>"
         + '<label for="ocr-language">识别语言</label><select id="ocr-language"><option value="chi_sim">简体中文 + 英文</option><option value="chi_tra">繁体中文 + 英文</option></select>'
+        + '<form id="ocr-range-form" class="ocr-range-form"><div><label for="ocr-range-start">开始 PDF 文件页</label><input id="ocr-range-start" type="number" min="1" max="'
+        + str(total)
+        + '" step="1" value="1" name="first" required disabled></div><div><label for="ocr-range-end">结束 PDF 文件页</label><input id="ocr-range-end" type="number" min="1" max="'
+        + str(total)
+        + '" step="1" value="'
+        + str(min(5, total))
+        + '" name="last" required disabled></div><button id="ocr-range-go" class="button button-primary" type="submit" disabled>开始识别所选范围</button></form>'
+        + '<p class="ocr-note">每批最多 5 页，按文件页码连续处理。已有文字自动跳过；新结果只留在本页，核对后逐页保存。取消保留已完成结果，失败页不会自动重试。</p>'
         + '<p id="ocr-status" role="status" aria-live="polite">请在阅读工具栏点击“识别当前页”。</p>'
         + '<button id="ocr-cancel" class="button button-outline" type="button" hidden>取消识别</button>'
+        + '<p id="ocr-queue-summary" class="ocr-note" aria-live="polite"></p><div id="ocr-results" class="ocr-results" role="group" aria-label="本批逐页识别结果"></div>'
         + '<label for="ocr-text" id="ocr-result-label">识别结果（保存前可修改）</label><textarea id="ocr-text" rows="10" maxlength="40000" disabled></textarea>'
         + '<p id="ocr-confidence" class="ocr-note"></p><div class="library-actions">'
         + '<button id="ocr-original" class="button button-outline" type="button" disabled>回到这一页核对</button>'
         + '<button id="ocr-save" class="button button-primary" type="button" disabled>核对无误，保存此页文字</button>'
-        + '<button id="ocr-discard" class="button button-outline" type="button" hidden>放弃这次未保存结果</button>'
+        + '<button id="ocr-discard" class="button button-outline" type="button" hidden>放弃本批全部未保存结果</button>'
+        + '<button id="ocr-result-previous" class="button button-outline" type="button" disabled>上一页结果</button><button id="ocr-result-next" class="button button-outline" type="button" disabled>下一页结果</button>'
         + '<a id="ocr-study" class="button button-outline" hidden>选段学习这页文字</a></div>'
         + '<p class="ocr-note">保存会增加这本书的可引用文字；原始 PDF 不变。已有文字的页面不重复写入或覆盖，避免改动历史引用。</p></section>'
     )
@@ -142,7 +152,7 @@ def reader_response(
             else ""
         )
         + (
-            '<button id="ocr-start" class="button button-outline" type="button" disabled>识别当前页</button><button id="ocr-view" class="button button-outline" type="button" hidden>查看识别结果</button>'
+            '<button id="ocr-start" class="button button-outline" type="button" disabled>识别当前页</button><button id="ocr-range-open" class="button button-outline" type="button" disabled>识别一段页码</button><button id="ocr-view" class="button button-outline" type="button" hidden>查看识别结果</button>'
             if pdf
             else ""
         )
@@ -176,12 +186,12 @@ def reader_response(
             if pdf
             else ""
         )
-        + (ocr_panel(base, ocr_csrf) if pdf else "")
+        + (ocr_panel(base, ocr_csrf, total) if pdf else "")
         + '<p id="reader-shortcuts" class="reader-shortcuts">阅读时按 Enter 到下一页；输入框中保留原有输入操作。</p><progress id="reader-progress" aria-label="原书加载进度"></progress><p id="reader-status" role="status" aria-live="polite">正在打开原书，较大文件首次加载需要一点时间…</p><button id="reader-retry" class="button button-outline" type="button" hidden>重试当前页</button><div id="reader-pages" aria-label="全书连续阅读页面" aria-describedby="reader-shortcuts"></div>'
         + '<noscript><p>连续阅读需要开启 JavaScript。也可以<a class="text-link" href="'
         + base
         + '/original">下载原件阅读</a>。</p></noscript></section>'
-        + '<link rel="stylesheet" href="/static/vendor/pdfjs/web/pdf_viewer.css"><script type="module" src="/static/book-reader.mjs?v=20261022-continuity"></script></main>'
+        + '<link rel="stylesheet" href="/static/vendor/pdfjs/web/pdf_viewer.css"><script type="module" src="/static/book-reader.mjs?v=20261022-ocr-range"></script></main>'
     )
     return HTMLResponse(
         _render_layout("阅读全书 · 知行", body, signed_in=True),
