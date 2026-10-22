@@ -16,11 +16,60 @@ export function initBookOCR({getCurrentPage, renderForOCR, jump}) {
     const rangeStart = byId("ocr-range-start"), rangeEnd = byId("ocr-range-end"), rangeGo = byId("ocr-range-go");
     const queue = byId("ocr-results"), summary = byId("ocr-queue-summary");
     const previous = byId("ocr-result-previous"), next = byId("ocr-result-next");
+    const sourcePane = byId("ocr-source-pane"), sourceFrame = byId("ocr-source-frame"), sourceTitle = byId("ocr-source-title");
+    const sourceToggle = byId("ocr-source-toggle"), sourceZoom = byId("ocr-source-zoom"), sourceRetry = byId("ocr-source-retry"), sourceStatus = byId("ocr-source-status");
     const total = Number(byId("book-reader").dataset.total);
     let entries = [], selected = -1, activeJob = null, saving = false;
+    let sourceVisible = true, sourceWanted = 0, sourcePage = 0, sourceCanvas = null, sourceRunning = false, pageGone = false;
     const show = message => {status.textContent = message;};
     const dirty = () => entries.some(entry => entry.state === "review");
     const current = () => entries[selected];
+    const clearSource = () => {
+        if (sourceCanvas) sourceCanvas.width = sourceCanvas.height = 0;
+        sourceCanvas = null; sourcePage = 0; sourceFrame.replaceChildren();
+    };
+    function sizeSource() {
+        sourceFrame.dataset.zoom = ["150", "200"].includes(sourceZoom.value) ? sourceZoom.value : "100";
+        sourceFrame.scrollTop = sourceFrame.scrollLeft = 0;
+    }
+    // Coalesce fast result changes: one render in flight, one displayed canvas.
+    async function drawSource() {
+        sourceRunning = true;
+        try {
+            while (sourceWanted && sourceWanted !== sourcePage) {
+                const number = sourceWanted;
+                let canvas;
+                try { canvas = await renderForOCR(number, 1400); }
+                catch (_) {
+                    if (number !== sourceWanted) continue;
+                    sourceStatus.textContent = "这一页原图暂未显示，文字和修改仍保留。可重试，或回到全书核对。";
+                    sourceRetry.hidden = false;
+                    break;
+                }
+                if (number !== sourceWanted) {canvas.width = canvas.height = 0; continue;}
+                clearSource(); sourceCanvas = canvas; sourcePage = number;
+                canvas.setAttribute("role", "img");
+                canvas.setAttribute("aria-label", "PDF 文件第 " + number + " 页对照原图");
+                sourceFrame.replaceChildren(canvas); sizeSource(); sourceZoom.disabled = false;
+                sourceStatus.textContent = "PDF 文件第 " + number + " 页原图 · 可放大并在图框内滚动；校对文字后再保存。";
+            }
+        } finally {sourceRunning = false; sourceFrame.setAttribute("aria-busy", "false");}
+    }
+    function refreshSource() {
+        const entry = current();
+        sourceWanted = sourceVisible && !activeJob && !pageGone && entry ? entry.page : 0;
+        sourcePane.hidden = !sourceVisible;
+        sourceToggle.setAttribute("aria-expanded", String(sourceVisible));
+        sourceToggle.textContent = sourceVisible ? "收起对照原页" : "展开对照原页";
+        byId("ocr-proofreading").className = "ocr-proofreading" + (sourceVisible ? "" : " source-collapsed");
+        sourceTitle.textContent = entry ? "对照原页 · PDF 文件第 " + entry.page + " 页" : "对照原页";
+        sourceRetry.hidden = true;
+        if (sourceWanted === sourcePage && sourceCanvas) return;
+        clearSource(); sourceZoom.disabled = true;
+        sourceStatus.textContent = activeJob ? "本批识别完成后，可逐页对照原图。" : sourceWanted ? "正在打开相同文件页的原图…" : "选择本批结果后，在这里对照相同文件页的原图。";
+        sourceFrame.setAttribute("aria-busy", String(!!sourceWanted));
+        if (sourceWanted && !sourceRunning) void drawSource();
+    }
     const open = () => {
         panel.hidden = false; view.hidden = false;
         const toolbar = document.querySelector(".reader-toolbar");
@@ -62,7 +111,7 @@ export function initBookOCR({getCurrentPage, renderForOCR, jump}) {
         study.hidden = !entry || !["existing", "saved"].includes(entry.state);
         if (!study.hidden) study.href = entry.url;
         else study.removeAttribute("href");
-        controls();
+        controls(); refreshSource();
     }
     function select(index) {
         if (activeJob || saving || index < 0 || index >= entries.length) return;
@@ -173,6 +222,9 @@ export function initBookOCR({getCurrentPage, renderForOCR, jump}) {
         catch (error) {show(error.message);}
     });
     view.addEventListener("click", open);
+    sourceToggle.addEventListener("click", () => {sourceVisible = !sourceVisible; refreshSource();});
+    sourceZoom.addEventListener("change", sizeSource);
+    sourceRetry.addEventListener("click", refreshSource);
     original.addEventListener("click", () => {if (current()) jump(current().page);});
     previous.addEventListener("click", () => select(selected - 1));
     next.addEventListener("click", () => select(selected + 1));
@@ -201,7 +253,8 @@ export function initBookOCR({getCurrentPage, renderForOCR, jump}) {
         } finally {clearTimeout(timeout); saving = false; render();}
     });
     window.addEventListener("beforeunload", event => {if (dirty() || activeJob || saving) {event.preventDefault(); event.returnValue = "";}});
-    window.addEventListener("pagehide", () => cancelJob("页面已离开，本批识别停止。"));
+    window.addEventListener("pagehide", () => {pageGone = true; sourceWanted = 0; clearSource(); cancelJob("页面已离开，本批识别停止。");});
+    window.addEventListener("pageshow", event => {if (event.persisted) {pageGone = false; refreshSource();}});
     rangeStart.value = String(getCurrentPage()); rangeEnd.value = String(Math.min(total, getCurrentPage() + 4));
     render();
 }

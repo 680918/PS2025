@@ -45,7 +45,7 @@ globalThis.fetch=async (url,options={})=>{
     return {ok:true,status:200,redirected:false,headers:{get:()=>"application/json"},json:async()=>value};
 };
 const {initBookOCR}=await import(process.argv[2]);
-initBookOCR({getCurrentPage:()=>8,jump(){},renderForOCR:async()=>({width:100,height:100})});
+initBookOCR({getCurrentPage:()=>8,jump(){},renderForOCR:async()=>Object.assign(new Element(),{width:100,height:100})});
 element("ocr-range-start").value="8";
 element("ocr-range-end").value="10";
 element("ocr-range-form").emit("submit");

@@ -27,8 +27,12 @@ def ocr_panel(base, token, total):
         + '<p id="ocr-status" role="status" aria-live="polite">请在阅读工具栏点击“识别当前页”。</p>'
         + '<button id="ocr-cancel" class="button button-outline" type="button" hidden>取消识别</button>'
         + '<p id="ocr-queue-summary" class="ocr-note" aria-live="polite"></p><div id="ocr-results" class="ocr-results" role="group" aria-label="本批逐页识别结果"></div>'
-        + '<label for="ocr-text" id="ocr-result-label">识别结果（保存前可修改）</label><textarea id="ocr-text" rows="10" maxlength="40000" disabled></textarea>'
-        + '<p id="ocr-confidence" class="ocr-note"></p><div class="library-actions">'
+        + '<button id="ocr-source-toggle" class="button button-outline" type="button" aria-expanded="true" aria-controls="ocr-source-pane">收起对照原页</button>'
+        + '<div id="ocr-proofreading" class="ocr-proofreading"><section id="ocr-source-pane" class="ocr-source-pane" aria-labelledby="ocr-source-title"><h3 id="ocr-source-title">对照原页</h3>'
+        + '<div class="ocr-source-tools"><label for="ocr-source-zoom">原页显示大小</label><select id="ocr-source-zoom" disabled><option value="100">适合宽度</option><option value="150">放大 150%</option><option value="200">放大 200%</option></select><button id="ocr-source-retry" class="button button-outline" type="button" hidden>重试对照原页</button></div>'
+        + '<p id="ocr-source-status" role="status" aria-live="polite">选择本批结果后，在这里对照相同文件页的原图。</p><div id="ocr-source-frame" class="ocr-source-frame" role="region" aria-label="对照原页，可上下左右滚动" tabindex="0"></div></section>'
+        + '<div class="ocr-result-editor"><label for="ocr-text" id="ocr-result-label">识别结果（保存前可修改）</label><textarea id="ocr-text" rows="12" maxlength="40000" disabled></textarea>'
+        + '<p id="ocr-confidence" class="ocr-note"></p></div></div><div class="library-actions">'
         + '<button id="ocr-original" class="button button-outline" type="button" disabled>回到这一页核对</button>'
         + '<button id="ocr-save" class="button button-primary" type="button" disabled>核对无误，保存此页文字</button>'
         + '<button id="ocr-discard" class="button button-outline" type="button" hidden>放弃本批全部未保存结果</button>'
@@ -191,7 +195,7 @@ def reader_response(
         + '<noscript><p>连续阅读需要开启 JavaScript。也可以<a class="text-link" href="'
         + base
         + '/original">下载原件阅读</a>。</p></noscript></section>'
-        + '<link rel="stylesheet" href="/static/vendor/pdfjs/web/pdf_viewer.css"><script type="module" src="/static/book-reader.mjs?v=20261022-ocr-range"></script></main>'
+        + '<link rel="stylesheet" href="/static/vendor/pdfjs/web/pdf_viewer.css"><script type="module" src="/static/book-reader.mjs?v=20261022-proofread"></script></main>'
     )
     return HTMLResponse(
         _render_layout("阅读全书 · 知行", body, signed_in=True),

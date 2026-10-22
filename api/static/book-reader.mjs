@@ -193,7 +193,7 @@ for (const [id, target] of [
 document.addEventListener("keydown", event => {
     if (!readerReady || stopped || event.defaultPrevented || event.key !== "Enter" || event.repeat || event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     const target = event.target;
-    if (target instanceof Element && (target.isContentEditable || target.closest("input,textarea,select,button,a,summary,[contenteditable],[role='textbox'],[role='button']"))) return;
+    if (target instanceof Element && (target.isContentEditable || target.closest("input,textarea,select,button,a,summary,[contenteditable],[role='textbox'],[role='button'],#book-ocr"))) return;
     event.preventDefault();
     if (current >= total) { announce("已到最后一页，可以向上滚动重读。"); return; }
     jump(current + 1, true);
@@ -320,17 +320,22 @@ async function setup() {
     for (const sheet of sheets.values()) observer.observe(sheet);
     if (isPDF) {
         try {
-            const {initBookOCR} = await import("./book-ocr.mjs?v=20261022-range");
-            initBookOCR({getCurrentPage: () => current, jump, renderForOCR: async number => {
+            const {initBookOCR} = await import("./book-ocr.mjs?v=20261022-proofread");
+            initBookOCR({getCurrentPage: () => current, jump, renderForOCR: async (number, width = 1800) => {
                 const page = await pdf.getPage(number);
                 const unit = page.getViewport({scale: 1});
-                const scale = Math.min(1800 / unit.width, Math.sqrt(5000000 / (unit.width * unit.height)));
+                const scale = Math.min(width / unit.width, Math.sqrt(5000000 / (unit.width * unit.height)));
                 const viewport = page.getViewport({scale});
                 const canvas = document.createElement("canvas");
                 canvas.width = Math.max(1, Math.floor(viewport.width));
                 canvas.height = Math.max(1, Math.floor(viewport.height));
-                await page.render({canvasContext: canvas.getContext("2d", {alpha: false}), viewport, annotationMode: pdfjs.AnnotationMode.DISABLE}).promise;
-                return canvas;
+                try {
+                    await page.render({canvasContext: canvas.getContext("2d", {alpha: false}), viewport, annotationMode: pdfjs.AnnotationMode.DISABLE}).promise;
+                    return canvas;
+                } catch (error) {
+                    canvas.width = canvas.height = 0;
+                    throw error;
+                }
             }});
         } catch (_) {
             const button = document.getElementById("ocr-start");

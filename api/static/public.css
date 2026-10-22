@@ -706,3 +706,16 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .ocr-results [aria-pressed="true"] { background: var(--tint); border-color: var(--green); color: var(--green); }
 
 @media (max-width: 720px) { .reader-toolbar { position: static; } .book-ocr-panel { scroll-margin-top: 16px; } }
+
+.ocr-proofreading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; margin: 14px 0; }
+.ocr-proofreading > * { min-width: 0; }
+.ocr-proofreading.source-collapsed { grid-template-columns: minmax(0, 1fr); }
+.ocr-source-pane h3 { font-size: 14px; font-weight: 500; margin: 14px 0 7px; }
+.ocr-source-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ocr-source-tools label { margin: 0; }
+.ocr-source-frame { max-height: 440px; min-height: 100px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.ocr-source-frame canvas { display: block; width: 100%; height: auto; max-width: none; }
+.ocr-source-frame[data-zoom="150"] canvas { width: 150%; }
+.ocr-source-frame[data-zoom="200"] canvas { width: 200%; }
+.ocr-result-editor textarea { min-height: 440px; }
+@media (max-width: 900px) { .ocr-proofreading { grid-template-columns: minmax(0, 1fr); } .ocr-source-frame { max-height: 320px; } .ocr-result-editor textarea { min-height: 300px; } }
