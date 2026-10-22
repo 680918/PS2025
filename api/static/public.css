@@ -718,4 +718,7 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .ocr-source-frame[data-zoom="150"] canvas { width: 150%; }
 .ocr-source-frame[data-zoom="200"] canvas { width: 200%; }
 .ocr-result-editor textarea { min-height: 440px; }
+.text-status-list { list-style: none; padding: 0; }
+.text-status-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.text-status-label { display: inline-block; margin: 0 10px; font-size: 13px; color: var(--muted); }
 @media (max-width: 900px) { .ocr-proofreading { grid-template-columns: minmax(0, 1fr); } .ocr-source-frame { max-height: 320px; } .ocr-result-editor textarea { min-height: 300px; } }

@@ -385,6 +385,11 @@ class MaterialRepository:
 
         return page_status(self, user_id, material_id, number)
 
+    def text_coverage(self, user_id, material_id):
+        from coach.material_ocr import text_coverage
+
+        return text_coverage(self, user_id, material_id)
+
     def save_ocr_page(self, user_id, material_id, number, text, confidence, digest):
         from coach.material_ocr import save_page
 

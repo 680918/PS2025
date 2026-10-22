@@ -1,10 +1,83 @@
 """Private book-reading presentation; original pages and OCR are distinct."""
 
 from html import escape
+from urllib.parse import urlencode
 
 from fastapi.responses import HTMLResponse
 
 from api.public_pages import _render_layout
+
+
+def text_status_content(item, coverage, *, status="all", number=1):
+    """Bounded server-rendered page list; its links only prepare explicit actions."""
+    base = "/web/materials/" + item["material_id"]
+    labels = {
+        "all": "全部页",
+        "missing": "尚无文字",
+        "native": "已提取文字",
+        "confirmed": "OCR 已核对保存",
+    }
+    matching = [
+        row for row in coverage["pages"] if status == "all" or row["state"] == status
+    ]
+    count = max(1, (len(matching) + 49) // 50)
+    if not 1 <= number <= count:
+        raise ValueError("请输入总览范围内的分页编号。")
+    body = (
+        '<nav class="library-tabs" aria-label="正文页码导航"><a href="/web/materials">← 资料与书籍</a>'
+        + f'<a href="{base}/read">继续阅读</a><a href="{base}">文字选段与提问</a><a href="{base}/plan">学习目录</a></nav>'
+        + "<p>"
+        + escape(item["title"])
+        + "</p>"
+        + '<section class="library-card"><h2>Coach 可引用文字的范围</h2>'
+        + f'<p id="text-status-summary">共 {coverage["total"]} 页 · 已提取文字 {coverage["native"]} 页 · OCR 已核对保存 {coverage["confirmed"]} 页 · 尚无文字 {coverage["missing"]} 页。</p>'
+        + "<p>这里按 PDF 文件实际页码统计，与印刷页码可能不同。已有文字表示本页有可引用片段，不保证整页提取完整、排版准确或已经学会；尚无文字的页也可能是空白或插图，请对照原页。</p>"
+        + "<p>识别后的待核对草稿不计入已保存文字。浏览总览不改变阅读或学习位置，也不调用 AI；准备入口只打开原书，仍需明确开始识别。在原书中阅读会照常记住位置，保存文字后可刷新总览。</p>"
+    )
+    first = next(
+        (row["page"] for row in coverage["pages"] if row["state"] == "missing"), None
+    )
+    if first is not None:
+        body += (
+            f"<p>第一处尚无文字：文件第 {first} 页。建议准备第 {first}–{min(first + 4, coverage['total'])} 页，已有文字会跳过。</p>"
+            + f'<a class="button button-primary" href="{base}/read?page={first}#book-ocr">准备下一批识别（最多 5 页）</a>'
+        )
+    else:
+        body += "<p>每页都已有可引用文字，仍请对照原书核对提取是否完整。</p>"
+    body += '</section><section class="library-card"><h2>按页查看</h2><nav class="library-tabs" aria-label="文字状态筛选">'
+    for state, label in labels.items():
+        query = urlencode({"status": state, "p": 1})
+        body += (
+            f'<a href="{base}/text-status?{query}"'
+            + (' aria-current="page"' if state == status else "")
+            + ">"
+            + label
+            + "</a>"
+        )
+    body += (
+        "</nav>"
+        + f"<p>当前：{labels[status]} · {len(matching)} 页 · 第 {number} / {count} 页，每次最多显示 50 个文件页。</p>"
+    )
+    body += '<ol class="text-status-list">'
+    for row in matching[(number - 1) * 50 : number * 50]:
+        page, state = row["page"], row["state"]
+        body += f'<li data-file-page="{page}"><div><strong>文件第 {page} 页</strong><span class="text-status-label">{labels[state]}</span></div><div class="library-actions">'
+        body += f'<a class="button button-outline" href="{base}/read?page={page}">阅读原页</a>'
+        body += (
+            f'<a class="button button-outline" href="{base}/read?page={page}#book-ocr">准备本页起的识别</a>'
+            if state == "missing"
+            else f'<a class="button button-outline" href="{base}?page={page}">查看可引用文字</a>'
+        )
+        body += "</div></li>"
+    body += "</ol>"
+    if not matching:
+        body += "<p>这个状态下暂时没有文件页。</p>"
+    body += '<nav class="library-actions" aria-label="正文总览分页">'
+    for target, label in ((number - 1, "上一页结果"), (number + 1, "下一页结果")):
+        if 1 <= target <= count:
+            body += f'<a class="button button-outline" href="{base}/text-status?{urlencode({"status": status, "p": target})}">{label}</a>'
+    body += f'<a class="button button-outline" href="{base}/text-status?{urlencode({"status": status, "p": number})}">刷新总览</a></nav></section>'
+    return body
 
 
 def ocr_panel(base, token, total):
@@ -46,6 +119,13 @@ def extraction_notice(item):
     if item["kind"] != "pdf":
         return ""
     readable, total = item["readable_pages"], item["page_count"]
+    overview = (
+        '<p><a class="button button-outline" href="/web/materials/'
+        + escape(item["material_id"], quote=True)
+        + '/text-status">正文页码总览 · 找到尚无文字的页</a></p>'
+        if item.get("material_id")
+        else ""
+    )
     if readable == total:
         return (
             '<p class="extraction-notice">文字已提取 · '
@@ -53,6 +133,7 @@ def extraction_notice(item):
             + " / "
             + str(total)
             + " 页。阅读原页不调用 AI。</p>"
+            + overview
         )
     return (
         '<p class="extraction-notice extraction-incomplete"><strong>文字提取不完整 · '
@@ -62,6 +143,7 @@ def extraction_notice(item):
         + " 页，"
         + str(item["char_count"])
         + " 字。</strong>未提取文字的页面仍可在“阅读全书”查看原页；这些页面可能是扫描图片，尚需文字识别（OCR）。可点击“识别当前页”，核对并保存后供 Coach 引用。未识别的正文仍不能据此逐章讲解。</p>"
+        + overview
     )
 
 
@@ -110,7 +192,9 @@ def reader_response(
         + base
         + '">文字选段与提问</a><a href="'
         + base
-        + '/original">下载原件</a></nav><h1>'
+        + '/original">下载原件</a>'
+        + (f'<a href="{base}/text-status">正文页码总览</a>' if pdf else "")
+        + "</nav><h1>"
         + escape(item["title"])
         + '</h1><p class="reader-intro">阅读全书 · '
         + (

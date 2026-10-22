@@ -26,7 +26,7 @@ from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartParser, MultiPartException
 from api.coach_markdown import coach_markdown
 from api.lesson_export import lesson_document
-from api.book_reader import reader_response, extraction_notice
+from api.book_reader import reader_response, extraction_notice, text_status_content
 
 from api.public_pages import _render_layout
 from coach.materials import (
@@ -1698,6 +1698,40 @@ def register_library_pages(
         except sqlite3.Error:
             return problem("目录暂时无法保存，请返回查看，避免重复操作。", 503)
         return redirect("/web/materials/" + identity + "/plan?notice=saved")
+
+    @app.get("/web/materials/{identity}/text-status", include_in_schema=False)
+    def book_text_status(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        try:
+            item = materials.get(account.user_id, identity)
+            if item is None or item["kind"] != "pdf":
+                return problem("找不到这份本人PDF。", 404)
+            if any(
+                key not in {"status", "p"}
+                or len(request.query_params.getlist(key)) != 1
+                for key in request.query_params
+            ):
+                return problem("正文总览筛选无法读取，请重新打开。")
+            status = request.query_params.get("status", "all")
+            raw = request.query_params.get("p", "1")
+            if (
+                status not in {"all", "missing", "native", "confirmed"}
+                or re.fullmatch(r"[1-9][0-9]{0,2}", raw) is None
+            ):
+                return problem("请核对正文总览的状态和分页编号。")
+            coverage = materials.text_coverage(account.user_id, identity)
+            if coverage is None:
+                return problem("找不到这份本人PDF。", 404)
+            return page(
+                "正文页码总览",
+                text_status_content(item, coverage, status=status, number=int(raw)),
+            )
+        except (MaterialError, ValueError) as error:
+            return problem(str(error))
+        except sqlite3.Error:
+            return problem("正文页码暂时无法读取，请稍后重试。", 503)
 
     @app.get("/web/materials/{identity}/read", include_in_schema=False)
     def read_book(request: Request, identity: str):

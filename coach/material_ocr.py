@@ -49,6 +49,62 @@ def page_status(repository, user_id, material_id, number):
     }
 
 
+def text_coverage(repository, user_id, material_id):
+    """Read page metadata in one snapshot; never load book text or change progress."""
+    with closing(repository._connect()) as db:
+        db.execute("BEGIN")
+        item = db.execute(
+            "SELECT kind,page_count FROM materials WHERE user_id=? AND material_id=?",
+            (user_id, material_id),
+        ).fetchone()
+        if item is None or item["kind"] != "pdf":
+            return None
+        total = item["page_count"]
+        available = {
+            page_number(row[0])
+            for row in db.execute(
+                "SELECT locator FROM material_chunks WHERE material_id=?",
+                (material_id,),
+            )
+        }
+        confirmed = {
+            row[0]
+            for row in db.execute(
+                "SELECT page_number FROM material_ocr_pages WHERE material_id=?",
+                (material_id,),
+            )
+        }
+    if (
+        not 1 <= total <= 1500
+        or any(
+            type(number) is not int or not 1 <= number <= total
+            for number in available | confirmed
+        )
+        or not confirmed <= available
+    ):
+        raise MaterialError("这本书的文字页码记录无法核对，请先核对原件。")
+    pages = [
+        {
+            "page": number,
+            "state": (
+                "confirmed"
+                if number in confirmed
+                else "native"
+                if number in available
+                else "missing"
+            ),
+        }
+        for number in range(1, total + 1)
+    ]
+    return {
+        "total": total,
+        "native": len(available - confirmed),
+        "confirmed": len(confirmed),
+        "missing": total - len(available),
+        "pages": pages,
+    }
+
+
 def save_page(repository, user_id, material_id, number, text, confidence, digest):
     if type(number) is not int or not isinstance(text, str):
         raise MaterialError("请核对识别页码和正文文字。")
