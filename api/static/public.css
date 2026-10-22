@@ -690,3 +690,10 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .usage-status dt { color: var(--muted); }
 .usage-status dd { margin: 0; }
 @media (max-width: 720px) { .usage-grid { grid-template-columns: 1fr; } .usage-panel { padding: 18px; } .usage-status > div { grid-template-columns: 1fr; gap: 2px; } }
+
+.reader-continuity { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin: 16px 0; font-size: 13px; overflow-wrap: anywhere; }
+.reader-continuity p { margin: 6px 0; color: var(--muted); }
+.reader-continuity form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.reader-continuity .button { font-size: 12px; padding: 7px 12px; }
+
+.reader-toolbar .reader-position-status { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--muted); }

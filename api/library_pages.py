@@ -256,6 +256,7 @@ def register_library_pages(
     )
     view_limit = RegistrationRateLimiter(per_client_limit=60, total_limit=600)
     write_limit = RegistrationRateLimiter(per_client_limit=12, total_limit=60)
+    position_limit = RegistrationRateLimiter(per_client_limit=60, total_limit=600)
     upload_slots = BoundedSemaphore(2)
     export_slots = BoundedSemaphore(2)
     export_limit = RegistrationRateLimiter(per_client_limit=2, total_limit=10)
@@ -294,8 +295,8 @@ def register_library_pages(
     def redirect(url):
         return RedirectResponse(url, status_code=303, headers=HEADERS)
 
-    def auth(request, *, write=False):
-        wait = (write_limit if write else view_limit).admit(
+    def auth(request, *, write=False, limiter=None):
+        wait = (limiter or (write_limit if write else view_limit)).admit(
             request.client.host if request.client else "unknown"
         )
         if wait:
@@ -843,6 +844,15 @@ def register_library_pages(
         cards = []
         for item in visible:
             identity = item["material_id"]
+            try:
+                bookmark = materials.reading_position(account.user_id, identity)
+            except sqlite3.Error:
+                return problem("暂时无法读取阅读位置，请稍后再试。", 503)
+            resume = (
+                f'<a class="text-link" href="/web/materials/{identity}/read">继续阅读 · 第{bookmark["page"]}页</a>'
+                if bookmark and bookmark["revision"]
+                else ""
+            )
             label = (
                 '<span class="library-badge">当前参与讨论</span>'
                 if selected and selected["material_id"] == identity
@@ -859,7 +869,7 @@ def register_library_pages(
                 + escape(item["filename"])
                 + f" · {item['char_count']} 字 · {size_text(item['raw_bytes'])}</p>"
                 + extraction_notice(item)
-                + f'<div class="library-actions"><a class="text-link" href="/web/materials/{identity}/read">阅读全书</a><a class="text-link" href="/web/materials/{identity}/plan">学习目录</a>'
+                + f'<div class="library-actions">{resume}<a class="text-link" href="/web/materials/{identity}/read">阅读全书</a><a class="text-link" href="/web/materials/{identity}/plan">学习目录</a>'
                 + f'<a class="text-link" href="/web/materials/{identity}/original">下载原件</a>'
                 + '<a class="text-link" href="'
                 + escape(f"/web/materials/{identity}/edit" + edit_query, quote=True)
@@ -1703,7 +1713,8 @@ def register_library_pages(
                 or len(request.query_params.getlist("page")) > 1
             ):
                 return problem("阅读位置无法读取，请从资料目录重新打开。")
-            number = request.query_params.get("page", "1")
+            bookmark = materials.reading_position(account.user_id, identity)
+            number = request.query_params.get("page", str(bookmark["page"]))
             total = (
                 item["page_count"]
                 if item["kind"] == "pdf"
@@ -1714,11 +1725,111 @@ def register_library_pages(
                 or not 1 <= int(number) <= total
             ):
                 return problem("请输入这本书范围内的阅读页码。")
+            selected = dialogue.book_position(account.user_id, identity)
+            part = (
+                materials.chunk(account.user_id, identity, selected["chunk_id"])
+                if selected
+                else None
+            )
             return reader_response(
-                item, total, int(number), ocr_csrf=csrf(request, "ocr-page", identity)
+                item,
+                total,
+                int(number),
+                ocr_csrf=csrf(request, "ocr-page", identity),
+                bookmark_csrf=csrf(request, "reading-position", identity),
+                bookmark=bookmark,
+                learning_locator=part["locator"] if part else "",
             )
         except sqlite3.Error:
             return problem("暂时无法打开这本书，请稍后再试。", 503)
+
+    @app.post("/web/materials/{identity}/read/position", include_in_schema=False)
+    async def remember_reading_page(request: Request, identity: str):
+        account, denied = await run_in_threadpool(auth, request, limiter=position_limit)
+        if denied is not None:
+            return denied
+        values = await fields(request, {"csrf", "page", "revision"}, limit=2048)
+
+        def failure(message, code):
+            return (
+                JSONResponse({"error": message}, status_code=code, headers=HEADERS)
+                if request.headers.get("accept") == "application/json"
+                else problem(message, code)
+            )
+
+        if not valid_csrf(request, values, "reading-position", identity):
+            return failure("阅读页面无法核对，请刷新或重新登录后再记住位置。", 403)
+        if (
+            re.fullmatch(r"[1-9][0-9]{0,3}", values["page"]) is None
+            or re.fullmatch(r"[0-9]{1,9}", values["revision"]) is None
+        ):
+            return failure("请核对阅读页码与位置版本。", 400)
+        try:
+            result = await run_in_threadpool(
+                materials.save_reading_position,
+                account.user_id,
+                identity,
+                int(values["page"]),
+                int(values["revision"]),
+            )
+            if result["status"] == "missing":
+                return failure("找不到这份本人资料。", 404)
+            if result["status"] == "conflict":
+                message = (
+                    "另一个阅读窗口已更新位置，本次没有覆盖。请重新打开阅读页核对。"
+                )
+                return (
+                    JSONResponse(
+                        {**result, "error": message}, status_code=409, headers=HEADERS
+                    )
+                    if request.headers.get("accept") == "application/json"
+                    else problem(message, 409)
+                )
+            return (
+                JSONResponse(result, headers=HEADERS)
+                if request.headers.get("accept") == "application/json"
+                else redirect(f"/web/materials/{identity}/read?page={result['page']}")
+            )
+        except MaterialError as error:
+            return failure(str(error), 400)
+        except sqlite3.Error:
+            return failure("阅读位置暂时无法保存，请稍后重试；本页仍可阅读。", 503)
+
+    @app.get("/web/materials/{identity}/read/learn", include_in_schema=False)
+    def learn_reading_page(request: Request, identity: str):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        if (
+            set(request.query_params) != {"page"}
+            or len(request.query_params.getlist("page")) != 1
+        ):
+            return problem("请只选择一个阅读页码。")
+        raw = request.query_params["page"]
+        if re.fullmatch(r"[1-9][0-9]{0,3}", raw) is None:
+            return problem("请核对阅读页码。")
+        number = int(raw)
+        try:
+            item = materials.get(account.user_id, identity)
+            if item is None:
+                return problem("找不到这份本人资料。", 404)
+            total = (
+                item["page_count"]
+                if item["kind"] == "pdf"
+                else max(1, (item["char_count"] + 2399) // 2400)
+            )
+            if number > total:
+                return problem("请输入这本书范围内的阅读页码。")
+            if item["kind"] == "pdf":
+                info = materials.ocr_page(account.user_id, identity, number)
+                if info["state"] == "missing":
+                    return redirect(
+                        f"/web/materials/{identity}/read?page={number}#book-ocr"
+                    )
+                return redirect(info["preview_url"])
+            return redirect(f"/web/materials/{identity}?part={(number - 1) * 3 + 1}")
+        except sqlite3.Error:
+            return problem("暂时无法读取这一页的文字，请稍后再试。", 503)
 
     @app.get("/web/materials/{identity}/ocr", include_in_schema=False)
     def ocr_status(request: Request, identity: str):

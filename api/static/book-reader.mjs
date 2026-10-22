@@ -27,11 +27,14 @@ const queue = new Set();
 const batches = new Map();
 
 function announce(text) { status.textContent = text; }
+let rememberPosition = () => {};
 function position(number) {
     if (sheets.has(current)) sheets.get(current).tabIndex = -1;
     current = number;
     if (sheets.has(number)) sheets.get(number).tabIndex = 0;
     input.value = String(number);
+    const bookmarkForm = document.getElementById("reader-bookmark");
+    if (bookmarkForm) bookmarkForm.elements.page.value = String(number);
     previous.disabled = number <= 1;
     next.disabled = number >= total;
     previous.title = number <= 1 ? "已到第一页" : "上一页";
@@ -43,6 +46,9 @@ function position(number) {
     const url = new URL(location.href);
     url.searchParams.set("page", String(number));
     history.replaceState(null, "", url);
+    const study = document.getElementById("reader-study");
+    if (study) study.href = root.dataset.source.replace(/\/original$/, "/read/learn?page=" + number);
+    if (readerReady) rememberPosition();
 }
 function fitWidth() {
     return Math.min(960, Math.max(180, pagesNode.clientWidth - 24)) * zoom;
@@ -299,6 +305,13 @@ async function setup() {
     await render(initial);
     readerReady = true;
     root.dataset.state = "ready";
+    try {
+        const {initReadingPosition} = await import("./reading-position.mjs?v=20261022");
+        rememberPosition = initReadingPosition(root, () => current);
+        rememberPosition();
+    } catch (_) {
+        document.getElementById("bookmark-status").textContent = "自动记录暂不可用，可点击记住当前页；阅读不受影响。";
+    }
     progress.hidden = true;
     alignReadingPage(initial);
     for (const sheet of sheets.values()) observer.observe(sheet);
@@ -319,6 +332,14 @@ async function setup() {
         } catch (_) {
             const button = document.getElementById("ocr-start");
             if (button) button.textContent = "识别组件暂不可用";
+        }
+    }
+    if (location.hash === "#book-ocr") {
+        const panel = document.getElementById("book-ocr");
+        if (panel) {
+            panel.hidden = false;
+            document.getElementById("ocr-status").textContent = "这一页还没有可引用的正文。请点击工具栏“识别当前页”，核对保存后再选段学习。";
+            panel.scrollIntoView({block: "start"});
         }
     }
     void drain();

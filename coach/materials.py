@@ -168,6 +168,11 @@ class MaterialRepository:
                 );
                 CREATE INDEX IF NOT EXISTS material_chunk_owner ON material_chunks(material_id,chunk_index);
                 CREATE TABLE IF NOT EXISTS selected_material (user_id TEXT PRIMARY KEY, material_id TEXT NOT NULL REFERENCES materials(material_id));
+                CREATE TABLE IF NOT EXISTS material_reading_positions (
+                    material_id TEXT PRIMARY KEY REFERENCES materials(material_id),
+                    page_number INTEGER NOT NULL, revision INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS material_ocr_pages (
                     material_id TEXT NOT NULL REFERENCES materials(material_id),
                     page_number INTEGER NOT NULL, confidence INTEGER NOT NULL,
@@ -384,6 +389,54 @@ class MaterialRepository:
         from coach.material_ocr import save_page
 
         return save_page(self, user_id, material_id, number, text, confidence, digest)
+
+    def reading_position(self, user_id, material_id):
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT COALESCE(p.page_number,1) AS page,COALESCE(p.revision,0) AS revision "
+                "FROM materials m LEFT JOIN material_reading_positions p ON p.material_id=m.material_id "
+                "WHERE m.user_id=? AND m.material_id=?",
+                (user_id, material_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def save_reading_position(self, user_id, material_id, number, revision):
+        if (
+            type(number) is not int
+            or type(revision) is not int
+            or not 1 <= number <= 1500
+            or not 0 <= revision < 1000000000
+        ):
+            raise MaterialError("请核对阅读页码与位置版本。")
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            item = db.execute(
+                "SELECT kind,page_count,char_count FROM materials WHERE user_id=? AND material_id=?",
+                (user_id, material_id),
+            ).fetchone()
+            if item is None:
+                return {"status": "missing"}
+            total = (
+                item["page_count"]
+                if item["kind"] == "pdf"
+                else max(1, (item["char_count"] + 2399) // 2400)
+            )
+            if number > total:
+                raise MaterialError("请输入这本书范围内的阅读页码。")
+            old = db.execute(
+                "SELECT page_number AS page,revision FROM material_reading_positions WHERE material_id=?",
+                (material_id,),
+            ).fetchone()
+            current = dict(old) if old else {"page": 1, "revision": 0}
+            if old and number == old["page"]:
+                return {"status": "saved", **current}
+            if revision != current["revision"]:
+                return {"status": "conflict", **current}
+            db.execute(
+                "INSERT INTO material_reading_positions VALUES(?,?,?,?) ON CONFLICT(material_id) DO UPDATE SET page_number=excluded.page_number,revision=excluded.revision,updated_at=excluded.updated_at",
+                (material_id, number, revision + 1, int(time())),
+            )
+            return {"status": "saved", "page": number, "revision": revision + 1}
 
     def reading_pages(self, user_id, material_id, start):
         """Bounded text reading, removing the retrieval chunks' 200-char overlap."""

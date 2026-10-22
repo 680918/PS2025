@@ -51,9 +51,46 @@ def extraction_notice(item):
     )
 
 
-def reader_response(item, total, number, *, ocr_csrf=""):
+def reader_response(
+    item,
+    total,
+    number,
+    *,
+    ocr_csrf="",
+    bookmark_csrf="",
+    bookmark=None,
+    learning_locator="",
+):
     base = "/web/materials/" + item["material_id"]
     pdf = item["kind"] == "pdf"
+    bookmark = bookmark or {"page": 1, "revision": 0}
+    position_panel = (
+        '<section class="reader-continuity" aria-label="阅读与学习位置"><p><strong>阅读位置</strong> · <span id="reader-saved-summary">'
+        + (
+            "已记住第 " + str(bookmark["page"]) + " 页"
+            if bookmark["revision"]
+            else "尚未记录"
+        )
+        + "</span>；停留后自动记住，重新打开可续读。</p><p><strong>本书选段学习位置</strong> · "
+        + escape(learning_locator or "尚未选择文字片段")
+        + "。阅读页与学习位置分开；都不表示已经掌握。</p>"
+        + '<form id="reader-bookmark" method="post" action="'
+        + base
+        + '/read/position">'
+        + '<input type="hidden" name="csrf" value="'
+        + escape(bookmark_csrf, quote=True)
+        + '">'
+        + '<input type="hidden" name="page" value="'
+        + str(number)
+        + '">'
+        + '<input type="hidden" name="revision" value="'
+        + str(bookmark["revision"])
+        + '">'
+        + '<a class="button button-outline" href="'
+        + base
+        + '/plan">本书学习目录</a></form>'
+        + "<p>阅读不调用 AI；点击学习先预览文字，明确发送问题才调用。</p></section>"
+    )
     body = (
         '<main id="main-content" class="book-reading-space"><nav class="library-tabs" aria-label="阅读导航"><a href="/web/materials">← 资料与书籍</a><a href="/web/welcome">回到对话</a><a href="'
         + base
@@ -80,7 +117,10 @@ def reader_response(item, total, number, *, ocr_csrf=""):
         + base
         + '/original" data-text-pages="'
         + base
-        + '/read/pages" data-state="loading">'
+        + '/read/pages" data-saved-page="'
+        + str(bookmark["page"] if bookmark["revision"] else 0)
+        + '" data-state="loading">'
+        + position_panel
         + '<div class="reader-toolbar"><form id="reader-previous-form" class="reader-turn" method="get"><input id="reader-previous-page" type="hidden" name="page" value="'
         + str(max(1, number - 1))
         + '"><button class="button button-outline" id="reader-previous" type="submit"'
@@ -106,7 +146,20 @@ def reader_response(item, total, number, *, ocr_csrf=""):
             if pdf
             else ""
         )
-        + "</div>"
+        + '<a id="reader-study" class="button button-primary" href="'
+        + base
+        + "/read/learn?page="
+        + str(number)
+        + '">学习当前页</a><button class="button button-outline" form="reader-bookmark" type="submit">记住当前页</button>'
+        + '<span class="reader-position-status">选段学习 · '
+        + escape(learning_locator or "尚未选择片段")
+        + '</span><p id="bookmark-status" class="reader-position-status" role="status" aria-live="polite">'
+        + (
+            "已记住阅读第 " + str(bookmark["page"]) + " 页。"
+            if bookmark["revision"]
+            else "尚未记录阅读位置。"
+        )
+        + "停留后自动记住，与学习进度分开。</p></div>"
         + (
             '<p class="reader-alternative">书页未显示？<a id="reader-direct" class="button button-outline" href="'
             + base
@@ -128,7 +181,7 @@ def reader_response(item, total, number, *, ocr_csrf=""):
         + '<noscript><p>连续阅读需要开启 JavaScript。也可以<a class="text-link" href="'
         + base
         + '/original">下载原件阅读</a>。</p></noscript></section>'
-        + '<link rel="stylesheet" href="/static/vendor/pdfjs/web/pdf_viewer.css"><script type="module" src="/static/book-reader.mjs?v=20261021-navigation"></script></main>'
+        + '<link rel="stylesheet" href="/static/vendor/pdfjs/web/pdf_viewer.css"><script type="module" src="/static/book-reader.mjs?v=20261022-continuity"></script></main>'
     )
     return HTMLResponse(
         _render_layout("阅读全书 · 知行", body, signed_in=True),
