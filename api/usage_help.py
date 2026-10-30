@@ -40,6 +40,12 @@ def register_usage_help(app, *, kind="preview"):
             detail = "用于检查页面和功能，可能采用独立测试资料。请按本机日常入口使用自己的账户。"
             ai = mail = "以本次开发配置为准，请核对启动说明"
 
+        recovery_step = (
+            '<a href="/web/forgot-password">邮箱找回密码</a> 主动申请。'
+            if kind != "legacy"
+            else "请回到本机日常入口后，再使用邮箱找回密码。"
+        )
+
         version = "本机开发版"
         try:
             lines = (
@@ -87,6 +93,15 @@ def register_usage_help(app, *, kind="preview"):
                     <p>需要找回密码时，启动本次邮件能力后再操作。反馈问题只需说明页面提示和操作步骤，无须提供密码、授权码或邮件验证链接。</p>
                 </section>
             </div>
+            <section class="usage-panel usage-troubleshooting"><h2>遇到问题，先这样做</h2>
+                <ol>
+                    <li><strong>网页打不开：</strong>确认启动知行的 PowerShell 窗口仍在运行；先使用该窗口显示的地址。日常入口通常是 8785，模拟体验通常是 8784，不要混用两个空间。</li>
+                    <li><strong>无法登录：</strong>先核对邮箱验证和数据空间，不要重新注册。确实忘记密码时，先确认本次已启用邮件服务，再从 {recovery_step}</li>
+                    <li><strong>发送后暂未回复：</strong>先在对话页核对发送状态或刷新查看记录；系统不会自动重试，也不要连续重复发送。需要再次发出前，可以修改原文字，并在 AI 用量页核对当天额度。</li>
+                    <li><strong>书籍不能直接讲解：</strong>先确认已选中资料和具体片段。扫描 PDF 可以先阅读原页；需要按正文讲解时，先识别并核对保存该页文字。</li>
+                </ol>
+                <p>仍需协助时，只需记录“进行了哪一步、页面提示什么、希望怎样”，不要发送密码、邮箱授权码、AI 密钥或邮件链接。</p>
+            </section>
         </main>"""
         return HTMLResponse(
             _render_layout("使用帮助与当前环境 · 知行", content),

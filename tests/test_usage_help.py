@@ -73,6 +73,9 @@ def test_help_is_app_local_not_inferred_from_port_and_does_not_write_data(tmp_pa
         assert response.headers["cache-control"] == "no-store"
         assert response.headers["referrer-policy"] == "no-referrer"
         assert "set-cookie" not in response.headers
+        assert "遇到问题，先这样做" in response.text
+        assert 'href="/web/forgot-password"' in response.text
+        assert "系统不会自动重试" in response.text
         assert str(tmp_path) not in response.text
         assert "使用帮助与当前环境" in real.get("/web/login").text
         assert real.get("/web/trial-mailbox").status_code == 404
@@ -111,6 +114,7 @@ def test_legacy_entry_has_help_without_linking_to_unavailable_workspace(tmp_path
         response = client.get("/web/help")
     assert "当前环境 · 旧开发入口" in response.text
     assert 'href="/web/welcome"' not in response.text
+    assert 'href="/web/forgot-password"' not in response.text
 
 
 def test_old_mail_test_footer_help_is_available_without_sending(tmp_path):

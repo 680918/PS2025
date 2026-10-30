@@ -698,6 +698,9 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .usage-status > div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px; }
 .usage-status dt { color: var(--muted); }
 .usage-status dd { margin: 0; }
+.usage-troubleshooting { margin-top: 18px; }
+.usage-troubleshooting ol { display: grid; gap: 12px; margin: 16px 0; padding-left: 22px; line-height: 1.9; }
+.usage-troubleshooting strong { color: var(--green); }
 @media (max-width: 720px) { .usage-grid { grid-template-columns: 1fr; } .usage-panel { padding: 18px; } .usage-status > div { grid-template-columns: 1fr; gap: 2px; } }
 
 .export-backup-guide { margin-top: 22px; }
