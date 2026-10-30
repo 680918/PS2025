@@ -14,7 +14,7 @@ from security.login_sessions import signed_in_account
 from security.registration_rate_limit import RegistrationRateLimiter
 
 
-def register_growth_pages(app, accounts, dialogue):
+def register_growth_pages(app, accounts, dialogue, *, materials=None):
     views = RegistrationRateLimiter(per_client_limit=40, total_limit=400)
 
     def page(body, code=200):
@@ -62,6 +62,8 @@ def register_growth_pages(app, accounts, dialogue):
             has_pending_lesson = bool(
                 dialogue.list_knowledge(account.user_id, status="pending", limit=1)
             )
+            saved_knowledge = dialogue.knowledge_topics(account.user_id, status="saved")
+            material_count = len(materials.list(account.user_id)) if materials else 0
         except sqlite3.Error:
             return page(
                 '<p class="form-error-summary" role="alert">暂时无法读取成长记录，请稍后再试。</p>',
@@ -77,7 +79,15 @@ def register_growth_pages(app, accounts, dialogue):
             )
         else:
             body += '<a class="trial-navigation-card" href="/web/welcome"><strong>从对话开始</strong><span>提出今天最想弄懂的一件事</span><small>聊天、主题学习和资料讨论都在同一个入口</small></a>'
-        body += '<a class="trial-navigation-card" href="/web/materials"><strong>资料与书籍</strong><span>上传资料，或继续阅读已有书籍</span><small>选中内容后再决定是否请 Coach 讲解</small></a>'
+        body += (
+            '<a class="trial-navigation-card" href="/web/materials"><strong>资料与书籍</strong><span>'
+            + (
+                "已保留 " + str(material_count) + " 份资料，可继续阅读或选择讨论"
+                if material_count
+                else "上传资料，或开始阅读一本书"
+            )
+            + "</span><small>选中内容后再决定是否请 Coach 讲解</small></a>"
+        )
         body += (
             '<a class="trial-navigation-card" href="/web/knowledge?status=pending"><strong>'
             + ("查看待确认教案" if has_pending_lesson else "知识资产沉淀")
@@ -123,6 +133,22 @@ def register_growth_pages(app, accounts, dialogue):
                 + "</p></section>"
             )
         body += '</div><p class="lesson-revision-note">这些数字表示实际记录，不代表学习时长、完成程度或掌握水平。</p>'
+        body += '<section class="library-card trial-footprint"><h2>个人试用足迹</h2><p>这是你已经留下的实际记录，用来帮助你决定下一步，不是任务清单或学习评分。</p><div class="trial-footprint-grid">'
+        body += (
+            '<a href="/web/conversations"><strong>本期完成对话</strong><span>'
+            + str(snapshot["completed_turns"])
+            + " 轮</span><small>可回看自己的提问和已保存回复</small></a>"
+        )
+        body += (
+            '<a href="/web/materials"><strong>资料与书籍</strong><span>已保留 '
+            + str(material_count)
+            + " 份</span><small>只统计本人已上传或粘贴的资料</small></a>"
+        )
+        body += (
+            '<a href="/web/knowledge"><strong>已确认教案</strong><span>'
+            + str(saved_knowledge["total"])
+            + " 份</span><small>草稿仍由你决定是否确认保存</small></a></div></section>"
+        )
         if not snapshot["completed_turns"] and not snapshot["saved_lessons"]:
             body += '<section class="library-card"><h2>从一个问题开始</h2><p>这段时间还没有完成对话或确认教案。不必赶进度，可以从今天最想弄懂的一件事开始，也可以切换时间范围看看更早的积累。</p><a class="button button-primary" href="/web/welcome">回到对话</a></section>'
         body += '<div class="growth-columns"><section class="library-card"><h2>近期讨论</h2>'

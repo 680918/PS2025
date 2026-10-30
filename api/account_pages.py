@@ -127,7 +127,12 @@ def register_account_pages(
 
     if dialogue_repository is not None:
         register_usage_pages(app, repository, dialogue_repository)
-        register_growth_pages(app, repository, dialogue_repository)
+        register_growth_pages(
+            app,
+            repository,
+            dialogue_repository,
+            materials=materials_repository,
+        )
         register_conversation_pages(
             app,
             repository,

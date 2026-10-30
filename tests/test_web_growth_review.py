@@ -69,6 +69,24 @@ def test_trial_navigation_uses_owned_active_topic_and_pending_lesson_without_wri
     assert all(p.read_bytes() == raw for p, raw in before.items()) and calls == []
 
 
+def test_trial_footprint_reads_only_owned_counts_without_content(setup):
+    _, client, repo, materials, user, _, calls = setup
+    login(client)
+    now = int(time())
+    turn(repo, "本人用于统计的问题", user=user.user_id, now=now - 10)
+    lesson(repo, user.user_id, title="本人确认教案", saved_at=now - 9)
+    materials.add(user.user_id, "one.txt", b"private material body", title="本人资料")
+    materials.add("two", "two.txt", b"other material body", title="其他人资料")
+    before = {p: p.read_bytes() for p in [repo.database_path, materials.database_path]}
+    response = client.get("/web/growth")
+    assert "个人试用足迹" in response.text
+    assert "本期完成对话" in response.text and "资料与书籍" in response.text
+    assert "已保留 1 份资料" in response.text
+    assert "已确认教案" in response.text and "1 份" in response.text
+    assert "本人资料" not in response.text and "其他人资料" not in response.text
+    assert all(p.read_bytes() == raw for p, raw in before.items()) and calls == []
+
+
 def test_trial_navigation_is_private_and_escapes_active_topic(setup):
     app, client, repo, _, user, _, calls = setup
     login(client)
