@@ -890,10 +890,28 @@ def register_library_pages(
             if selected
             else ""
         )
+        from_conversation = request.query_params.getlist("from") == ["conversation"]
+        upload_action = (
+            "/web/materials/upload?from=conversation"
+            if from_conversation
+            else "/web/materials/upload"
+        )
+        upload_note = (
+            "上传后会自动选入当前对话；随后直接提问即可引用实际片段。"
+            if from_conversation
+            else "上传只保存和提取，不调用 AI。"
+        )
+        upload_label = "上传并用于本次对话" if from_conversation else "上传并保存资料"
         upload = (
-            '<section id="add-material" class="library-card"><h2>添加一份资料</h2><p>PDF、TXT、Markdown；每本最多 100 MB、1500 页，提取文字最多 200 万字。扫描版可在“阅读全书”中逐页本地识别，核对保存后再供 Coach 引用。上传只保存和提取，不调用 AI。</p><form id="material-upload" method="post" action="/web/materials/upload" enctype="multipart/form-data" data-max-bytes="104857600">'
+            '<section id="add-material" class="library-card"><h2>添加一份资料</h2><p>PDF、TXT、Markdown；每本最多 100 MB、1500 页，提取文字最多 200 万字。扫描版可在“阅读全书”中逐页本地识别，核对保存后再供 Coach 引用。'
+            + upload_note
+            + '</p><form id="material-upload" method="post" action="'
+            + upload_action
+            + '" enctype="multipart/form-data" data-max-bytes="104857600">'
             + input_csrf(request, "upload")
-            + '<label for="material-title">资料名称（可选）</label><input id="material-title" name="title" maxlength="120"><label for="material-file">选择文件</label><input id="material-file" name="file" type="file" accept=".pdf,.txt,.md" required><button class="button button-primary" type="submit">上传并保存资料</button><p id="upload-status" role="status" aria-live="polite"></p></form></section>'
+            + '<label for="material-title">资料名称（可选）</label><input id="material-title" name="title" maxlength="120"><label for="material-file">选择文件</label><input id="material-file" name="file" type="file" accept=".pdf,.txt,.md" required><button class="button button-primary" type="submit">'
+            + upload_label
+            + '</button><p id="upload-status" role="status" aria-live="polite"></p></form></section>'
         )
         paste = (
             '<section class="library-card"><h2>也可以粘贴文字</h2><form method="post" action="/web/materials/paste">'
@@ -1089,6 +1107,15 @@ def register_library_pages(
                 raw,
                 title=form["title"],
             )
+            if request.query_params.getlist("from") == ["conversation"]:
+                await run_in_threadpool(
+                    select_discussion_material,
+                    dialogue,
+                    materials,
+                    account.user_id,
+                    identity,
+                )
+                return redirect("/web/welcome#coach-dialog")
             return redirect("/web/materials/" + identity)
         except MaterialError as error:
             return problem(str(error))

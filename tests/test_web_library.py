@@ -104,6 +104,41 @@ def test_upload_select_discuss_draft_confirm_export_and_review(setup):
     assert "我的复习教案" in client.get("/web/knowledge?q=复习").text
 
 
+def test_upload_from_conversation_auto_selects_markdown_for_that_chat(setup):
+    _, client, user, calls, directory = setup
+    login(client)
+    start = Forms(client.get("/web/welcome").text).values(
+        "/web/coach/conversations/new"
+    )
+    assert client.post("/web/coach/conversations/new", data=start).status_code == 200
+    page = client.get("/web/welcome")
+    assert 'href="/web/materials?from=conversation#add-material"' in page.text
+    library = client.get("/web/materials?from=conversation")
+    upload_form = Forms(library.text).values("/web/materials/upload?from=conversation")
+    uploaded = client.post(
+        "/web/materials/upload?from=conversation",
+        data={"csrf": upload_form["csrf"], "title": "AI Agent 架构设计学习手册"},
+        files={
+            "file": (
+                "AI Agent 架构设计学习手册.md",
+                "# 工具边界\n\n工具权限需要人工确认。".encode(),
+                "text/markdown",
+            )
+        },
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    assert uploaded.url.path == "/web/welcome"
+    selected = MaterialRepository(directory / "coach_library.db").selected(user.user_id)
+    assert selected["title"] == "AI Agent 架构设计学习手册"
+    response = client.post(
+        "/web/coach/message",
+        data={**form(client), "message": "今天学习这份手册"},
+    )
+    assert response.status_code == 200
+    assert calls[-1]["sources"]
+    assert calls[-1]["sources"][0]["excerpt"] == "# 工具边界\n\n工具权限需要人工确认。"
+
+
 def test_paste_and_pdf_are_persistent_without_ai_calls(setup):
     _, client, user, calls, directory = setup
     login(client)
