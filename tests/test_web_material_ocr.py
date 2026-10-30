@@ -63,6 +63,69 @@ def test_reviewed_save_retrieval_and_guide_are_explicit_and_owned(setup):
     assert calls[0]["sources"][0]["locator"].startswith("PDF 第 1 页")
 
 
+def test_reader_page_can_prefill_unsaved_learning_unit_only_after_text_is_available(
+    setup,
+):
+    _, client, user, calls, directory = setup
+    materials, identity, path, values = seed(setup)
+    databases = [materials.database_path, directory / "coach_conversations.db"]
+    before = {database: database.read_bytes() for database in databases}
+    missing = client.get(
+        f"/web/materials/{identity}/read/unit?page=1", follow_redirects=False
+    )
+    assert (
+        missing.status_code == 303
+        and missing.headers["location"]
+        == f"/web/materials/{identity}/read?page=1#book-ocr"
+    )
+    assert all(database.read_bytes() == data for database, data in before.items())
+    assert client.post(path, data=values).status_code == 200
+    after_save = {database: database.read_bytes() for database in databases}
+    prepared = client.get(
+        f"/web/materials/{identity}/read/unit?page=1", follow_redirects=False
+    )
+    assert (
+        prepared.status_code == 303
+        and prepared.headers["location"]
+        == f"/web/materials/{identity}/plan/new?start=1&end=1"
+    )
+    editor = client.get(prepared.headers["location"])
+    assert 'value="第 1 页"' in editor.text
+    assert 'name="start_pos" type="number" min="1" required value="1"' in editor.text
+    assert 'name="end_pos" type="number" min="1" required value="1"' in editor.text
+    assert all(database.read_bytes() == data for database, data in after_save.items())
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["", "?page=0", "?page=13", "?page=x", "?page=1&page=1", "?page=1&x=1"],
+)
+def test_reader_unit_link_checks_one_owned_pdf_page_without_writes(setup, query):
+    _, client, _, calls, _ = setup
+    _, identity, _, _ = seed(setup)
+    response = client.get(f"/web/materials/{identity}/read/unit" + query)
+    assert response.status_code == 400 and calls == []
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["?start=0&end=1", "?start=1", "?start=1&end=1&end=1", "?start=1&end=1&x=1"],
+)
+def test_prefilled_unit_editor_checks_range_without_creating_unit(setup, query):
+    _, client, user, calls, directory = setup
+    materials, identity, path, values = seed(setup)
+    assert client.post(path, data=values).status_code == 200
+    before = (directory / "coach_conversations.db").read_bytes()
+    response = client.get(f"/web/materials/{identity}/plan/new" + query)
+    assert response.status_code == 400
+    assert (directory / "coach_conversations.db").read_bytes() == before
+    assert (
+        calls == []
+        and materials.ocr_page(user.user_id, identity, 1)["state"] == "confirmed"
+    )
+
+
 @pytest.mark.parametrize(
     "mutation,code",
     [

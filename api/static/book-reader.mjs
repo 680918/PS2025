@@ -48,6 +48,8 @@ function position(number) {
     history.replaceState(null, "", url);
     const study = document.getElementById("reader-study");
     if (study) study.href = root.dataset.source.replace(/\/original$/, "/read/learn?page=" + number);
+    const unit = document.getElementById("reader-unit");
+    if (unit) unit.href = root.dataset.source.replace(/\/original$/, "/read/unit?page=" + number);
     if (readerReady) rememberPosition();
 }
 function fitWidth() {

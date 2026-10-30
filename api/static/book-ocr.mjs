@@ -10,7 +10,7 @@ export function initBookOCR({getCurrentPage, renderForOCR, jump}) {
     const byId = id => document.getElementById(id);
     const start = byId("ocr-start"), view = byId("ocr-view"), cancel = byId("ocr-cancel");
     const save = byId("ocr-save"), discard = byId("ocr-discard"), original = byId("ocr-original");
-    const study = byId("ocr-study"), text = byId("ocr-text"), language = byId("ocr-language");
+    const study = byId("ocr-study"), unit = byId("ocr-unit"), text = byId("ocr-text"), language = byId("ocr-language");
     const status = byId("ocr-status"), confidence = byId("ocr-confidence"), label = byId("ocr-result-label");
     const rangeOpen = byId("ocr-range-open"), rangeForm = byId("ocr-range-form");
     const rangeStart = byId("ocr-range-start"), rangeEnd = byId("ocr-range-end"), rangeGo = byId("ocr-range-go");
@@ -111,13 +111,16 @@ export function initBookOCR({getCurrentPage, renderForOCR, jump}) {
         study.hidden = !entry || !["existing", "saved"].includes(entry.state);
         if (!study.hidden) study.href = entry.url;
         else study.removeAttribute("href");
+        unit.hidden = study.hidden;
+        if (!unit.hidden) unit.href = panel.dataset.statusUrl.replace(/\/ocr$/, "/read/unit?page=" + entry.page);
+        else unit.removeAttribute("href");
         controls(); refreshSource();
     }
     function select(index) {
         if (activeJob || saving || index < 0 || index >= entries.length) return;
         selected = index; render();
         const entry = current();
-        show(entry.state === "review" ? "第 " + entry.page + " 页识别完成，尚未保存。请核对或修改文字，再明确保存。" : entry.state === "saved" ? "第 " + entry.page + " 页已核对保存，可选段学习。" : entry.state === "existing" ? "这一页已有可引用文字，本次没有重复识别或覆盖。" : "这一页没有新的识别结果，可重新选择范围后处理。");
+        show(entry.state === "review" ? "第 " + entry.page + " 页识别完成，尚未保存。请核对或修改文字，再明确保存。" : entry.state === "saved" ? "第 " + entry.page + " 页已核对保存，可选段学习或设为学习单元。" : entry.state === "existing" ? "这一页已有可引用文字，可选段学习或设为学习单元；本次没有重复识别或覆盖。" : "这一页没有新的识别结果，可重新选择范围后处理。");
     }
     async function responseJSON(response) {
         if (response.status === 429) throw new Error("操作较频繁，请稍后再试；已完成结果仍保留。");
@@ -247,7 +250,7 @@ export function initBookOCR({getCurrentPage, renderForOCR, jump}) {
             }));
             if (data.status !== "saved" || data.page !== entry.page) throw new Error("invalid save");
             entry.state = "saved"; entry.text = data.text; entry.url = data.preview_url;
-            show("第 " + entry.page + " 页文字已保存，可选段提问。原 PDF 和已有学习位置保持不变；刷新页面可更新文字覆盖统计。");
+            show("第 " + entry.page + " 页文字已保存，可选段学习或设为学习单元。原 PDF 和已有学习位置保持不变；刷新页面可更新文字覆盖统计。");
         } catch (error) {
             show((/[\u3400-\u9fff]/.test(error.message || "") ? error.message : "保存结果暂未确认。") + " 文字仍保留，请先复制留存，再刷新核对；系统不会自动重试。");
         } finally {clearTimeout(timeout); saving = false; render();}

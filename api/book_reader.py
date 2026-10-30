@@ -110,7 +110,7 @@ def ocr_panel(base, token, total):
         + '<button id="ocr-save" class="button button-primary" type="button" disabled>核对无误，保存此页文字</button>'
         + '<button id="ocr-discard" class="button button-outline" type="button" hidden>放弃本批全部未保存结果</button>'
         + '<button id="ocr-result-previous" class="button button-outline" type="button" disabled>上一页结果</button><button id="ocr-result-next" class="button button-outline" type="button" disabled>下一页结果</button>'
-        + '<a id="ocr-study" class="button button-outline" hidden>选段学习这页文字</a></div>'
+        + '<a id="ocr-study" class="button button-outline" hidden>选段学习这页文字</a><a id="ocr-unit" class="button button-outline" hidden>把这一页设为学习单元</a></div>'
         + '<p class="ocr-note">保存会增加这本书的可引用文字；原始 PDF 不变。已有文字的页面不重复写入或覆盖，避免改动历史引用。</p></section>'
     )
 
@@ -248,7 +248,17 @@ def reader_response(
         + base
         + "/read/learn?page="
         + str(number)
-        + '">学习当前页</a><button class="button button-outline" form="reader-bookmark" type="submit">记住当前页</button>'
+        + '">学习当前页</a>'
+        + (
+            '<a id="reader-unit" class="button button-outline" href="'
+            + base
+            + "/read/unit?page="
+            + str(number)
+            + '">把当前页设为学习单元</a>'
+            if pdf
+            else ""
+        )
+        + '<button class="button button-outline" form="reader-bookmark" type="submit">记住当前页</button>'
         + '<span class="reader-position-status">选段学习 · '
         + escape(learning_locator or "尚未选择片段")
         + '</span><p id="bookmark-status" class="reader-position-status" role="status" aria-live="polite">'

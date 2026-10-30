@@ -247,6 +247,25 @@ def test_entries_open_reader_and_chats_show_coverage_without_fake_sources(setup)
     )
 
 
+def test_pdf_reader_keeps_current_page_learning_unit_link_in_sync(setup):
+    _, client, user, calls, directory = setup
+    login(client)
+    materials = MaterialRepository(directory / "coach_library.db")
+    identity = materials.add(user.user_id, "scan.pdf", image_book(), title="扫描资料")
+    response = client.get(f"/web/materials/{identity}/read?page=12")
+    assert response.status_code == 200
+    assert (
+        f'id="reader-unit" class="button button-outline" href="/web/materials/{identity}/read/unit?page=12"'
+        in response.text
+    )
+    script = (Path(__file__).parents[1] / "api/static/book-reader.mjs").read_text(
+        encoding="utf-8"
+    )
+    assert 'document.getElementById("reader-unit")' in script
+    assert '"/read/unit?page=" + number' in script
+    assert calls == []
+
+
 def test_pdfjs_assets_match_official_pinned_distribution():
     root = Path(__file__).parents[1] / "api/static/vendor/pdfjs"
     provenance = json.loads((root / "PROVENANCE.json").read_text(encoding="utf-8"))

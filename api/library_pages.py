@@ -1597,12 +1597,42 @@ def register_library_pages(
                 None,
             )
             if unit_id == "new":
+                supplied = set(request.query_params)
+                if supplied and (
+                    supplied != {"start", "end"}
+                    or any(
+                        len(request.query_params.getlist(key)) != 1 for key in supplied
+                    )
+                    or any(
+                        re.fullmatch(r"[1-9][0-9]{0,5}", request.query_params[key])
+                        is None
+                        for key in ("start", "end")
+                    )
+                ):
+                    return problem("请核对要加入学习单元的文件页码。")
+                start = end = ""
+                title = ""
+                if supplied:
+                    start, end = (
+                        int(request.query_params["start"]),
+                        int(request.query_params["end"]),
+                    )
+                    chunks = materials.chunks(account.user_id, identity)
+                    if (
+                        item["kind"] != "pdf"
+                        or start > end
+                        or not unit_chunks(item, chunks, start, end)
+                    ):
+                        return problem(
+                            "这段文件页没有可引用文字，请先核对原页或选择其他范围。"
+                        )
+                    title = f"第 {start} 页" if start == end else f"第 {start}–{end} 页"
                 unit = {
                     "unit_id": uuid4().hex,
                     "revision": 0,
-                    "title": "",
-                    "start_pos": "",
-                    "end_pos": "",
+                    "title": title,
+                    "start_pos": start,
+                    "end_pos": end,
                 }
             return (
                 book_unit_editor(request, item, unit)
@@ -1864,6 +1894,37 @@ def register_library_pages(
             return redirect(f"/web/materials/{identity}?part={(number - 1) * 3 + 1}")
         except sqlite3.Error:
             return problem("暂时无法读取这一页的文字，请稍后再试。", 503)
+
+    @app.get("/web/materials/{identity}/read/unit", include_in_schema=False)
+    def reading_page_unit(request: Request, identity: str):
+        """Open a prefilled, still-unsaved PDF learning unit for one readable page."""
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        if (
+            set(request.query_params) != {"page"}
+            or len(request.query_params.getlist("page")) != 1
+        ):
+            return problem("请只选择一个阅读页码。")
+        raw = request.query_params["page"]
+        if re.fullmatch(r"[1-9][0-9]{0,3}", raw) is None:
+            return problem("请核对阅读页码。")
+        number = int(raw)
+        try:
+            info = materials.ocr_page(account.user_id, identity, number)
+            if info is None:
+                return problem("找不到这份本人PDF。", 404)
+            if info["state"] == "missing":
+                return redirect(
+                    f"/web/materials/{identity}/read?page={number}#book-ocr"
+                )
+            return redirect(
+                f"/web/materials/{identity}/plan/new?start={number}&end={number}"
+            )
+        except MaterialError as error:
+            return problem(str(error))
+        except sqlite3.Error:
+            return problem("暂时无法核对这一页的文字，请稍后重试。", 503)
 
     @app.get("/web/materials/{identity}/ocr", include_in_schema=False)
     def ocr_status(request: Request, identity: str):
