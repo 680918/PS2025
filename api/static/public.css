@@ -700,6 +700,13 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .usage-status dd { margin: 0; }
 @media (max-width: 720px) { .usage-grid { grid-template-columns: 1fr; } .usage-panel { padding: 18px; } .usage-status > div { grid-template-columns: 1fr; gap: 2px; } }
 
+.export-backup-guide { margin-top: 22px; }
+.export-backup-guide details { margin-top: 14px; }
+.export-backup-guide summary { cursor: pointer; color: var(--green); font-weight: 600; }
+.export-backup-guide ol { padding-left: 22px; line-height: 1.9; }
+.export-backup-guide code { white-space: normal; overflow-wrap: anywhere; }
+.export-backup-guide kbd { padding: 1px 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--paper); font: inherit; font-size: .9em; }
+
 .reader-continuity { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin: 16px 0; font-size: 13px; overflow-wrap: anywhere; }
 .reader-continuity p { margin: 6px 0; color: var(--muted); }
 .reader-continuity form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }

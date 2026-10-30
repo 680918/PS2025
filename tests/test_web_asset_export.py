@@ -85,6 +85,10 @@ def test_export_requires_authentication_and_is_not_a_get_download(setup):
         page.status_code == 200
         and "script-src" in page.headers["content-security-policy"]
     )
+    assert "想保护整个成长空间？" in page.text
+    assert "完整私有备份" in page.text
+    assert "不能在正在运行的网页里直接执行" in page.text
+    assert 'href="/web/help"' in page.text
     assert "下载所选学习资料" in page.text and "checked" in page.text
     assert "application/zip" not in page.headers["content-type"]
 

@@ -452,7 +452,9 @@ def register_library_pages(
             + '</fieldset><div class="export-period"><label for="export-period">聊天记录时间范围</label><select id="export-period" name="period"><option value="all">全部时间</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select><p class="export-note">只影响聊天记录；教案、资料、学习记忆和各主题学习位置不受此选项影响。</p></div>'
             '<p class="export-note">下载 ZIP 压缩包后，请先完整解压，再打开“打开这里.html”。资料较多时可按类型分别导出，单次内容上限 512 MB。</p>'
             '<button class="button button-primary" type="submit">下载所选学习资料</button><p id="asset-export-status" role="status" aria-live="polite"></p></form></section>'
-            '<p class="library-intro">下载的是当前内容副本。本地修改不会自动同步到 Coach；账户恢复和整库备份会在后续单独提供。</p><script src="/static/asset-export.js" defer></script>'
+            '<section class="library-card export-backup-guide"><h2>想保护整个成长空间？</h2><p>这里下载的是个人阅读副本，适合留存、阅读或带走某些学习资料；它不能恢复账户、全部书籍、学习位置和教案版本。</p><details><summary>使用本机完整私有备份</summary><ol><li>先回到运行知行的 PowerShell 窗口，按 <kbd>Ctrl</kbd> + <kbd>C</kbd> 停止服务。</li><li>在项目目录运行 <code>&amp; '
+            "C:\\BCtools\\anaconda3\\python.exe"
+            ' -m api.coach_backup create</code>；完成后会显示备份文件的位置，并已自动校验。</li><li>把备份复制到自己保管的另一块磁盘。它含有私人资料和账户安全信息，不要上传 GitHub 或分享。</li></ol><p>恢复时先检查备份，只恢复到一个从未存在的新目录；不会覆盖或合并你正在使用的空间。完整命令与失败处理见 <a href="/web/help">使用帮助与当前环境</a> 和项目的本机备份说明。</p></details><p class="export-note">完整备份、检查和恢复不调用 AI 或邮件；为了保护一致性，不能在正在运行的网页里直接执行。</p></section><script src="/static/asset-export.js" defer></script>'
         )
         return page("导出我的学习资料", content, interactive=True)
 
