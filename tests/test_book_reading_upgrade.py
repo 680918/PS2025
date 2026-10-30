@@ -141,13 +141,18 @@ def test_catalog_exposes_both_modes_consistent_limits_and_working_native_form(se
     login(client)
     response = client.get("/web/materials")
     assert 'href="/web/studies#book-reading"' in response.text
-    assert 'href="#add-material"' in response.text
-    assert "100 MB" in response.text and "1500 页" in response.text
-    assert "200 万字" in response.text and "300.00 MB" in response.text
-    assert 'data-max-bytes="104857600"' in response.text
-    assert 'src="/static/material-upload.js"' in response.text
-    assert "script-src 'self'" in response.headers["content-security-policy"]
-    assert Forms(response.text).values("/web/materials/upload")["csrf"]
+    assert 'href="/web/materials/add"' in response.text
+    assert "300.00 MB" in response.text
+    assert 'id="material-upload"' not in response.text
+    add_page = client.get("/web/materials/add")
+    assert "100 MB" in add_page.text and "1500 页" in add_page.text
+    assert "200 万字" in add_page.text
+    assert 'data-max-bytes="104857600"' in add_page.text
+    assert 'src="/static/material-upload.js"' in add_page.text
+    assert "script-src 'self'" in add_page.headers["content-security-policy"]
+    assert Forms(add_page.text).values("/web/materials/upload?from=conversation")[
+        "csrf"
+    ]
     assert calls == []
 
 

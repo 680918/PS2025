@@ -57,9 +57,9 @@ def setup(tmp_path, password_hash):
 
 
 def upload(client, *, filename="book.txt", raw="间隔练习帮助长期记忆。".encode()):
-    csrf = Forms(client.get("/web/materials").text).values("/web/materials/upload")[
-        "csrf"
-    ]
+    csrf = Forms(client.get("/web/materials/add").text).values(
+        "/web/materials/upload?from=conversation"
+    )["csrf"]
     return client.post(
         "/web/materials/upload",
         data={"csrf": csrf, "title": "学习资料"},
@@ -112,8 +112,8 @@ def test_upload_from_conversation_auto_selects_markdown_for_that_chat(setup):
     )
     assert client.post("/web/coach/conversations/new", data=start).status_code == 200
     page = client.get("/web/welcome")
-    assert 'href="/web/materials?from=conversation#add-material"' in page.text
-    library = client.get("/web/materials?from=conversation")
+    assert 'href="/web/materials/add"' in page.text
+    library = client.get("/web/materials/add")
     upload_form = Forms(library.text).values("/web/materials/upload?from=conversation")
     uploaded = client.post(
         "/web/materials/upload?from=conversation",
@@ -128,6 +128,7 @@ def test_upload_from_conversation_auto_selects_markdown_for_that_chat(setup):
     )
     assert uploaded.status_code == 200, uploaded.text
     assert uploaded.url.path == "/web/welcome"
+    assert "已上传并选入《AI Agent 架构设计学习手册》。" in uploaded.text
     selected = MaterialRepository(directory / "coach_library.db").selected(user.user_id)
     assert selected["title"] == "AI Agent 架构设计学习手册"
     response = client.post(
@@ -139,10 +140,42 @@ def test_upload_from_conversation_auto_selects_markdown_for_that_chat(setup):
     assert calls[-1]["sources"][0]["excerpt"] == "# 工具边界\n\n工具权限需要人工确认。"
 
 
+def test_add_page_paste_returns_to_chat_with_selected_material(setup):
+    _, client, user, calls, directory = setup
+    login(client)
+    add_page = client.get("/web/materials/add")
+    paste_form = Forms(add_page.text).values("/web/materials/paste?from=conversation")
+    saved = client.post(
+        "/web/materials/paste?from=conversation",
+        data={
+            **paste_form,
+            "title": "AI Agent 目录",
+            "content": "执行循环、工具与记忆。",
+        },
+    )
+    assert saved.url.path == "/web/welcome"
+    assert "已上传并选入《AI Agent 目录》。" in saved.text
+    selected = MaterialRepository(directory / "coach_library.db").selected(user.user_id)
+    assert selected["title"] == "AI Agent 目录"
+    assert calls == []
+
+
+def test_material_catalog_is_management_only_and_links_to_add_page(setup):
+    _, client, _, calls, _ = setup
+    login(client)
+    catalog = client.get("/web/materials")
+    assert 'href="/web/materials/add">＋ 添加资料</a>' in catalog.text
+    assert 'id="material-upload"' not in catalog.text
+    assert "也可以粘贴文字" not in catalog.text
+    assert calls == []
+
+
 def test_paste_and_pdf_are_persistent_without_ai_calls(setup):
     _, client, user, calls, directory = setup
     login(client)
-    fields = Forms(client.get("/web/materials").text).values("/web/materials/paste")
+    fields = Forms(client.get("/web/materials/add").text).values(
+        "/web/materials/paste?from=conversation"
+    )
     response = client.post(
         "/web/materials/paste",
         data={
@@ -203,7 +236,9 @@ def test_missing_login_csrf_bad_origin_and_unsupported_upload_are_rejected(setup
         ).status_code
         == 403
     )
-    fields = Forms(client.get("/web/materials").text).values("/web/materials/paste")
+    fields = Forms(client.get("/web/materials/add").text).values(
+        "/web/materials/paste?from=conversation"
+    )
     assert (
         client.post(
             "/web/materials/paste",

@@ -814,6 +814,17 @@ def register_library_pages(
             return f"{count / 1024:.1f} KB"
         return f"{count / 1024**2:.2f} MB"
 
+    def add_material_forms(request):
+        """The dedicated add page always returns the saved material to chat."""
+        return (
+            '<section class="library-card"><h2>上传文件</h2><p>支持 PDF、TXT、Markdown；每本最多 100 MB、1500 页，提取文字最多 200 万字。扫描版可在“阅读全书”逐页本地识别并核对保存。上传后会自动选入当前对话；随后直接提问即可引用实际片段。</p><form id="material-upload" method="post" action="/web/materials/upload?from=conversation" enctype="multipart/form-data" data-max-bytes="104857600">'
+            + input_csrf(request, "upload")
+            + '<label for="material-title">资料名称（可选）</label><input id="material-title" name="title" maxlength="120"><label for="material-file">选择文件</label><input id="material-file" name="file" type="file" accept=".pdf,.txt,.md" required><button class="button button-primary" type="submit">上传并用于本次对话</button><p id="upload-status" role="status" aria-live="polite"></p></form></section>'
+            + '<section class="library-card"><h2>也可以粘贴文字</h2><p>适合目录、章节或短文；最多 5 万字。保存后同样会选入当前对话。</p><form method="post" action="/web/materials/paste?from=conversation">'
+            + input_csrf(request, "paste")
+            + '<label for="paste-title">文字资料名称</label><input id="paste-title" name="title" maxlength="120" required><label for="paste-content">资料内容</label><textarea id="paste-content" name="content" rows="12" maxlength="50000" required></textarea><button class="button button-primary" type="submit">保存并用于本次对话</button></form></section>'
+        )
+
     @app.get("/web/materials", response_class=HTMLResponse, include_in_schema=False)
     def list_materials(request: Request):
         account, denied = auth(request)
@@ -890,34 +901,6 @@ def register_library_pages(
             if selected
             else ""
         )
-        from_conversation = request.query_params.getlist("from") == ["conversation"]
-        upload_action = (
-            "/web/materials/upload?from=conversation"
-            if from_conversation
-            else "/web/materials/upload"
-        )
-        upload_note = (
-            "上传后会自动选入当前对话；随后直接提问即可引用实际片段。"
-            if from_conversation
-            else "上传只保存和提取，不调用 AI。"
-        )
-        upload_label = "上传并用于本次对话" if from_conversation else "上传并保存资料"
-        upload = (
-            '<section id="add-material" class="library-card"><h2>添加一份资料</h2><p>PDF、TXT、Markdown；每本最多 100 MB、1500 页，提取文字最多 200 万字。扫描版可在“阅读全书”中逐页本地识别，核对保存后再供 Coach 引用。'
-            + upload_note
-            + '</p><form id="material-upload" method="post" action="'
-            + upload_action
-            + '" enctype="multipart/form-data" data-max-bytes="104857600">'
-            + input_csrf(request, "upload")
-            + '<label for="material-title">资料名称（可选）</label><input id="material-title" name="title" maxlength="120"><label for="material-file">选择文件</label><input id="material-file" name="file" type="file" accept=".pdf,.txt,.md" required><button class="button button-primary" type="submit">'
-            + upload_label
-            + '</button><p id="upload-status" role="status" aria-live="polite"></p></form></section>'
-        )
-        paste = (
-            '<section class="library-card"><h2>也可以粘贴文字</h2><form method="post" action="/web/materials/paste">'
-            + input_csrf(request, "paste")
-            + '<label for="paste-title">文字资料名称</label><input id="paste-title" name="title" maxlength="120" required><label for="paste-content">资料内容</label><textarea id="paste-content" name="content" rows="8" maxlength="50000" required></textarea><button class="button button-primary" type="submit">保存文字资料</button></form></section>'
-        )
         return page(
             "资料与书籍",
             '<p class="library-intro">原始资料留在这里。选择一份资料后，回到同一个聊天框讨论。资料在本机保存；提问时，相关片段会交给你启用的 AI。</p>'
@@ -928,8 +911,8 @@ def register_library_pages(
             )
             + '<section class="library-card material-capacity"><div class="material-capacity-summary"><h2>我的资料容量</h2><p>'
             + f"已保存 {len(items)} / {MAX_MATERIALS} 份 · 原始资料 {size_text(sum(item['raw_bytes'] for item in items))} / {size_text(MAX_LIBRARY_BYTES)}"
-            + "</p></div><details><summary>容量计算说明</summary><p>容量按上传原文件和粘贴文字计算，重复上传相同内容不重复占用。提取文字、对话和教案另占本机磁盘空间；此处不是整个账户的磁盘用量。</p></details></section>"
-            + '<section class="library-card book-start"><h2>两种方式，开始读一本书</h2><p>手边没有电子书，也可以先按书名了解观点、讨论怎样应用；上传后可核对原文、按选段连续学习。</p><div class="library-actions"><a class="button button-primary" href="/web/studies#book-reading">按书名开始导读</a><a class="button button-outline" href="#add-material">上传原书并学习</a></div><p class="study-note">按书名导读依据 AI 通用知识，未核对原书；上传只建立资料，选择选段并点击讲解后才调用 AI。</p></section>'
+            + '</p></div><a class="button button-primary" href="/web/materials/add">＋ 添加资料</a><details><summary>容量计算说明</summary><p>容量按上传原文件和粘贴文字计算，重复上传相同内容不重复占用。提取文字、对话和教案另占本机磁盘空间；此处不是整个账户的磁盘用量。</p></details></section>'
+            + '<section class="library-card book-start"><h2>两种方式，开始读一本书</h2><p>手边没有电子书，也可以先按书名了解观点、讨论怎样应用；上传后可核对原文、按选段连续学习。</p><div class="library-actions"><a class="button button-primary" href="/web/studies#book-reading">按书名开始导读</a><a class="button button-outline" href="/web/materials/add">上传原书并学习</a></div><p class="study-note">按书名导读依据 AI 通用知识，未核对原书；上传后会选入当前对话，选择选段并点击讲解后才调用 AI。</p></section>'
             + catalog_form(name, kind)
             + f'<div class="library-actions"><h2 class="material-results-title">资料目录 · {len(visible)} / {len(items)} 份</h2>'
             + clear
@@ -947,10 +930,20 @@ def register_library_pages(
             )
             + '</div><details class="material-source-search"><summary>在资料原文中查找关键词</summary>'
             + material_search_form(items)
-            + '</details><div class="library-add-grid">'
-            + upload
-            + paste
-            + '</div><script src="/static/material-upload.js" defer></script>',
+            + "</details>",
+        )
+
+    @app.get("/web/materials/add", response_class=HTMLResponse, include_in_schema=False)
+    def add_material(request: Request):
+        account, denied = auth(request)
+        if denied is not None:
+            return denied
+        return page(
+            "添加资料",
+            '<p class="library-intro">把文件或文字带回当前对话。资料会先保存在你的个人空间，再选入本次对话；上传和保存本身不调用 AI。</p>'
+            + '<div class="library-add-grid">'
+            + add_material_forms(request)
+            + '</div><p><a class="text-link" href="/web/materials">查看和管理全部资料与书籍 →</a></p><script src="/static/material-upload.js" defer></script>',
             interactive=True,
         )
 
@@ -1062,6 +1055,18 @@ def register_library_pages(
         except sqlite3.Error:
             return problem("资料名称暂时无法保存，请稍后重试。", 503)
 
+    async def return_added_material_to_conversation(request, account, identity):
+        if request.query_params.getlist("from") != ["conversation"]:
+            return None
+        await run_in_threadpool(
+            select_discussion_material,
+            dialogue,
+            materials,
+            account.user_id,
+            identity,
+        )
+        return redirect("/web/welcome?material=" + identity + "#coach-dialog")
+
     @app.post(
         "/web/materials/upload", response_class=HTMLResponse, include_in_schema=False
     )
@@ -1107,16 +1112,17 @@ def register_library_pages(
                 raw,
                 title=form["title"],
             )
-            if request.query_params.getlist("from") == ["conversation"]:
-                await run_in_threadpool(
-                    select_discussion_material,
-                    dialogue,
-                    materials,
-                    account.user_id,
-                    identity,
-                )
-                return redirect("/web/welcome#coach-dialog")
+            destination = await return_added_material_to_conversation(
+                request, account, identity
+            )
+            if destination is not None:
+                return destination
             return redirect("/web/materials/" + identity)
+        except TopicBusy:
+            return problem(
+                "资料已保存；教练正在回复，请本轮结束后到“资料与书籍”选择它。",
+                409,
+            )
         except MaterialError as error:
             return problem(str(error))
         except MultiPartException as error:
@@ -1151,7 +1157,17 @@ def register_library_pages(
                 title=values["title"],
                 pasted=True,
             )
+            destination = await return_added_material_to_conversation(
+                request, account, identity
+            )
+            if destination is not None:
+                return destination
             return redirect("/web/materials/" + identity)
+        except TopicBusy:
+            return problem(
+                "文字资料已保存；教练正在回复，请本轮结束后到“资料与书籍”选择它。",
+                409,
+            )
         except MaterialError as error:
             return problem(str(error))
         except sqlite3.Error:
@@ -1240,7 +1256,7 @@ def register_library_pages(
                     extraction_notice(item)
                     + '<div class="library-actions"><a class="button button-primary" href="/web/materials/'
                     + identity
-                    + '/read">阅读全书</a><a class="button button-outline" href="/web/materials#add-material">补充文字版资料</a></div>',
+                    + '/read">阅读全书</a><a class="button button-outline" href="/web/materials/add">补充文字版资料</a></div>',
                 )
             if not item or not chunks:
                 return problem("找不到这份可读取资料。", 404)

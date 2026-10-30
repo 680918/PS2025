@@ -201,6 +201,7 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .workspace-sidebar-caption { margin: 25px 10px 2px; font-size: 11px; color: var(--muted); line-height: 1.9; }
 .workspace-conversation { min-width: 0; border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--paper); scroll-margin-top: 20px; }
 .conversation-composer { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: #fafbf8; }
+.conversation-material-ready { margin: 0 0 9px; padding: 7px 9px; border-radius: 7px; background: var(--tint); color: var(--green); font-size: 12px; line-height: 1.7; }
 .conversation-composer textarea { width: 100%; display: block; min-height: 46px; max-height: 140px; resize: vertical; border: 0; outline: 0; padding: 0; background: transparent; color: var(--ink); font: inherit; font-size: 14px; line-height: 1.8; }
 .conversation-composer textarea:disabled { cursor: not-allowed; opacity: 1; -webkit-text-fill-color: var(--muted); }
 .conversation-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; }

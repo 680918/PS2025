@@ -343,6 +343,7 @@ def register_account_pages(
                 token,
                 account.user_id,
                 book_intro=request.query_params.get("book_intro") == "1",
+                uploaded_material_id=request.query_params.get("material", ""),
             )
         except sqlite3.Error:
             return dialogue_problem("暂时无法读取对话记录，请稍后再试。", 503)
@@ -533,7 +534,7 @@ def register_account_pages(
             + "</form>"
         )
 
-    def workspace(view, token, user_id, *, book_intro=False):
+    def workspace(view, token, user_id, *, book_intro=False, uploaded_material_id=""):
         enabled = dialogue_responder is not None
         active_topic = dialogue_repository.active_topic(user_id)
         study_id = active_topic["topic_id"] if active_topic else ""
@@ -631,7 +632,22 @@ def register_account_pages(
                 "并用一个生活或工作中的例子说明怎样应用，再建议一个轻量阅读顺序。"
                 "请区分书中观点和你的延伸建议，不确定的内容直接说明。"
             )
-        composer = f'<div class="conversation-composer" aria-label="统一对话输入区"><label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability coach-input-help"{disabled}>{escape(initial_message)}</textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials?from=conversation#add-material">＋ 添加资料</a><button class="button button-outline dialogue-latest" id="dialogue-latest" type="button" aria-controls="dialogue-history" hidden disabled>回到最新对话</button><button class="button button-primary" type="submit"{disabled}>发送</button></div><span id="coach-input-help" class="conversation-shortcut" hidden>Ctrl／⌘ + Enter 发送 · Enter 换行</span></div>'
+        selected_for_notice = discussion_material(
+            dialogue_repository, materials_repository, user_id
+        )
+        material_notice = (
+            '<p class="conversation-material-ready" role="status">已上传并选入《'
+            + escape(selected_for_notice["title"])
+            + "》。现在可以直接围绕它提问。</p>"
+            if (
+                re.fullmatch(r"[a-f0-9]{32}", uploaded_material_id)
+                and selected_for_notice
+                and selected_for_notice["material_id"] == uploaded_material_id
+                and not review_guard["knowledge_id"]
+            )
+            else ""
+        )
+        composer = f'<div class="conversation-composer" aria-label="统一对话输入区">{material_notice}<label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability coach-input-help"{disabled}>{escape(initial_message)}</textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials/add">＋ 添加资料</a><button class="button button-outline dialogue-latest" id="dialogue-latest" type="button" aria-controls="dialogue-history" hidden disabled>回到最新对话</button><button class="button button-primary" type="submit"{disabled}>发送</button></div><span id="coach-input-help" class="conversation-shortcut" hidden>Ctrl／⌘ + Enter 发送 · Enter 换行</span></div>'
         if enabled:
             composer = dialogue_form(
                 token, "message", composer, study_id, form_part, review_guard
@@ -721,7 +737,7 @@ def register_account_pages(
             and not selected
             and not review
         ):
-            source_content = '<p class="book-basis"><strong>按书名导读 · 未上传原书</strong><br>依据 AI 通用知识讨论观点和应用，尚未核对原文。需要页码、逐章或选段学习时，可上传原书。</p><a class="button button-outline" href="/web/materials#add-material">上传这本书</a>'
+            source_content = '<p class="book-basis"><strong>按书名导读 · 未上传原书</strong><br>依据 AI 通用知识讨论观点和应用，尚未核对原文。需要页码、逐章或选段学习时，可上传原书。</p><a class="button button-outline" href="/web/materials/add">上传这本书</a>'
         if selected:
             source_content = (
                 '<p><a class="text-link" href="/web/materials/'

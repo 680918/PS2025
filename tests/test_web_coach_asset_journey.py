@@ -99,8 +99,8 @@ def test_owned_book_detour_lesson_revision_sources_export_review_and_restart(
 
     with TestClient(app, base_url=BASE) as client:
         assert login(client).status_code == 200
-        upload = Forms(client.get("/web/materials").text).values(
-            "/web/materials/upload"
+        upload = Forms(client.get("/web/materials/add").text).values(
+            "/web/materials/upload?from=conversation"
         )
         preview = client.post(
             "/web/materials/upload",
