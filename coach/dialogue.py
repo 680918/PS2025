@@ -235,9 +235,18 @@ def send_dialogue(
         }
         if review and review.get("unit_summary"):
             context["review"]["unit_summary"] = review["unit_summary"]
+        # A conversation window is the boundary for AI context. Within that
+        # window, a resumed topic can still skip unrelated temporary chatter.
+        # A topic may be resumed in more than one window, but opening a fresh
+        # window must never quietly send an earlier window's turns back to the
+        # provider.
         active = repository.active_topic(user_id)
         recent_turns = (
-            repository.topic_turns(user_id, active["topic_id"])
+            repository.topic_turns(
+                user_id,
+                active["topic_id"],
+                conversation_id=(view.get("conversation") or {}).get("conversation_id"),
+            )
             if active
             else view["turns"]
         )

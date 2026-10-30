@@ -61,9 +61,16 @@ def _review_scope(topic_id):
     return (" AND topic.topic_id=?", [topic_id]) if topic_id else ("", [])
 
 
+def _conversation_title(text):
+    """A local, non-AI label for a newly started conversation."""
+    compact = " ".join(str(text).split())
+    return compact[:48] + ("…" if len(compact) > 48 else "") or "新对话"
+
+
 class CoachRepository:
     def __init__(self, database_path, *, materials=None):
         self.database_path = Path(database_path)
+        self.materials = materials
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection, connection:
             connection.executescript("""
@@ -82,6 +89,16 @@ class CoachRepository:
                     ON coach_turns(user_id) WHERE status = 'pending';
                 CREATE INDEX IF NOT EXISTS coach_history
                     ON coach_turns(user_id, turn_id DESC);
+                CREATE TABLE IF NOT EXISTS coach_conversations (
+                    conversation_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                    title TEXT NOT NULL, topic_id TEXT, created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS coach_conversation_owner
+                    ON coach_conversations(user_id, updated_at DESC, conversation_id);
+                CREATE TABLE IF NOT EXISTS coach_active_conversation (
+                    user_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS coach_learning (
                     user_id TEXT PRIMARY KEY,
                     topic TEXT NOT NULL,
@@ -170,6 +187,42 @@ class CoachRepository:
                 connection.execute(
                     "ALTER TABLE coach_turns ADD COLUMN citations_json TEXT NOT NULL DEFAULT '[]'"
                 )
+            if "conversation_id" not in {
+                row[1] for row in connection.execute("PRAGMA table_info(coach_turns)")
+            }:
+                connection.execute(
+                    "ALTER TABLE coach_turns ADD COLUMN conversation_id TEXT"
+                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS coach_turn_conversation ON coach_turns(user_id,conversation_id,turn_id DESC)"
+            )
+
+            # Existing chat remains intact as one explicitly labelled history
+            # conversation. The migration never guesses how old turns should be
+            # split into new windows.
+            unassigned = connection.execute(
+                "SELECT user_id,MIN(created_at) AS first_at,MAX(COALESCE(completed_at,created_at)) AS last_at FROM coach_turns WHERE conversation_id IS NULL GROUP BY user_id"
+            ).fetchall()
+            for row in unassigned:
+                identity = uuid4().hex
+                connection.execute(
+                    "INSERT INTO coach_conversations VALUES(?,?,?,NULL,?,?)",
+                    (
+                        identity,
+                        row["user_id"],
+                        "历史对话",
+                        row["first_at"],
+                        row["last_at"],
+                    ),
+                )
+                connection.execute(
+                    "UPDATE coach_turns SET conversation_id=? WHERE user_id=? AND conversation_id IS NULL",
+                    (identity, row["user_id"]),
+                )
+                connection.execute(
+                    "INSERT INTO coach_active_conversation VALUES(?,?) ON CONFLICT(user_id) DO NOTHING",
+                    (row["user_id"], identity),
+                )
 
             # Copy only the last reliably known learning position. Old chat stays
             # intact; do not guess a topic for earlier, unclassified dialogue.
@@ -182,7 +235,7 @@ class CoachRepository:
                     if materials is not None
                     else None
                 )
-                self._store_topic(
+                topic_id = self._store_topic(
                     connection,
                     old["user_id"],
                     dict(old),
@@ -190,6 +243,13 @@ class CoachRepository:
                     selected["material_id"]
                     if selected
                     else ("" if materials is not None else None),
+                )
+                # The legacy history window is the only safely known home for
+                # the legacy active topic.  Do not try to distribute it across
+                # individual old turns.
+                connection.execute(
+                    "UPDATE coach_conversations SET topic_id=? WHERE user_id=? AND title='历史对话' AND topic_id IS NULL",
+                    (topic_id, old["user_id"]),
                 )
 
     def list_booklets(self, user_id, *, query="", offset=0, limit=21):
@@ -579,6 +639,92 @@ class CoachRepository:
             ).fetchone()
         return dict(row) if row else None
 
+    @staticmethod
+    def _active_conversation(db, user_id):
+        row = db.execute(
+            "SELECT conversation.* FROM coach_conversations AS conversation JOIN coach_active_conversation AS active ON active.conversation_id=conversation.conversation_id AND active.user_id=conversation.user_id WHERE conversation.user_id=?",
+            (user_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def active_conversation(self, user_id):
+        with closing(self._connect()) as db:
+            return self._active_conversation(db, user_id)
+
+    @staticmethod
+    def _conversation_list(db, user_id):
+        return [
+            dict(row)
+            for row in db.execute(
+                "SELECT conversation.conversation_id,conversation.title,conversation.topic_id,conversation.updated_at,COUNT(turn.turn_id) AS turn_count,CASE WHEN active.conversation_id=conversation.conversation_id THEN 1 ELSE 0 END AS active "
+                "FROM coach_conversations AS conversation "
+                "LEFT JOIN coach_turns AS turn ON turn.user_id=conversation.user_id AND turn.conversation_id=conversation.conversation_id "
+                "LEFT JOIN coach_active_conversation AS active ON active.user_id=conversation.user_id "
+                "WHERE conversation.user_id=? GROUP BY conversation.conversation_id,conversation.title,conversation.topic_id,conversation.updated_at,active.conversation_id "
+                "ORDER BY conversation.updated_at DESC,conversation.conversation_id DESC LIMIT 21",
+                (user_id,),
+            )
+        ]
+
+    def conversations(self, user_id):
+        with closing(self._connect()) as db:
+            return self._conversation_list(db, user_id)
+
+    def new_conversation(self, user_id, *, now=None):
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_idle(db, user_id, now)
+            if db.execute(
+                "SELECT 1 FROM coach_review WHERE user_id=?", (user_id,)
+            ).fetchone():
+                return "reviewing"
+            identity = uuid4().hex
+            db.execute(
+                "INSERT INTO coach_conversations VALUES(?,?,?,NULL,?,?)",
+                (identity, user_id, "新对话", now, now),
+            )
+            db.execute(
+                "INSERT INTO coach_active_conversation VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET conversation_id=excluded.conversation_id",
+                (user_id, identity),
+            )
+            db.execute("DELETE FROM coach_active_topic WHERE user_id=?", (user_id,))
+        if self.materials is not None:
+            self.materials.select(user_id, None)
+        return identity
+
+    def open_conversation(self, user_id, identity, *, now=None):
+        if (
+            not isinstance(identity, str)
+            or re.fullmatch(r"[a-f0-9]{32}", identity) is None
+        ):
+            return "missing"
+        now = int(time()) if now is None else now
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_idle(db, user_id, now)
+            if db.execute(
+                "SELECT 1 FROM coach_review WHERE user_id=?", (user_id,)
+            ).fetchone():
+                return "reviewing"
+            conversation = db.execute(
+                "SELECT * FROM coach_conversations WHERE user_id=? AND conversation_id=?",
+                (user_id, identity),
+            ).fetchone()
+            if conversation is None:
+                return "missing"
+            db.execute(
+                "INSERT INTO coach_active_conversation VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET conversation_id=excluded.conversation_id",
+                (user_id, identity),
+            )
+            if conversation["topic_id"]:
+                self._activate_topic(db, user_id, conversation["topic_id"])
+            else:
+                db.execute("DELETE FROM coach_active_topic WHERE user_id=?", (user_id,))
+        if self.materials is not None:
+            self.materials.select(user_id, None)
+        return "opened"
+
     def topic(self, user_id, identity):
         with closing(self._connect()) as db:
             row = db.execute(
@@ -869,11 +1015,18 @@ class CoachRepository:
                 )
         return "saved"
 
-    def topic_turns(self, user_id, identity):
+    def topic_turns(self, user_id, identity, *, conversation_id=None):
+        conversation_scope = ""
+        values = [user_id, identity]
+        if conversation_id is not None:
+            conversation_scope = " AND turn.conversation_id=?"
+            values.append(conversation_id)
         with closing(self._connect()) as db:
             rows = db.execute(
-                "SELECT turn.* FROM coach_turns AS turn JOIN coach_turn_topics AS tag ON tag.turn_id=turn.turn_id AND tag.user_id=turn.user_id WHERE turn.user_id=? AND tag.topic_id=? ORDER BY turn.turn_id DESC LIMIT 40",
-                (user_id, identity),
+                "SELECT turn.* FROM coach_turns AS turn JOIN coach_turn_topics AS tag ON tag.turn_id=turn.turn_id AND tag.user_id=turn.user_id WHERE turn.user_id=? AND tag.topic_id=?"
+                + conversation_scope
+                + " ORDER BY turn.turn_id DESC LIMIT 40",
+                values,
             ).fetchall()
         turns = [dict(row) for row in reversed(rows)]
         for turn in turns:
@@ -895,12 +1048,13 @@ class CoachRepository:
         )
 
     @staticmethod
-    def _history_page(connection, user_id, before=None):
+    def _history_page(connection, user_id, conversation_id, before=None):
         rows = connection.execute(
             "SELECT turn_id, user_content, assistant_content, status, created_at, citations_json "
-            "FROM coach_turns WHERE user_id=? AND turn_id<? ORDER BY turn_id DESC LIMIT ?",
+            "FROM coach_turns WHERE user_id=? AND conversation_id=? AND turn_id<? ORDER BY turn_id DESC LIMIT ?",
             (
                 user_id,
+                conversation_id,
                 before if before is not None else 9223372036854775807,
                 HISTORY_PAGE_SIZE + 1,
             ),
@@ -917,7 +1071,14 @@ class CoachRepository:
         if type(before) is not int or not 1 <= before <= 9223372036854775807:
             raise ValueError("invalid history cursor")
         with closing(self._connect()) as connection:
-            return self._history_page(connection, user_id, before)
+            active = self._active_conversation(connection, user_id)
+            return (
+                self._history_page(
+                    connection, user_id, active["conversation_id"], before
+                )
+                if active
+                else {"turns": [], "before": None}
+            )
 
     def dialogue_status(self, user_id, nonce, *, now=None):
         """Read only the owned request's status; never expire, resend or bill it."""
@@ -1036,12 +1197,21 @@ class CoachRepository:
         now = int(time()) if now is None else now
         with closing(self._connect()) as connection, connection:
             self._expire(connection, user_id, now)
-            page = self._history_page(connection, user_id)
+            conversation = self._active_conversation(connection, user_id)
+            page = (
+                self._history_page(connection, user_id, conversation["conversation_id"])
+                if conversation
+                else {"turns": [], "before": None}
+            )
             learning = connection.execute(
-                "SELECT topic, progress, next_step, updated_at FROM coach_learning WHERE user_id=?",
+                "SELECT topic.title AS topic,topic.progress,topic.next_step,topic.updated_at FROM coach_topics AS topic JOIN coach_active_topic AS active ON active.topic_id=topic.topic_id AND active.user_id=topic.user_id WHERE topic.user_id=?",
                 (user_id,),
             ).fetchone()
-        return {**page, "learning": dict(learning) if learning else None}
+            conversations = self._conversation_list(connection, user_id)
+        result = {**page, "learning": dict(learning) if learning else None}
+        if conversation is not None:
+            result.update(conversation=conversation, conversations=conversations)
+        return result
 
     def claim(
         self,
@@ -1130,10 +1300,45 @@ class CoachRepository:
                     part_id,
                     now,
                 )
+            conversation = self._active_conversation(connection, user_id)
+            active_topic = connection.execute(
+                "SELECT topic_id FROM coach_active_topic WHERE user_id=?", (user_id,)
+            ).fetchone()
+            if conversation is None:
+                conversation_id = uuid4().hex
+                connection.execute(
+                    "INSERT INTO coach_conversations VALUES(?,?,?,?,?,?)",
+                    (
+                        conversation_id,
+                        user_id,
+                        _conversation_title(text),
+                        active_topic[0] if active_topic else None,
+                        now,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    "INSERT INTO coach_active_conversation VALUES(?,?)",
+                    (user_id, conversation_id),
+                )
+            else:
+                conversation_id = conversation["conversation_id"]
+                connection.execute(
+                    "UPDATE coach_conversations SET title=CASE WHEN title='新对话' THEN ? ELSE title END,topic_id=CASE WHEN ? THEN ? ELSE COALESCE(topic_id,?) END,updated_at=? WHERE user_id=? AND conversation_id=?",
+                    (
+                        _conversation_title(text),
+                        study_id is not None,
+                        active_topic[0] if active_topic else None,
+                        active_topic[0] if active_topic else None,
+                        now,
+                        user_id,
+                        conversation_id,
+                    ),
+                )
             connection.execute(
-                "INSERT INTO coach_turns(user_id,nonce,user_content,status,created_at) "
-                "VALUES(?,?,?,'pending',?)",
-                (user_id, nonce, text, now),
+                "INSERT INTO coach_turns(user_id,nonce,user_content,status,created_at,conversation_id) "
+                "VALUES(?,?,?,'pending',?,?)",
+                (user_id, nonce, text, now, conversation_id),
             )
             if not detached:
                 connection.execute(
@@ -1249,6 +1454,10 @@ class CoachRepository:
             if changed and learning is not None:
                 identity = self._store_topic(
                     connection, user_id, learning, now, material_id
+                )
+                connection.execute(
+                    "UPDATE coach_conversations SET topic_id=?,updated_at=? WHERE user_id=? AND conversation_id=(SELECT conversation_id FROM coach_turns WHERE user_id=? AND nonce=?)",
+                    (identity, now, user_id, user_id, nonce),
                 )
                 if part_id:
                     self._set_part(

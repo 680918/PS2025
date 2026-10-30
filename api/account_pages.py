@@ -26,7 +26,7 @@ from api.usage_pages import register_usage_pages
 from api.growth_pages import register_growth_pages
 from coach.ai_usage import usage_message
 from coach.book_study import study_directory
-from coach.learning_topics import discussion_material, discussion_part
+from coach.learning_topics import TopicBusy, discussion_material, discussion_part
 from api.public_pages import _render_layout
 from api.library_pages import register_library_pages, library_csrf
 from api.booklet_pages import register_booklet_pages
@@ -435,6 +435,60 @@ def register_account_pages(
             return problem("暂时无法核对发送状态，请保留文字，稍后再试。", 503)
         return JSONResponse(state, headers=_HEADERS)
 
+    async def conversation_action(request: Request, action, identity=""):
+        if not same_origin(request):
+            return dialogue_problem("页面无法核对，请返回对话后重试。", 403)
+        try:
+            account = await run_in_threadpool(
+                signed_in_account, repository, request.cookies.get(SESSION_COOKIE)
+            )
+        except sqlite3.Error:
+            return dialogue_problem("暂时无法核对账户，请稍后再试。", 503)
+        if account is None:
+            return redirect("/web/login")
+        values = await fields(request, {"csrf"})
+        token = request.cookies.get(SESSION_COOKIE)
+        expected = signature(
+            "conversation", f"{token}.{action}" + (f".{identity}" if identity else "")
+        )
+        if (
+            values is None
+            or not re.fullmatch(r"[0-9a-f]{64}", values["csrf"])
+            or not hmac.compare_digest(expected, values["csrf"])
+        ):
+            return dialogue_problem("页面无法核对，请返回对话后重试。", 403)
+        try:
+            result = await run_in_threadpool(
+                dialogue_repository.new_conversation
+                if action == "new"
+                else dialogue_repository.open_conversation,
+                account.user_id,
+                *(() if action == "new" else (identity,)),
+            )
+        except TopicBusy:
+            return dialogue_problem(
+                "教练正在回复，请等本轮结束后再切换或新开对话。", 409
+            )
+        except sqlite3.Error:
+            return dialogue_problem("暂时无法切换对话，请稍后重试。", 503)
+        if result == "reviewing":
+            return dialogue_problem(
+                "正在重温教案，请先结束重温后再切换或新开对话。", 409
+            )
+        if result == "missing":
+            return dialogue_problem("找不到这条本人对话，请从最近对话重新打开。", 404)
+        return redirect("/web/welcome#coach-dialog")
+
+    @app.post("/web/coach/conversations/new", include_in_schema=False)
+    async def new_conversation(request: Request):
+        return await conversation_action(request, "new")
+
+    @app.post("/web/coach/conversations/open/{identity}", include_in_schema=False)
+    async def open_conversation(request: Request, identity: str):
+        if re.fullmatch(r"[a-f0-9]{32}", identity) is None:
+            return dialogue_problem("页面无法核对，请返回对话后重试。", 403)
+        return await conversation_action(request, "open", identity)
+
     def dialogue_form(
         token, action, content, study_id="", part_id=None, review_guard=None
     ):
@@ -466,6 +520,19 @@ def register_account_pages(
             )
         return f'<form method="post" action="/web/coach/message"><input type="hidden" name="nonce" value="{nonce}"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="action" value="{action}">{content}</form>'
 
+    def conversation_form(token, action, content, identity=""):
+        payload = f"{token}.{action}" + (f".{identity}" if identity else "")
+        return (
+            '<form method="post" action="/web/coach/conversations/'
+            + action
+            + ("/" + identity if identity else "")
+            + '"><input type="hidden" name="csrf" value="'
+            + signature("conversation", payload)
+            + '">'
+            + content
+            + "</form>"
+        )
+
     def workspace(view, token, user_id, *, book_intro=False):
         enabled = dialogue_responder is not None
         active_topic = dialogue_repository.active_topic(user_id)
@@ -477,6 +544,46 @@ def register_account_pages(
             (stored_part["chunk_id"] if stored_part else "") if study_id else None
         )
         pending = any(turn["status"] == "pending" for turn in view["turns"])
+        current_conversation = view.get("conversation")
+        conversation_disabled = (
+            " disabled" if pending or review_guard["knowledge_id"] else ""
+        )
+        conversation_bar = (
+            '<section class="conversation-session-bar" aria-label="当前对话窗口"><div><p>当前对话</p><h2>'
+            + escape(
+                current_conversation["title"] if current_conversation else "新对话"
+            )
+            + "</h2></div>"
+            + conversation_form(
+                token,
+                "new",
+                '<button class="button button-outline" type="submit"'
+                + conversation_disabled
+                + ">＋ 新开对话</button>",
+            )
+            + "</section>"
+        )
+        recent_conversations = view.get("conversations", [])
+        if recent_conversations:
+            conversation_bar += '<details class="conversation-session-list"><summary>最近对话（可切换）</summary><div>'
+            for item in recent_conversations:
+                label = escape(item["title"]) + " · " + str(item["turn_count"]) + " 轮"
+                if item["active"]:
+                    conversation_bar += (
+                        '<p aria-current="page"><strong>' + label + "</strong></p>"
+                    )
+                else:
+                    conversation_bar += conversation_form(
+                        token,
+                        "open",
+                        '<button class="history-load" type="submit"'
+                        + conversation_disabled
+                        + ">"
+                        + label
+                        + "</button>",
+                        item["conversation_id"],
+                    )
+            conversation_bar += "</div></details>"
         history = []
         for index, turn in enumerate(view["turns"]):
             latest = ' id="latest-reply"' if index == len(view["turns"]) - 1 else ""
@@ -563,7 +670,8 @@ def register_account_pages(
             + '</p><a class="text-link" href="#learning-title">查看学习详情与续学 →</a></div>'
         )
         body = (
-            mobile_context
+            conversation_bar
+            + mobile_context
             + f'<div id="dialogue-history" class="dialogue-history" role="region" aria-label="聊天记录" tabindex="0"><div class="history-loader"><button id="history-load" class="history-load" type="button" data-before="{view.get("before") or ""}"{"" if view.get("before") else " hidden"}>加载更早的对话</button><p id="history-load-status" role="status"></p></div><div id="dialogue-messages">'
             + "".join(history)
             + '</div></div><div id="conversation-input">'

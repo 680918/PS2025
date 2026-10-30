@@ -6,6 +6,47 @@ import pytest
 from conversation.coach_repository import CoachRepository, PENDING_LIFETIME
 
 
+def test_existing_chat_is_migrated_once_into_a_history_conversation(tmp_path):
+    path = tmp_path / "legacy-coach.db"
+    nonce = secrets.token_urlsafe(32)
+    with sqlite3.connect(path) as db:
+        db.executescript(
+            """
+            CREATE TABLE coach_turns (
+                turn_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL, nonce TEXT NOT NULL,
+                user_content TEXT NOT NULL, assistant_content TEXT,
+                status TEXT NOT NULL, created_at INTEGER NOT NULL,
+                completed_at INTEGER, UNIQUE(user_id, nonce)
+            );
+            CREATE TABLE coach_learning (
+                user_id TEXT PRIMARY KEY, topic TEXT NOT NULL,
+                progress TEXT NOT NULL, next_step TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            """
+        )
+        db.execute(
+            "INSERT INTO coach_turns VALUES(NULL,?,?,?,?,?,?,?)",
+            ("one", nonce, "旧问题", "旧回复", "complete", 1000, 1001),
+        )
+        db.execute(
+            "INSERT INTO coach_learning VALUES(?,?,?,?,?)",
+            ("one", "旧主题", "旧进度", "旧下一步", 1001),
+        )
+
+    upgraded = CoachRepository(path)
+    view = upgraded.view("one", now=1002)
+    assert [turn["user_content"] for turn in view["turns"]] == ["旧问题"]
+    assert view["conversation"]["title"] == "历史对话"
+    assert view["conversation"]["topic_id"] == upgraded.active_topic("one")["topic_id"]
+    assert view["conversations"][0]["turn_count"] == 1
+
+    reopened = CoachRepository(path)
+    assert reopened.view("one", now=1003)["conversation"] == view["conversation"]
+    assert len(reopened.conversations("one")) == 1
+
+
 def test_status_read_distinguishes_admission_result_and_expiry_without_changing_records(
     tmp_path,
 ):

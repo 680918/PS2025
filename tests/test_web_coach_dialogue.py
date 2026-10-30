@@ -154,6 +154,71 @@ def test_send_persist_escape_deduplicate_and_visible_progress(setup):
     assert len(calls) == 1
 
 
+def test_new_conversation_is_blank_isolated_and_reopens_old_learning(setup, tmp_path):
+    _, client, calls, user, _ = setup
+    login(client)
+    client.post("/web/coach/message", data=form(client))
+    repository = CoachRepository(tmp_path / "coach_conversations.db")
+    first_id = repository.active_conversation(user.user_id)["conversation_id"]
+
+    page = client.get("/web/welcome")
+    new_values = Forms(page.text).values("/web/coach/conversations/new")
+    response = client.post(
+        "/web/coach/conversations/new", data=new_values, follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/web/welcome#coach-dialog"
+    page = client.get(response.headers["location"])
+    second_id = repository.active_conversation(user.user_id)["conversation_id"]
+    assert second_id != first_id
+    assert "<h2>新对话</h2>" in page.text
+    assert 'id="dialogue-messages"></div>' in page.text
+    assert "讨论了优先级。" not in page.text
+    assert repository.active_topic(user.user_id) is None
+
+    fresh = form(client)
+    client.post("/web/coach/message", data={**fresh, "message": "换个话题聊聊"})
+    assert calls[-1][0] == []
+    assert repository.active_conversation(user.user_id)["title"] == "换个话题聊聊"
+
+    page = client.get("/web/welcome")
+    open_values = Forms(page.text).values("/web/coach/conversations/open/" + first_id)
+    reopened = client.post(
+        "/web/coach/conversations/open/" + first_id,
+        data=open_values,
+        follow_redirects=False,
+    )
+    assert reopened.status_code == 303
+    page = client.get(reopened.headers["location"])
+    assert "讨论优先级。" in page.text
+    assert repository.active_conversation(user.user_id)["conversation_id"] == first_id
+    assert repository.active_topic(user.user_id)["title"] == "时间管理"
+    assert len(repository.conversations(user.user_id)) == 2
+
+
+def test_new_conversation_rejects_invalid_or_cross_site_forms(setup):
+    _, client, calls, _, _ = setup
+    login(client)
+    values = Forms(client.get("/web/welcome").text).values(
+        "/web/coach/conversations/new"
+    )
+    assert (
+        client.post(
+            "/web/coach/conversations/new", data={**values, "csrf": "bad"}
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            "/web/coach/conversations/new",
+            data=values,
+            headers={"origin": "https://attacker.example"},
+        ).status_code
+        == 403
+    )
+    assert calls == []
+
+
 def test_detour_continue_logout_login_and_restart_keep_same_learning(setup, tmp_path):
     _, client, calls, _, responder = setup
     login(client)

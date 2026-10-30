@@ -315,6 +315,17 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .message-author { font-size: 10px; color: var(--muted); margin-bottom: 9px; }
 .message-content { white-space: pre-wrap; font-size: 14px; line-height: 1.9; }
 .dialogue-state { font-size: 12px; line-height: 1.8; color: var(--gold); padding: 14px; }
+.conversation-session-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 0 14px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+.conversation-session-bar p { margin: 0 0 3px; color: var(--muted); font-size: 11px; }
+.conversation-session-bar h2 { margin: 0; font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.conversation-session-bar form { flex: 0 0 auto; }
+.conversation-session-bar .button { margin: 0; }
+.conversation-session-list { margin: -4px 0 14px; }
+.conversation-session-list summary { cursor: pointer; color: var(--green); font-size: 12px; }
+.conversation-session-list > div { display: grid; gap: 6px; margin-top: 9px; }
+.conversation-session-list p { margin: 0; padding: 8px 10px; color: var(--green); background: #f1f6ef; border: 1px solid #bdcdbf; border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.conversation-session-list form { margin: 0; }
+.conversation-session-list .history-load { width: 100%; text-align: left; }
 .conversation-composer:focus-within { border-color: var(--green); box-shadow: 0 0 0 2px #526d3820; }
 .account-greeting h1 { margin: 10px 0; font-size: clamp(23px, 2.5vw, 30px); }
 @media (min-width: 721px) and (max-width: 1000px) {
@@ -345,6 +356,8 @@ input[aria-invalid="true"] { border-color: #923f32; }
     .workspace-conversation { padding: 16px; }
     .mobile-learning-context { position: static; margin: 0 0 12px; box-shadow: none; }
     .dialogue-history { height: clamp(380px, 58dvh, 680px); }
+    .conversation-session-bar { align-items: flex-start; }
+    .conversation-session-bar .button { min-height: 40px; padding: 8px 10px; font-size: 12px; }
 }
 @media (max-width: 1000px) {
     .site-shell { padding: 0 30px; }
