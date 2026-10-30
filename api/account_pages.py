@@ -779,7 +779,7 @@ def register_account_pages(
             )
             + source_content
             + "</div>"
-            + '<details class="workspace-help"><summary>对话记录与使用说明</summary><p>每批加载 40 轮（一问一答为一轮），上滑可继续加载更早记录。记录按账户保存在本机，不因超过 40 轮自动删除；实际容量取决于磁盘空间。每次可输入 2000 字。</p><p>学习进度由教练整理供你核对。教案先形成草稿，经你确认后保存到知识库。</p><p id="conversation-availability">'
+            + '<details class="workspace-help"><summary>对话记录与使用说明</summary><p>每批加载 40 轮（一问一答为一轮），上滑可继续加载更早记录。记录按账户保存在本机，不因超过 40 轮自动删除；实际容量取决于磁盘空间。每次可输入 2000 字。</p><p><strong>发送前说明：</strong>点击发送、继续学习或在对话中请求整理教案时，才会请求当前配置的 AI 服务，可能产生费用。为维持讨论连贯，服务可能收到本次文字、当前主题、近期对话，以及你已选资料的相关片段或正在重温的教案内容；是否再次发送始终由你决定，系统不会自动重试。<a class="text-link" href="/web/usage">查看 AI 用量与上限 →</a></p><p>阅读、查找、上传资料、核对原文、预览或手动保存教案、导出资料不调用 AI。学习进度由教练整理供你核对；教案先形成草稿，经你确认后保存到知识库。</p><p id="conversation-availability">'
             + escape(
                 dialogue_label
                 or ("对话已启用。" if enabled else "对话准备中，当前暂不能发送消息。")

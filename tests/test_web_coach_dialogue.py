@@ -127,6 +127,11 @@ def test_auth_required_and_no_get_request_calls_ai(setup):
     login(client)
     for _ in range(2):
         assert client.get("/web/welcome").status_code == 200
+    page = client.get("/web/welcome")
+    assert "发送前说明：" in page.text
+    assert "系统不会自动重试" in page.text
+    assert 'href="/web/usage"' in page.text
+    assert "导出资料不调用 AI" in page.text
     assert calls == []
 
 
