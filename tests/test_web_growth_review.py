@@ -46,6 +46,44 @@ def test_growth_summary_links_and_reading_preserve_all_business_data(setup):
     assert "成长回顾" in client.get("/web/welcome").text
 
 
+def test_trial_navigation_uses_owned_active_topic_and_pending_lesson_without_writes(
+    setup,
+):
+    _, client, repo, materials, user, _, calls = setup
+    login(client)
+    topic(repo, "我的长期主题", user=user.user_id, now=int(time()) - 10)
+    lesson(repo, user.user_id, title="等待确认的教案", save=False)
+    before = {p: p.read_bytes() for p in [repo.database_path, materials.database_path]}
+    response = client.get("/web/growth")
+    links = Links(response.text).links
+    assert response.status_code == 200 and "个人试用导航" in response.text
+    assert "继续当前主题" in response.text and "我的长期主题" in response.text
+    assert "查看待确认教案" in response.text
+    assert {
+        "/web/welcome",
+        "/web/materials",
+        "/web/knowledge?status=pending",
+        "/web/export",
+    } <= set(links)
+    assert "不会调用 AI、改变学习位置或把浏览算作学习完成" in response.text
+    assert all(p.read_bytes() == raw for p, raw in before.items()) and calls == []
+
+
+def test_trial_navigation_is_private_and_escapes_active_topic(setup):
+    app, client, repo, _, user, _, calls = setup
+    login(client)
+    topic(repo, "<script>仅本人主题</script>", user=user.user_id, now=int(time()) - 5)
+    own = client.get("/web/growth")
+    assert "&lt;script&gt;仅本人主题&lt;/script&gt;" in own.text
+    client.cookies.clear()
+    login(client, "two@example.com")
+    other = client.get("/web/growth")
+    assert "仅本人主题" not in other.text and "从对话开始" in other.text
+    with TestClient(app, base_url=BASE) as guest:
+        assert guest.get("/web/growth", follow_redirects=False).status_code == 303
+    assert calls == []
+
+
 def test_empty_periods_and_all_time_selection_are_clear_and_no_ai(setup):
     _, client, repo, _, user, _, calls = setup
     login(client)

@@ -58,12 +58,38 @@ def register_growth_pages(app, accounts, dialogue):
                     400,
                 )
             snapshot = dialogue.growth_review(account.user_id, period=period)
+            active_topic = dialogue.active_topic(account.user_id)
+            has_pending_lesson = bool(
+                dialogue.list_knowledge(account.user_id, status="pending", limit=1)
+            )
         except sqlite3.Error:
             return page(
                 '<p class="form-error-summary" role="alert">暂时无法读取成长记录，请稍后再试。</p>',
                 503,
             )
-        body = '<p class="library-intro">把走过的学习过程看清楚，按自己的节奏继续。不需要打卡或填写评分。</p><nav class="library-tabs" aria-label="回顾时间范围">'
+        body = '<p class="library-intro">把走过的学习过程看清楚，按自己的节奏继续。不需要打卡或填写评分。</p>'
+        body += '<section class="library-card trial-navigation"><h2>个人试用导航</h2><p>从你现在最方便的一步继续。这里只读取已有记录；打开入口不会调用 AI、改变学习位置或把浏览算作学习完成。</p><div class="trial-navigation-grid">'
+        if active_topic:
+            body += (
+                '<a class="trial-navigation-card" href="/web/welcome"><strong>继续当前主题</strong><span>'
+                + escape(active_topic["title"])
+                + "</span><small>回到同一个对话框继续交流或学习</small></a>"
+            )
+        else:
+            body += '<a class="trial-navigation-card" href="/web/welcome"><strong>从对话开始</strong><span>提出今天最想弄懂的一件事</span><small>聊天、主题学习和资料讨论都在同一个入口</small></a>'
+        body += '<a class="trial-navigation-card" href="/web/materials"><strong>资料与书籍</strong><span>上传资料，或继续阅读已有书籍</span><small>选中内容后再决定是否请 Coach 讲解</small></a>'
+        body += (
+            '<a class="trial-navigation-card" href="/web/knowledge?status=pending"><strong>'
+            + ("查看待确认教案" if has_pending_lesson else "知识资产沉淀")
+            + "</strong><span>"
+            + (
+                "你有一份或多份草稿等待自己决定"
+                if has_pending_lesson
+                else "把需要重温的内容整理、保存和调阅"
+            )
+            + "</span><small>教案只有在你确认后才会保存</small></a>"
+        )
+        body += '<a class="trial-navigation-card" href="/web/export"><strong>保护学习资料</strong><span>导出一份自己的学习资料到电脑</span><small>导出不会删除 Coach 内已有内容</small></a></div></section><nav class="library-tabs" aria-label="回顾时间范围">'
         for value, label in [("7", "最近7天"), ("30", "最近30天"), ("all", "全部时间")]:
             body += (
                 '<a href="?period='
