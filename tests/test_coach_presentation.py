@@ -101,7 +101,7 @@ def test_first_page_and_older_history_use_the_same_safe_renderer(setup, tmp_path
     assert calls == []
 
 
-def test_pending_drafts_and_greeting_belong_to_left_assets_not_learning_panel(
+def test_pending_drafts_and_greeting_remain_in_left_assets_without_learning_panel(
     setup, tmp_path
 ):
     _, client, _, user, _ = setup
@@ -120,14 +120,12 @@ def test_pending_drafts_and_greeting_belong_to_left_assets_not_learning_panel(
     sidebar = page.split('<aside class="workspace-sidebar"', 1)[1].split("</aside>", 1)[
         0
     ]
-    learning = page.split('<aside class="workspace-learning"', 1)[1].split(
-        "</aside>", 1
-    )[0]
     assert "欢迎回来" in sidebar and "知识资产沉淀" in sidebar
     assert "教案草稿 · 预览与保存" in sidebar and "待你确认" in sidebar
     assert "已保存的教案目录" in sidebar
-    assert "集中的教案" not in learning and "教案草稿" not in learning
-    assert "正在引用的书籍资料" in learning and "继续上次学习" in learning
+    assert "集中的教案" not in page
+    assert 'id="workspace-learning"' not in page
+    assert "当前学习主题" not in page
     assert repo.list_knowledge(user.user_id) == []
 
 

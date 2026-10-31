@@ -18,14 +18,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.coach_markdown import coach_markdown
-from api.book_reader import extraction_notice
 from api.memory_pages import register_memory_pages
 from api.study_pages import register_study_pages
 from api.conversation_pages import register_conversation_pages
 from api.usage_pages import register_usage_pages
 from api.growth_pages import register_growth_pages
 from coach.ai_usage import usage_message
-from coach.book_study import study_directory
 from coach.learning_topics import TopicBusy, discussion_material, discussion_part
 from api.public_pages import _render_layout
 from api.library_pages import register_library_pages, library_csrf
@@ -338,7 +336,7 @@ def register_account_pages(
                 if dialogue_repository
                 else {"turns": [], "learning": None}
             )
-            dialogue_body, learning_panel, assets_panel = workspace(
+            dialogue_body, assets_panel = workspace(
                 view,
                 token,
                 account.user_id,
@@ -354,7 +352,6 @@ def register_account_pages(
             email=escape(masked_registration_email(account.email)),
             csrf=signature("logout", token),
             dialogue_body=dialogue_body,
-            learning_panel=learning_panel,
             assets_panel=assets_panel,
         )
         return HTMLResponse(
@@ -647,7 +644,11 @@ def register_account_pages(
             )
             else ""
         )
-        composer = f'<div class="conversation-composer" aria-label="统一对话输入区">{material_notice}<label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability coach-input-help"{disabled}>{escape(initial_message)}</textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials/add">＋ 添加资料</a><button class="button button-outline dialogue-latest" id="dialogue-latest" type="button" aria-controls="dialogue-history" hidden disabled>回到最新对话</button><button class="button button-primary" type="submit"{disabled}>发送</button></div><span id="coach-input-help" class="conversation-shortcut" hidden>Ctrl／⌘ + Enter 发送 · Enter 换行</span></div>'
+        availability = escape(
+            dialogue_label
+            or ("对话已启用。" if enabled else "对话准备中，当前暂不能发送消息。")
+        )
+        composer = f'<div class="conversation-composer" aria-label="统一对话输入区">{material_notice}<label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability coach-input-help"{disabled}>{escape(initial_message)}</textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials/add">＋ 添加资料</a><button class="button button-outline dialogue-latest" id="dialogue-latest" type="button" aria-controls="dialogue-history" hidden disabled>回到最新对话</button><button class="button button-primary" type="submit"{disabled}>发送</button></div><p id="conversation-availability" class="conversation-availability">{availability} <a class="text-link" href="/web/usage">查看 AI 用量与上限</a></p><span id="coach-input-help" class="conversation-shortcut" hidden>Ctrl／⌘ + Enter 发送 · Enter 换行</span></div>'
         if enabled:
             composer = dialogue_form(
                 token, "message", composer, study_id, form_part, review_guard
@@ -662,61 +663,53 @@ def register_account_pages(
         review = dialogue_repository.review(user_id)
         if review:
             selected, part, stored_part = None, None, None
-        mobile_context = (
-            '<div class="mobile-learning-context" aria-label="学习位置速览"><p>当前学习主题 · <strong>'
-            + escape(learning["topic"] if learning else "尚未开始")
-            + "</strong></p>"
-            + (
-                "<p>正在重温教案 · "
-                + escape(review["title"])
-                + '</p><a class="text-link" href="#review-mode-end">查看教案与结束重温 →</a>'
-                if review
-                else ""
-            )
-            + '<p class="mobile-learning-progress">学习进度 · '
-            + escape(learning["progress"] if learning else "尚无学习记录")
-            + "</p><p>讨论资料 · "
-            + escape(
-                (selected["title"] + (" · " + part["locator"] if part else ""))
-                if selected
-                else "教案正文与整理时引用"
-                if review
-                else "未关联资料"
-            )
-            + '</p><a class="text-link" href="#learning-title">查看学习详情与续学 →</a></div>'
+        book_title_only = (
+            active_topic
+            and active_topic["title"].startswith("阅读《")
+            and not selected
+            and not review
         )
+        conversation_context = ""
+        if review:
+            conversation_context = (
+                '<div class="conversation-learning-context" aria-label="当前学习状态">正在重温：<strong>'
+                + escape(review["title"])
+                + '</strong><a class="text-link" href="/web/knowledge/'
+                + review["knowledge_id"]
+                + '">查看教案</a><a class="text-link" href="/web/studies">我的学习</a></div>'
+            )
+        elif learning or selected:
+            conversation_context = (
+                '<div class="conversation-learning-context" aria-label="当前学习状态">'
+                + (
+                    "正在学习：<strong>" + escape(learning["topic"]) + "</strong>"
+                    if learning
+                    else "正在围绕资料讨论"
+                )
+                + (
+                    '<span class="context-separator" aria-hidden="true">·</span>资料：'
+                    + escape(
+                        selected["title"] + (" · " + part["locator"] if part else "")
+                    )
+                    if selected
+                    else ""
+                )
+                + (
+                    '<span class="context-separator" aria-hidden="true">·</span><span class="context-note">按书名导读 · 未上传原书</span><a class="text-link" href="/web/materials/add">上传原书</a>'
+                    if book_title_only
+                    else ""
+                )
+                + '<a class="text-link" href="/web/studies">我的学习</a></div>'
+            )
         body = (
             conversation_bar
-            + mobile_context
             + f'<div id="dialogue-history" class="dialogue-history" role="region" aria-label="聊天记录" tabindex="0"><div class="history-loader"><button id="history-load" class="history-load" type="button" data-before="{view.get("before") or ""}"{"" if view.get("before") else " hidden"}>加载更早的对话</button><p id="history-load-status" role="status"></p></div><div id="dialogue-messages">'
             + "".join(history)
             + '</div></div><div id="conversation-input">'
+            + conversation_context
             + composer
             + '</div><script src="/static/content-copy.js?v=1" defer></script><script src="/static/coach-dialogue.js?v=chat-efficiency-1" defer></script>'
         )
-        if learning:
-            details = f'<h3>{escape(learning["topic"])}</h3><dl><dt>学习进度 · 已讨论</dt><dd>{escape(learning["progress"])}</dd><dt>下一步</dt><dd>{escape(learning["next_step"])}</dd></dl><p class="learning-record-note">记录会随讨论更新，也可自行修正；不代表已经掌握。</p>'
-            if study_id:
-                details += f'<a class="text-link study-directory-link" href="/web/studies/{study_id}/edit">修改学习记录</a>'
-        else:
-            details = "<h3>还没有开始主题学习</h3><p>在对话中说“我想学习……”即可开始。教练会在讨论后整理学习位置。</p><dl><dt>学习进度</dt><dd>尚无学习记录</dd><dt>下一步</dt><dd>选择一个你想了解的主题。</dd></dl>"
-        if review:
-            details = details.replace(
-                "记录会随讨论更新，也可自行修正；不代表已经掌握。",
-                "重温保留这份主题记录；结束后可继续原学习。",
-            )
-        button = f'<button class="button button-primary button-full" type="submit"{"" if learning and enabled and not pending else " disabled"}>{"继续重温教案" if review else "继续上次学习"}</button>'
-        if enabled and learning:
-            button = dialogue_form(
-                token,
-                "continue",
-                '<input type="hidden" name="message" value="">' + button,
-                study_id,
-                form_part,
-                review_guard,
-            )
-        else:
-            button = button.replace('type="submit"', 'type="button"')
         lesson_button = (
             dialogue_form(
                 token,
@@ -728,124 +721,6 @@ def register_account_pages(
             )
             if enabled and not pending and (view["turns"] or selected)
             else ""
-        )
-        study_action = ""
-        source_content = '<p class="source-empty">未关联资料</p><a class="text-link" href="/web/materials">添加或选择资料 →</a>'
-        if (
-            active_topic
-            and active_topic["title"].startswith("阅读《")
-            and not selected
-            and not review
-        ):
-            source_content = '<p class="book-basis"><strong>按书名导读 · 未上传原书</strong><br>依据 AI 通用知识讨论观点和应用，尚未核对原文。需要页码、逐章或选段学习时，可上传原书。</p><a class="button button-outline" href="/web/materials/add">上传这本书</a>'
-        if selected:
-            source_content = (
-                '<p><a class="text-link" href="/web/materials/'
-                + selected["material_id"]
-                + '">'
-                + escape(selected["title"])
-                + '</a></p><a class="button button-outline" href="/web/materials/'
-                + selected["material_id"]
-                + '/read">阅读全书</a>'
-                + extraction_notice(selected)
-                + '<p>已选入讨论；回答将根据相关片段整理。</p><form method="post" action="/web/materials/clear"><input type="hidden" name="csrf" value="'
-                + library_csrf(key, token, "clear")
-                + '"><button class="history-load" type="submit">取消当前资料</button></form>'
-            )
-        if part and selected:
-            summary = (
-                '<p class="study-position-summary">本次资料 · '
-                + escape(selected["title"])
-                + "<br>"
-                + escape(part["locator"])
-                + "</p>"
-            )
-            source_content += (
-                '<div class="selected-study-part"><p><strong>当前选段 · '
-                + escape(part["locator"])
-                + '</strong></p><p>本轮只以这一段为资料依据；尚不代表已学完。</p><a class="text-link" href="/web/materials/'
-                + selected["material_id"]
-                + "?part="
-                + str(part["chunk_index"])
-                + '">回到原文并换段 →</a></div>'
-            )
-            study_button = (
-                '<input type="hidden" name="message" value=""><button class="button button-primary button-full" type="submit"'
-                + (" disabled" if pending else "")
-                + ">讲解并提炼这段</button>"
-            )
-            study_action = (
-                dialogue_form(
-                    token, "study", study_button, study_id, form_part, review_guard
-                )
-                if enabled
-                else '<button class="button button-primary button-full" type="button" disabled>讲解并提炼这段</button>'
-            )
-            directory = study_directory(
-                selected,
-                materials_repository.chunks(user_id, selected["material_id"]),
-                dialogue_repository.book_units(user_id, selected["material_id"]),
-                dialogue_repository.book_coverage(user_id, selected["material_id"]),
-                part["chunk_id"],
-            )
-            unit = directory["unit"]
-            book_url = "/web/materials/" + selected["material_id"] + "/plan"
-            summary += (
-                '<div class="book-study-summary"><p>学习单元 · '
-                + escape(unit["title"] if unit else "按原文顺序学习")
-                + "</p><p>已讲解 "
-                + str(unit["explained"] if unit else directory["explained"])
-                + " / "
-                + str(unit["total"] if unit else directory["total"])
-                + ' 段</p><p class="learning-record-note">带原文引用的选段回复记录，不代表已经掌握。</p><a class="text-link" href="'
-                + book_url
-                + '">书籍学习目录与进度 →</a></div>'
-            )
-            following = directory["next"]
-            if following:
-                next_button = (
-                    '<input type="hidden" name="message" value=""><button class="button button-outline button-full" type="submit"'
-                    + (" disabled" if pending else "")
-                    + ">讲解下一段 · "
-                    + escape(following["locator"])
-                    + "</button>"
-                )
-                if enabled:
-                    study_action += dialogue_form(
-                        token, "study", next_button, study_id, following["chunk_id"]
-                    )
-            else:
-                study_action += (
-                    '<p class="learning-record-note">已到'
-                    + ("本单元" if unit else "可读原文")
-                    + "末段；可重温当前段落，或到学习目录选择其他范围。</p>"
-                )
-            details = details.replace("</h3>", "</h3>" + summary + study_action, 1)
-        elif stored_part:
-            source_content += '<p class="form-error-summary">原选段暂不可用，请重新选择可读片段；系统不会改用其他段落。</p>'
-        source_turns = (
-            dialogue_repository.topic_turns(user_id, active_topic["topic_id"])
-            if active_topic
-            else view["turns"]
-        )
-        latest_source_turn = next(
-            (turn for turn in reversed(source_turns) if turn["status"] == "complete"),
-            None,
-        )
-        latest_sources = (
-            latest_source_turn.get("citations", []) if latest_source_turn else []
-        )
-        source_content += "".join(
-            '<details class="citation"><summary>最近回复引用：'
-            + escape(source["title"] + " · " + source["locator"])
-            + "</summary><p>"
-            + escape(source["excerpt"])
-            + '</p><a class="text-link" target="_blank" rel="noopener" href="/web/conversations/'
-            + str(latest_source_turn["turn_id"])
-            + "/sources/"
-            + str(number)
-            + '">核对原文（新标签页） →</a></details>'
-            for number, source in enumerate(latest_sources, 1)
         )
         assets_panel = (
             '<section class="workspace-assets" aria-label="知识资产沉淀"><h2><a href="/web/knowledge">知识资产沉淀</a></h2>'
@@ -877,46 +752,8 @@ def register_account_pages(
             if review
             else ""
         )
-        if review:
-            source_content = (
-                "<p>当前以《"
-                + escape(review["title"])
-                + "》的已保存正文重温；以下为整理时的引用快照。</p>"
-            )
-            source_content += "".join(
-                '<details class="citation"><summary>'
-                + escape(s["title"] + " · " + s["locator"])
-                + "</summary><p>"
-                + escape(s["excerpt"])
-                + "</p></details>"
-                for s in review["citations"]
-            )
-            if not review["citations"]:
-                source_content += (
-                    '<p class="source-empty">这份教案没有保留原书引用。</p>'
-                )
-        panel = (
-            '<section class="learning-status" aria-labelledby="learning-title"><p class="eyebrow">LEARNING COMPANION</p><h2 id="learning-title">当前学习主题</h2>'
-            + details
-            + button
-            + '<a class="text-link study-directory-link" href="/web/studies">查看全部学习主题 →</a>'
-            + '<p class="learning-return-note">临时聊别的，也会保留这里的学习位置。</p>'
-            + (
-                '<div class="learning-sources"><h3>教案整理时的引用</h3>'
-                if review
-                else '<div class="learning-sources"><h3>正在引用的书籍资料</h3>'
-            )
-            + source_content
-            + "</div>"
-            + '<details class="workspace-help"><summary>对话记录与使用说明</summary><p>每批加载 40 轮（一问一答为一轮），上滑可继续加载更早记录。记录按账户保存在本机，不因超过 40 轮自动删除；实际容量取决于磁盘空间。每次可输入 2000 字。</p><p><strong>发送前说明：</strong>点击发送、继续学习或在对话中请求整理教案时，才会请求当前配置的 AI 服务，可能产生费用。为维持讨论连贯，服务可能收到本次文字、当前主题、近期对话，以及你已选资料的相关片段或正在重温的教案内容；是否再次发送始终由你决定，系统不会自动重试。<a class="text-link" href="/web/usage">查看 AI 用量与上限 →</a></p><p>阅读、查找、上传资料、核对原文、预览或手动保存教案、导出资料不调用 AI。学习进度由教练整理供你核对；教案先形成草稿，经你确认后保存到知识库。</p><p id="conversation-availability">'
-            + escape(
-                dialogue_label
-                or ("对话已启用。" if enabled else "对话准备中，当前暂不能发送消息。")
-            )
-            + "</p></details></section>"
-        )
         assets_panel += review_content
-        return body, panel, assets_panel
+        return body, assets_panel
 
     def dialogue_problem(message, code, *, input_text=None):
         body = f'<main id="main-content" class="verification-layout"><section class="verification-card"><h1>对话暂未完成</h1><p role="alert">{escape(message)}</p><a class="button button-primary" href="/web/welcome#conversation-input">返回对话</a></section></main>'

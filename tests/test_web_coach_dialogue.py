@@ -128,10 +128,8 @@ def test_auth_required_and_no_get_request_calls_ai(setup):
     for _ in range(2):
         assert client.get("/web/welcome").status_code == 200
     page = client.get("/web/welcome")
-    assert "发送前说明：" in page.text
-    assert "系统不会自动重试" in page.text
+    assert "模拟 AI 测试" in page.text
     assert 'href="/web/usage"' in page.text
-    assert "导出资料不调用 AI" in page.text
     assert calls == []
 
 
@@ -143,11 +141,12 @@ def test_send_persist_escape_deduplicate_and_visible_progress(setup):
     assert response.status_code == 303
     assert response.headers["location"] == "/web/welcome#coach-dialog"
     page = client.get(response.headers["location"])
-    assert "时间管理" in page.text and "讨论了优先级" in page.text
-    assert "安排明天的一项任务" in page.text
+    assert "时间管理" in page.text and "讨论优先级" in page.text
     assert "&lt;script&gt;" in page.text and "<script>" not in page.text
-    assert "正在引用的书籍资料" in page.text and "未关联资料" in page.text
-    assert 'aria-label="学习位置速览"' in page.text
+    assert 'aria-label="当前学习状态"' in page.text
+    assert "正在学习：<strong>时间管理</strong>" in page.text
+    assert 'href="/web/studies"' in page.text
+    assert "正在引用的书籍资料" not in page.text
     assert page.text.count('id="latest-reply"') == 1
     assert page.headers["cache-control"] == "no-store"
     assert client.post("/web/coach/message", data=fields).status_code == 200
@@ -220,14 +219,18 @@ def test_new_conversation_rejects_invalid_or_cross_site_forms(setup):
 
 
 def test_detour_continue_logout_login_and_restart_keep_same_learning(setup, tmp_path):
-    _, client, calls, _, responder = setup
+    _, client, calls, user, responder = setup
     login(client)
     client.post("/web/coach/message", data=form(client))
     values = form(client)
     client.post("/web/coach/message", data={**values, "message": "今天有点累"})
     assert "时间管理" in client.get("/web/welcome").text
-    resume = form(client, "continue")
-    client.post("/web/coach/message", data=resume)
+    identity = CoachRepository(tmp_path / "coach_conversations.db").active_topic(
+        user.user_id
+    )["topic_id"]
+    resume_path = f"/web/studies/{identity}/continue"
+    resume = Forms(client.get("/web/studies").text).values(resume_path)
+    client.post(resume_path, data=resume)
     assert calls[-1][1] == "继续上次学习：时间管理"
     assert len(calls[-1][0]) == 4
     logout = Forms(client.get("/web/welcome").text).values("/web/auth/logout")
@@ -239,7 +242,7 @@ def test_detour_continue_logout_login_and_restart_keep_same_learning(setup, tmp_
         fresh.cookies.set(SESSION_COOKIE, token)
         page = fresh.get("/web/welcome")
         assert "时间管理" in page.text and "今天有点累" in page.text
-        assert fresh.post("/web/coach/message", data=resume).status_code == 403
+        assert fresh.post(resume_path, data=resume).status_code == 403
         assert len(calls) == 3
 
 
@@ -254,7 +257,8 @@ def test_second_account_cannot_read_or_continue_first_account_topic(
     with TestClient(app, base_url=BASE) as other:
         login(other, "two@example.com")
         page = other.get("/web/welcome?user_id=" + user.user_id)
-        assert "还没有开始主题学习" in page.text
+        assert 'aria-label="当前学习状态"' not in page.text
+        assert "时间管理" not in page.text
         assert "讨论了优先级" not in page.text
         assert other.post("/web/coach/message", data=stolen).status_code == 403
         values = form(other)
@@ -362,7 +366,7 @@ def test_database_read_failure_is_sanitized(setup, monkeypatch):
     assert response.status_code == 503 and "private database path" not in response.text
 
 
-def test_clean_layout_has_scrolling_history_and_moves_help_to_learning_panel(setup):
+def test_clean_layout_has_scrolling_history_without_fixed_learning_panel(setup):
     _, client, _, _, _ = setup
     page = login(client)
     assert 'id="dialogue-history"' in page.text
@@ -382,7 +386,8 @@ def test_clean_layout_has_scrolling_history_and_moves_help_to_learning_panel(set
         assert removed not in page.text
     middle = page.text.split('id="coach-dialog"', 1)[1].split("</section>", 1)[0]
     assert "模拟 AI 测试" not in middle and "知识成果保存功能准备中" not in middle
-    assert "对话记录与使用说明" in page.text
+    assert 'id="workspace-learning"' not in page.text
+    assert 'class="mobile-learning-context"' not in page.text
     assert client.get("/static/coach-dialogue.js").status_code == 200
 
 

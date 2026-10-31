@@ -5,28 +5,26 @@
     const handles = [...workspace.querySelectorAll(".workspace-resizer")];
     const reset = workspace.querySelector(".workspace-layout-reset");
     const status = workspace.querySelector(".workspace-layout-status");
-    if (handles.length !== 2 || !reset || !status) return;
+    if (handles.length !== 1 || !reset || !status) return;
 
     const desktop = window.matchMedia("(min-width: 1001px)");
-    const defaults = {left: 190, right: 250};
-    const minimum = {left: 150, right: 210};
-    const maximum = {left: 310, right: 380};
-    const storageKey = "coach.workspace.widths.v1";
+    const defaults = {left: 190};
+    const minimum = {left: 150};
+    const maximum = {left: 310};
+    const storageKey = "coach.workspace.left-width.v2";
     let widths = {...defaults};
     let drag = null;
     try {
         const saved = JSON.parse(localStorage.getItem(storageKey));
-        if (saved && Number.isInteger(saved.left) && Number.isInteger(saved.right) &&
-            saved.left >= minimum.left && saved.left <= maximum.left &&
-            saved.right >= minimum.right && saved.right <= maximum.right) {
-            widths = {left: saved.left, right: saved.right};
+        if (saved && Number.isInteger(saved.left) &&
+            saved.left >= minimum.left && saved.left <= maximum.left) {
+            widths = {left: saved.left};
         }
     } catch (_) { /* Storage may be disabled; resizing still works. */ }
 
-    function limit(side) {
-        const other = side === "left" ? "right" : "left";
-        // Keep at least 320px for chat, plus two 12px drag handles.
-        return Math.max(minimum[side], Math.min(maximum[side], workspace.clientWidth - 344 - widths[other]));
+    function limit() {
+        // Keep at least 420px for the primary conversation space.
+        return Math.max(minimum.left, Math.min(maximum.left, workspace.clientWidth - 432));
     }
 
     function apply() {
@@ -38,17 +36,14 @@
             element => element.getBoundingClientRect().bottom > top + 8
         );
         const anchorTop = anchor?.getBoundingClientRect().top;
-        widths.left = Math.round(Math.max(minimum.left, Math.min(widths.left, limit("left"))));
-        widths.right = Math.round(Math.max(minimum.right, Math.min(widths.right, limit("right"))));
+        widths.left = Math.round(Math.max(minimum.left, Math.min(widths.left, limit())));
         workspace.style.setProperty("--coach-left", `${widths.left}px`);
-        workspace.style.setProperty("--coach-right", `${widths.right}px`);
         if (anchor) history.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
         for (const handle of handles) {
-            const side = handle.dataset.side;
-            handle.setAttribute("aria-valuemin", String(minimum[side]));
-            handle.setAttribute("aria-valuemax", String(Math.floor(limit(side))));
-            handle.setAttribute("aria-valuenow", String(widths[side]));
-            handle.setAttribute("aria-valuetext", `${side === "left" ? "左栏" : "学习栏"}宽度 ${widths[side]} 像素`);
+            handle.setAttribute("aria-valuemin", String(minimum.left));
+            handle.setAttribute("aria-valuemax", String(Math.floor(limit())));
+            handle.setAttribute("aria-valuenow", String(widths.left));
+            handle.setAttribute("aria-valuetext", `左栏宽度 ${widths.left} 像素`);
         }
     }
 
@@ -87,8 +82,7 @@
         });
         handle.addEventListener("pointermove", event => {
             if (!drag || drag.handle !== handle || drag.pointerId !== event.pointerId) return;
-            const side = handle.dataset.side;
-            widths[side] = drag.widths[side] + (event.clientX - drag.x) * (side === "left" ? 1 : -1);
+            widths.left = drag.widths.left + (event.clientX - drag.x);
             apply();
         });
         handle.addEventListener("pointerup", () => finish());
@@ -99,10 +93,9 @@
             if (event.key === "Escape") { finish(true); return; }
             if (!desktop.matches || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
             event.preventDefault();
-            const side = handle.dataset.side;
-            if (event.key === "Home") widths[side] = minimum[side];
-            else if (event.key === "End") widths[side] = limit(side);
-            else widths[side] += (event.key === "ArrowRight" ? 1 : -1) * (side === "left" ? 1 : -1) * (event.shiftKey ? 30 : 10);
+            if (event.key === "Home") widths.left = minimum.left;
+            else if (event.key === "End") widths.left = limit();
+            else widths.left += (event.key === "ArrowRight" ? 1 : -1) * (event.shiftKey ? 30 : 10);
             apply();
             save();
         });

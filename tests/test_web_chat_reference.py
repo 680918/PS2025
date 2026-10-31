@@ -364,7 +364,7 @@ def test_more_than_forty_turns_history_has_exact_source_links_without_javascript
     assert client.get(old["citation_links"][0]).status_code == 200
 
 
-def test_right_learning_panel_links_to_the_active_topics_latest_actual_answer(setup):
+def test_chat_shows_compact_active_context_without_right_learning_panel(setup):
     _, client, repo, _, user, _, _ = setup
     scope = topic(repo, "原主题", user=user.user_id)
     identity, _, _, _ = record(setup)
@@ -372,6 +372,9 @@ def test_right_learning_panel_links_to_the_active_topics_latest_actual_answer(se
     later = turn(repo, "别的主题问题", user=user.user_id, now=1792411400)
     repo.activate_topic(user.user_id, scope)
     page = client.get("/web/welcome")
-    right = page.text.split('id="workspace-learning"', 1)[1]
-    assert f"/web/conversations/{identity}/sources/1" in right
-    assert f"/web/conversations/{later}/sources/" not in right
+    assert 'id="workspace-learning"' not in page.text
+    assert 'aria-label="当前学习状态"' in page.text
+    assert "正在学习：<strong>原主题</strong>" in page.text
+    assert 'href="/web/studies"' in page.text
+    assert f"/web/conversations/{identity}/sources/1" in page.text
+    assert f"/web/conversations/{later}/sources/" not in page.text
