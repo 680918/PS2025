@@ -267,7 +267,7 @@ def _render_registration_notice(
     return _render_layout(f"{heading} · 知行成长教练", content, "register")
 
 
-def _render_layout(title, content, page="", *, signed_in=False):
+def _render_layout(title, content, page="", *, signed_in=False, footer_note=""):
     layout = Template((_TEMPLATES / "layout.html").read_text(encoding="utf-8"))
     login_current = 'aria-current="page"' if page == "login" else ""
     register_current = 'aria-current="page"' if page == "register" else ""
@@ -285,6 +285,7 @@ def _render_layout(title, content, page="", *, signed_in=False):
         login_current='aria-current="page"' if page == "login" else "",
         register_current='aria-current="page"' if page == "register" else "",
         layout_class="layout-workspace" if page == "workspace" else "",
+        footer_note=footer_note,
     )
 
 

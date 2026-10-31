@@ -357,7 +357,11 @@ def register_account_pages(
         )
         return HTMLResponse(
             _render_layout(
-                "我的成长空间 · 知行", body, page="workspace", signed_in=True
+                "我的成长空间 · 知行",
+                body,
+                page="workspace",
+                signed_in=True,
+                footer_note='<span class="workspace-footer-note">一个持续交流的地方，一份不断积累的个人知识库。</span>',
             ),
             headers=_DIALOGUE_HEADERS,
         )

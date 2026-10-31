@@ -382,10 +382,14 @@ def test_clean_layout_has_scrolling_history_without_fixed_learning_panel(setup):
     _, client, _, _, _ = setup
     page = login(client)
     header = page.text.split("<header", 1)[1].split("</header>", 1)[0]
+    footer = page.text.split("<footer", 1)[1].split("</footer>", 1)[0]
     assert 'class="layout-workspace"' in page.text
     assert 'class="brand-cluster"' in header
-    assert 'class="button button-outline about-link"' in header
-    assert "了解知行" in header and "我的成长空间" not in header
+    assert "了解知行" not in header and "我的成长空间" not in header
+    assert 'class="button button-outline about-link"' in footer
+    assert "了解知行" in footer
+    assert "知行 · 为每一次想要成长的你" in footer
+    assert "一个持续交流的地方，一份不断积累的个人知识库。" in footer
     assert 'class="workspace-conversation-nav"' in page.text
     assert "＋ 新开对话" in page.text
     assert "查看全部对话记录 →" in page.text

@@ -120,7 +120,9 @@ h1, h2, h3, p { margin: 0; }
 .feature-card p { font-size: 13px; color: var(--muted); margin: 9px 0 18px; }
 .feature-caption { color: var(--green); font-size: 11px; }
 .roadmap-caption { color: var(--muted); font-size: 11px; margin-top: 17px; }
-.site-footer { border-top: 1px solid var(--line); padding: 24px 0; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+.site-footer { border-top: 1px solid var(--line); padding: 24px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+.footer-leading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+.site-footer .about-link { flex-shrink: 0; }
 .auth-layout { display: grid; grid-template-columns: 1fr minmax(0, 410px); align-items: start; gap: 70px; max-width: 1000px; margin-inline: auto; padding: 65px 0 74px; }
 .auth-story { padding-top: 29px; }
 .auth-story h1 { margin-top: 24px; font-size: clamp(29px, 3.4vw, 41px); }
@@ -318,7 +320,6 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .conversation-composer:focus-within { border-color: var(--green); box-shadow: 0 0 0 2px #526d3820; }
 .account-greeting h1 { margin: 10px 0; font-size: clamp(23px, 2.5vw, 30px); }
 @media (min-width: 721px) and (max-width: 1000px) { .coach-workspace { grid-template-columns: 170px minmax(0, 1fr); } }
-.account-space-footnote { color: var(--muted); font-size: 12px; margin-top: 25px; }
 @media (max-width: 720px) {
     .account-space { padding-top: 15px; }
     .account-greeting { flex-direction: column; }
@@ -467,7 +468,7 @@ input[aria-invalid="true"] { border-color: #923f32; }
     .layout-workspace .site-header { position: relative; z-index: 2; min-height: 0; height: 0; border-bottom: 0; overflow: visible; }
     .layout-workspace .brand-cluster { position: absolute; top: 18px; left: 0; }
     .layout-workspace .preview-notice { position: absolute; z-index: 2; top: 72px; left: 0; margin: 0; }
-    .layout-workspace .account-space { padding-top: 18px; }
+    .layout-workspace .account-space { padding: 18px 0 0; }
     .coach-workspace { grid-template-columns: var(--coach-left, 190px) 12px minmax(420px, 1fr); gap: 0; align-items: stretch; height: clamp(560px, calc(100dvh - 190px), 1000px); }
     .workspace-sidebar { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow-y: auto; scrollbar-width: thin; }
     .workspace-sidebar > * { flex-shrink: 0; }
