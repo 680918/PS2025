@@ -252,6 +252,8 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .library-tabs, .library-actions, .library-paging { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; }
 .library-tabs { font-size: 13px; color: var(--green); margin: 15px 0; }
 .library-tabs { gap: 10px; }
+.material-catalog-space { padding-top: 14px; }
+.material-catalog-tabs { justify-content: flex-end; margin: 0 0 24px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 .library-tabs a, .library-paging a, .library-actions > a:not(.button) {
     display: inline-flex; align-items: center; justify-content: center;
     min-height: 44px; padding: 8px 14px;
@@ -287,6 +289,7 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .material-capacity { margin-bottom: 18px; padding: 18px 24px; }
 .material-capacity-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 24px; }
 .material-capacity-summary h2, .material-capacity-summary p { margin: 5px 0; }
+.material-capacity-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 2px; }
 .material-capacity-summary p, .material-capacity details { font-size: 12px; color: var(--muted); line-height: 1.85; }
 .material-capacity summary { cursor: pointer; margin-top: 6px; }
 .material-source-search { margin: 25px 0; }
@@ -309,6 +312,7 @@ input[aria-invalid="true"] { border-color: #923f32; }
     .library-list, .library-add-grid { grid-template-columns: 1fr; }
     .library-item, .library-card { padding: 18px; }
     .library-space h1 { font-size: 25px; }
+    .material-catalog-tabs { justify-content: flex-start; }
     .library-document { padding: 18px; }
 }
 .dialogue-message { border-radius: 12px; margin: 12px 0; padding: 15px; }

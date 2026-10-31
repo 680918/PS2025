@@ -4,7 +4,6 @@ from contextlib import closing
 from html import escape
 from urllib.parse import parse_qs, urlsplit
 
-import pytest
 from fastapi.testclient import TestClient
 
 from coach.materials import MaterialRepository
@@ -35,42 +34,23 @@ def cards(html):
     return re.findall(r'<article class="library-item">(.*?)</article>', html, re.S)
 
 
-def test_catalog_capacity_filters_and_empty_results_only_use_own_metadata(setup):
+def test_catalog_is_simple_scrollable_list_with_own_capacity_only(setup):
     _, client, user, calls, directory = setup
     repo, ids = seed(directory, user)
     login(client)
     response = client.get("/web/materials")
     assert "已保存 3 / 20 份" in response.text and "300.00 MB" in response.text
     assert "另一人的秘密" not in response.text and len(cards(response.text)) == 3
-    for query, expected in (
-        ({"name": "reading"}, ids[0]),
-        ({"kind": "paste"}, ids[1]),
-        ({"name": "每日", "kind": "txt"}, ids[2]),
-    ):
-        filtered = client.get("/web/materials", params=query)
-        assert len(cards(filtered.text)) == 1 and expected in cards(filtered.text)[0]
-        assert "已保存 3 / 20 份" in filtered.text
-    empty = client.get("/web/materials?name=missing")
-    assert "没有符合条件" in empty.text and not cards(empty.text)
-    assert "查看全部" in empty.text
+    assert "按名称找资料" not in response.text
+    assert "筛选资料" not in response.text and "查看全部" not in response.text
+    assert "两种方式，开始读一本书" not in response.text
+    assert 'href="/web/materials/add">＋ 添加资料</a>' in response.text
+    assert (
+        'href="/web/materials/add#material-upload">上传原书并学习</a>' in response.text
+    )
+    assert "本机测试 · 尚未公开开放，请使用测试资料。" not in response.text
+    assert 'class="library-tabs material-catalog-tabs"' in response.text
     assert len(repo.list(user.user_id)) == 3 and calls == []
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
-        "kind=exe",
-        "name=a&name=b",
-        "kind=txt&kind=md",
-        "name=" + "a" * 121,
-        "name=bad%00name",
-    ],
-)
-def test_invalid_filters_are_rejected(setup, query):
-    _, client, _, calls, _ = setup
-    login(client)
-    assert client.get("/web/materials?" + query).status_code == 400
-    assert calls == []
 
 
 def test_rename_keeps_filter_and_learning_position_and_does_not_rewrite_citations(

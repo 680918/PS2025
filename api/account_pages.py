@@ -667,6 +667,8 @@ def register_account_pages(
         conversation_topic = (
             dialogue_repository.topic(user_id, current_conversation["topic_id"])
             if current_conversation and current_conversation.get("topic_id")
+            else active_topic
+            if current_conversation is None
             else None
         )
         last_learning = next(

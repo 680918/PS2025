@@ -264,16 +264,37 @@ def register_library_pages(
     lesson_download_limit = RegistrationRateLimiter(per_client_limit=6, total_limit=60)
     preview_limit = RegistrationRateLimiter(per_client_limit=12, total_limit=120)
 
-    def page(title, content, *, code=200, interactive=False):
+    def page(title, content, *, code=200, interactive=False, materials_catalog=False):
+        main_class = (
+            "library-space material-catalog-space"
+            if materials_catalog
+            else "library-space"
+        )
+        tabs_class = (
+            "library-tabs material-catalog-tabs"
+            if materials_catalog
+            else "library-tabs"
+        )
         body = (
-            '<main id="main-content" class="library-space"><nav class="library-tabs" aria-label="工作区入口"><a href="/web/welcome">← 回到对话</a><a href="/web/studies">我的学习</a><a href="/web/materials">资料与书籍</a><a href="/web/knowledge">知识资产沉淀</a><a href="/web/memories">我的学习记忆</a><a href="/web/export">导出学习资料</a></nav><h1>'
+            '<main id="main-content" class="'
+            + main_class
+            + '"><nav class="'
+            + tabs_class
+            + '" aria-label="工作区入口"><a href="/web/welcome">← 回到对话</a><a href="/web/studies">我的学习</a><a href="/web/materials"'
+            + (' aria-current="page"' if materials_catalog else "")
+            + '>资料与书籍</a><a href="/web/knowledge">知识资产沉淀</a><a href="/web/memories">我的学习记忆</a><a href="/web/export">导出学习资料</a></nav><h1>'
             + escape(title)
             + "</h1>"
             + content
             + "</main>"
         )
         return HTMLResponse(
-            _render_layout(title + " · 知行", body, signed_in=True),
+            _render_layout(
+                title + " · 知行",
+                body,
+                signed_in=True,
+                show_preview_notice=not materials_catalog,
+            ),
             status_code=code,
             headers={
                 **HEADERS,
@@ -780,33 +801,6 @@ def register_library_pages(
             "?" + urlencode({"name": name, "kind": kind}) if name or kind else ""
         )
 
-    def catalog_form(name, kind):
-        options = "".join(
-            '<option value="'
-            + value
-            + '"'
-            + (" selected" if value == kind else "")
-            + ">"
-            + label
-            + "</option>"
-            for value, label in (
-                ("", "全部类型"),
-                ("pdf", "PDF"),
-                ("txt", "TXT"),
-                ("md", "Markdown"),
-                ("paste", "粘贴文字"),
-            )
-        )
-        return (
-            '<form class="material-search-form library-card" method="get" action="/web/materials">'
-            '<div><label for="catalog-name">按名称找资料</label><input id="catalog-name" name="name" maxlength="120" value="'
-            + escape(name, quote=True)
-            + '" placeholder="资料名称或原文件名"></div><div><label for="catalog-kind">资料类型</label><select id="catalog-kind" name="kind">'
-            + options
-            + '</select></div><button class="button button-primary" type="submit">筛选资料</button>'
-            + '<a class="text-link" href="/web/materials">查看全部</a></form>'
-        )
-
     def size_text(count):
         if count < 1024:
             return str(count) + " B"
@@ -831,29 +825,14 @@ def register_library_pages(
         if denied is not None:
             return denied
         try:
-            name, kind = catalog_values(request.query_params)
-        except ValueError as error:
-            return problem(str(error))
-        try:
             selected, items = (
                 discussion_material(dialogue, materials, account.user_id),
                 materials.list(account.user_id),
             )
         except sqlite3.Error:
             return problem("暂时无法读取资料。", 503)
-        visible = [
-            item
-            for item in items
-            if (not kind or item["kind"] == kind)
-            and (
-                not name
-                or name.casefold() in item["title"].casefold()
-                or name.casefold() in item["filename"].casefold()
-            )
-        ]
-        edit_query = (
-            "?" + urlencode({"name": name, "kind": kind}) if name or kind else ""
-        )
+        visible = items
+        edit_query = ""
         cards = []
         for item in visible:
             identity = item["material_id"]
@@ -911,26 +890,21 @@ def register_library_pages(
             )
             + '<section class="library-card material-capacity"><div class="material-capacity-summary"><h2>我的资料容量</h2><p>'
             + f"已保存 {len(items)} / {MAX_MATERIALS} 份 · 原始资料 {size_text(sum(item['raw_bytes'] for item in items))} / {size_text(MAX_LIBRARY_BYTES)}"
-            + '</p></div><a class="button button-primary" href="/web/materials/add">＋ 添加资料</a><details><summary>容量计算说明</summary><p>容量按上传原文件和粘贴文字计算，重复上传相同内容不重复占用。提取文字、对话和教案另占本机磁盘空间；此处不是整个账户的磁盘用量。</p></details></section>'
-            + '<section class="library-card book-start"><h2>两种方式，开始读一本书</h2><p>手边没有电子书，也可以先按书名了解观点、讨论怎样应用；上传后可核对原文、按选段连续学习。</p><div class="library-actions"><a class="button button-primary" href="/web/studies#book-reading">按书名开始导读</a><a class="button button-outline" href="/web/materials/add">上传原书并学习</a></div><p class="study-note">按书名导读依据 AI 通用知识，未核对原书；上传后会选入当前对话，选择选段并点击讲解后才调用 AI。</p></section>'
-            + catalog_form(name, kind)
-            + f'<div class="library-actions"><h2 class="material-results-title">资料目录 · {len(visible)} / {len(items)} 份</h2>'
+            + '</p></div><div class="material-capacity-actions"><a class="button button-primary" href="/web/materials/add">＋ 添加资料</a><a class="button button-outline" href="/web/materials/add#material-upload">上传原书并学习</a></div><details><summary>容量计算说明</summary><p>容量按上传原文件和粘贴文字计算，重复上传相同内容不重复占用。提取文字、对话和教案另占本机磁盘空间；此处不是整个账户的磁盘用量。</p></details></section>'
+            + f'<div class="library-actions"><h2 class="material-results-title">资料目录 · {len(items)} 份</h2>'
             + clear
             + "</div>"
             + '<div class="library-list">'
             + (
                 "".join(cards)
                 or '<p class="library-empty">'
-                + (
-                    "没有符合条件的资料。可以修改名称关键词或类型，或点击“查看全部”。"
-                    if items
-                    else "还没有资料。可以上传文件，或粘贴一段想学习的文字。"
-                )
+                + "还没有资料。可以上传文件，或粘贴一段想学习的文字。"
                 + "</p>"
             )
             + '</div><details class="material-source-search"><summary>在资料原文中查找关键词</summary>'
             + material_search_form(items)
             + "</details>",
+            materials_catalog=True,
         )
 
     @app.get("/web/materials/add", response_class=HTMLResponse, include_in_schema=False)

@@ -136,12 +136,12 @@ def test_upload_oversize_error_is_specific_and_does_not_write(setup, monkeypatch
     assert calls == []
 
 
-def test_catalog_exposes_both_modes_consistent_limits_and_working_native_form(setup):
+def test_catalog_keeps_upload_entry_and_moves_title_guidance_to_study_page(setup):
     _, client, _, calls, _ = setup
     login(client)
     response = client.get("/web/materials")
-    assert 'href="/web/studies#book-reading"' in response.text
-    assert 'href="/web/materials/add"' in response.text
+    assert 'href="/web/studies#book-reading"' not in response.text
+    assert 'href="/web/materials/add#material-upload"' in response.text
     assert "300.00 MB" in response.text
     assert 'id="material-upload"' not in response.text
     add_page = client.get("/web/materials/add")
