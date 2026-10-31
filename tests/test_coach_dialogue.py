@@ -214,6 +214,35 @@ def test_history_is_bounded_and_excludes_failed_turns(repo):
     assert not any(item["content"] == "失败的消息" for item in observed)
 
 
+def test_retry_after_failure_keeps_completed_detour_in_same_conversation(repo):
+    send(repo, now=1000)
+    detached = secrets.token_urlsafe(32)
+    assert (
+        repo.claim("one", detached, "我想做一个墨水屏玩具", now=1001, detached=True)
+        == "claimed"
+    )
+    assert repo.finish("one", detached, "第一版建议先选 7.5 寸。", None, now=1001)
+    failed = secrets.token_urlsafe(32)
+    assert repo.claim("one", failed, "选 7.5 寸的。", now=1002) == "claimed"
+    repo.fail("one", failed, now=1002, failure_code="timeout")
+    observed = []
+
+    assert (
+        send(
+            repo,
+            "选 7.5 寸的。",
+            responder=lambda history, *a: (
+                observed.extend(history) or CoachAnswer("收到，按 7.5 寸继续。")
+            ),
+            now=1003,
+        )
+        == "complete"
+    )
+    assert any(item["content"] == "我想做一个墨水屏玩具" for item in observed)
+    assert any(item["content"] == "第一版建议先选 7.5 寸。" for item in observed)
+    assert not any(item["content"] == "选 7.5 寸的。" for item in observed)
+
+
 def test_adapter_sends_structured_context_and_no_unverified_sources():
     calls = []
 
