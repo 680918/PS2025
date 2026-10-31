@@ -62,7 +62,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
     outline-offset: 4px;
 }
 h1, h2, h3, p { margin: 0; }
-.site-shell { max-width: 1200px; margin: auto; padding: 0 52px; }
+.site-shell { --shell-gutter: 52px; max-width: 1200px; margin: auto; padding: 0 var(--shell-gutter); }
 .site-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; min-height: 102px; border-bottom: 1px solid var(--line); }
 .brand-cluster { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; min-width: 0; }
 .brand { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0; }
@@ -196,7 +196,7 @@ input[aria-invalid="true"] { border-color: #923f32; }
 .account-greeting .account-status { margin-top: 14px; font-size: 12px; }
 .coach-workspace { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 14px; align-items: start; margin-top: 0; }
 .workspace-sidebar { border: 1px solid var(--line); border-radius: 14px; padding: 19px 14px; background: var(--paper); }
-.workspace-nav-title { padding: 0 10px; font-size: 12px; color: var(--muted); margin-bottom: 13px; }
+.workspace-nav-title { padding: 0 10px; font-size: 14px; font-weight: 600; letter-spacing: .3px; color: var(--ink); margin-bottom: 13px; }
 .workspace-nav { display: grid; gap: 8px; }
 .workspace-nav-item { display: block; width: 100%; border: 0; background: transparent; border-radius: 8px; padding: 11px 12px; text-align: left; color: var(--muted); font: inherit; font-size: 14px; }
 .workspace-nav-current { background: var(--tint); color: var(--green); font-weight: 600; }
@@ -328,7 +328,7 @@ input[aria-invalid="true"] { border-color: #923f32; }
     .workspace-conversation { grid-row: 2; }
     #latest-reply, #conversation-input { scroll-margin-top: 20px; }
     .workspace-sidebar { padding: 12px; }
-    .workspace-nav-title { padding-left: 7px; margin-bottom: 8px; }
+    .workspace-nav-title { padding-left: 7px; margin-bottom: 8px; font-size: 13px; }
     .workspace-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
     .workspace-nav-item { text-align: center; font-size: 12px; padding: 10px 3px; }
     .workspace-sidebar-caption { display: none; }
@@ -340,7 +340,7 @@ input[aria-invalid="true"] { border-color: #923f32; }
     .workspace-all-conversations { align-self: end; }
 }
 @media (max-width: 1000px) {
-    .site-shell { padding: 0 30px; }
+    .site-shell { --shell-gutter: 30px; padding: 0 var(--shell-gutter); }
     .hero { gap: 30px; }
     .hero-actions { gap: 9px; }
     .button-large { padding: 10px 16px; }
@@ -362,7 +362,7 @@ input[aria-invalid="true"] { border-color: #923f32; }
     .desktop-break { display: none; }
 }
 @media (max-width: 420px) {
-    .site-shell { padding: 0 18px; }
+    .site-shell { --shell-gutter: 18px; padding: 0 var(--shell-gutter); }
     .site-header { gap: 10px; }
     .brand { gap: 8px; }
     .brand-mark { width: 34px; height: 34px; font-size: 18px; border-radius: 10px 10px 10px 2px; }
@@ -468,8 +468,9 @@ input[aria-invalid="true"] { border-color: #923f32; }
     .layout-workspace .site-header { position: relative; z-index: 2; min-height: 0; height: 0; border-bottom: 0; overflow: visible; }
     .layout-workspace .brand-cluster { position: absolute; top: 18px; left: 0; }
     .layout-workspace .preview-notice { position: absolute; z-index: 2; top: 72px; left: 0; margin: 0; }
-    .layout-workspace .account-space { padding: 18px 0 0; }
-    .coach-workspace { grid-template-columns: var(--coach-left, 190px) 12px minmax(420px, 1fr); gap: 0; align-items: stretch; height: clamp(560px, calc(100dvh - 190px), 1000px); }
+    .layout-workspace .account-space { margin-left: calc(-1 * var(--shell-gutter)); padding: 18px 0 0; }
+    .layout-workspace .site-footer { margin-left: calc(-1 * var(--shell-gutter)); }
+    .coach-workspace { grid-template-columns: var(--coach-left, 240px) 12px minmax(420px, 1fr); gap: 0; align-items: stretch; height: clamp(560px, calc(100dvh - 190px), 1000px); }
     .workspace-sidebar { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow-y: auto; scrollbar-width: thin; }
     .workspace-sidebar > * { flex-shrink: 0; }
     .workspace-conversation { grid-column: 3; grid-row: 1; display: flex; flex-direction: column; min-height: 0; height: 100%; }

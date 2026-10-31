@@ -8,10 +8,10 @@
     if (handles.length !== 1 || !reset || !status) return;
 
     const desktop = window.matchMedia("(min-width: 1001px)");
-    const defaults = {left: 190};
-    const minimum = {left: 150};
-    const maximum = {left: 310};
-    const storageKey = "coach.workspace.left-width.v2";
+    const defaults = {left: 240};
+    const minimum = {left: 190};
+    const maximum = {left: 360};
+    const storageKey = "coach.workspace.left-width.v3";
     let widths = {...defaults};
     let drag = null;
     try {
