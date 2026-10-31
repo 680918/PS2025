@@ -34,7 +34,7 @@
         const wrapper = document.createElement("div");
         wrapper.className = "dialogue-state dialogue-failed";
         const text = document.createElement("p");
-        text.textContent = "这次未能取得回复，原消息已保留。系统不会自动重试。";
+        text.textContent = "连接页面时未能确认本次结果。原消息已保留；请先核对发送状态或刷新查看记录。系统不会自动重试。";
         const button = document.createElement("button");
         button.type = "button";
         button.className = "dialogue-recover";
@@ -262,7 +262,10 @@
             history.setAttribute("aria-busy", "true");
             showBeginning(waiting);
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 60000);
+            // Server-side AI calls may use the full configured 60 seconds.  Give
+            // the response a small delivery margin instead of aborting at the
+            // same instant, while still never submitting a second request.
+            const timeout = setTimeout(() => controller.abort(), 75000);
             let loginRequired = false;
             try {
                 // The hidden field named "action" shadows form.action in browsers.

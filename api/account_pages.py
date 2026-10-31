@@ -28,7 +28,7 @@ from coach.learning_topics import TopicBusy, discussion_material, discussion_par
 from api.public_pages import _render_layout
 from api.library_pages import register_library_pages, library_csrf
 from api.booklet_pages import register_booklet_pages
-from coach.dialogue import send_dialogue
+from coach.dialogue import failure_notice, send_dialogue
 from security.login_sessions import (
     SESSION_LIFETIME,
     sign_in,
@@ -612,7 +612,7 @@ def register_account_pages(
                 )
             else:
                 history.append(
-                    f'<div{latest} class="dialogue-state dialogue-failed"><p>这次未能取得回复。你的消息已保留；需要时可以重新输入发送。系统不会自动重试。</p><button class="dialogue-recover" type="button"{" disabled" if pending or not enabled else ""}>放回输入框修改</button><p class="dialogue-recovery-note" role="status"></p></div>'
+                    f'<div{latest} class="dialogue-state dialogue-failed"><p>{escape(failure_notice(turn.get("failure_code", "")))}</p><button class="dialogue-recover" type="button"{" disabled" if pending or not enabled else ""}>放回输入框修改</button><p class="dialogue-recovery-note" role="status"></p></div>'
                 )
         disabled = "" if enabled and not pending else " disabled"
         initial_message = ""

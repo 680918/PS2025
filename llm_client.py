@@ -77,6 +77,16 @@ def call_llm(system_prompt, user_message):
             replannable=False,
         )
 
+    except requests.exceptions.RequestException as e:
+        # Keep an unexpected transport problem separate from a model reply.  The
+        # caller intentionally turns this into a short, safe user-facing notice.
+        return make_error(
+            error_type="llm_request_error",
+            message=str(e),
+            retryable=True,
+            replannable=False,
+        )
+
     try:
         result = response.json()
 
@@ -88,15 +98,17 @@ def call_llm(system_prompt, user_message):
             replannable=False,
         )
 
-    if "choices" in result:
+    try:
         return {
             "status": "success",
             "content": result["choices"][0]["message"]["content"],
         }
-
-    return make_error(
-        error_type="llm_api_error",
-        message=str(result),
-        retryable=False,
-        replannable=False,
-    )
+    except (IndexError, KeyError, TypeError):
+        # Do not include a provider response body in errors: it can be large,
+        # unhelpful, or contain text the user did not send to the Coach.
+        return make_error(
+            error_type="llm_invalid_response",
+            message="Invalid LLM response shape",
+            retryable=False,
+            replannable=False,
+        )

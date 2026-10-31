@@ -16,6 +16,28 @@ class CoachAnswer:
     knowledge_draft: dict | None = field(default=None, repr=False)
 
 
+class CoachProviderError(RuntimeError):
+    """A safe classification of a provider failure; never carries provider text."""
+
+    def __init__(self, failure_code):
+        self.failure_code = failure_code
+        super().__init__("coach unavailable")
+
+
+_FAILURE_NOTICES = {
+    "timeout": "这次等待 AI 回复超过了设定时间。你的消息已保留，可稍后放回输入框后再发送。系统不会自动重试。",
+    "network": "这次连接 AI 服务时中断。你的消息已保留，可稍后放回输入框后再发送。系统不会自动重试。",
+    "provider": "AI 服务暂时未能处理本次请求。你的消息已保留，可稍后放回输入框后再发送。系统不会自动重试。",
+    "response": "AI 服务返回的内容无法确认。你的消息已保留，可稍后放回输入框后再发送。系统不会自动重试。",
+    "service": "这次未能取得回复。你的消息已保留；需要时可以重新输入发送。系统不会自动重试。",
+}
+
+
+def failure_notice(code):
+    """Return a deliberately non-sensitive explanation for a stored failure."""
+    return _FAILURE_NOTICES.get(code, _FAILURE_NOTICES["service"])
+
+
 def _draft(value):
     if not isinstance(value, dict) or set(value) != {"title", "topic", "content"}:
         return None
@@ -57,6 +79,56 @@ def _history(turns):
         messages[0:0] = pair
         budget -= size
     return messages
+
+
+def _bounded_sources(sources, *, limit=6, budget=12000):
+    """Keep retrieved text useful without allowing one request to grow unbounded."""
+    if not isinstance(sources, list):
+        return []
+    bounded = []
+    for source in sources[:limit]:
+        if not isinstance(source, dict) or budget <= 0:
+            continue
+        excerpt = source.get("excerpt", "")
+        if not isinstance(excerpt, str):
+            continue
+        excerpt = excerpt[: min(2000, budget)]
+        budget -= len(excerpt)
+        bounded.append(
+            {
+                key: source.get(key, "")
+                for key in ("source_id", "material_id", "title", "locator")
+            }
+            | {"excerpt": excerpt}
+        )
+    return bounded
+
+
+def _bounded_review(review):
+    if not isinstance(review, dict):
+        return None
+    result = {
+        key: review.get(key, "")[:limit]
+        for key, limit in (("title", 120), ("topic", 120), ("content", 9000))
+        if isinstance(review.get(key, ""), str)
+    }
+    result["citations"] = _bounded_sources(review.get("citations", []), budget=9000)
+    if isinstance(review.get("unit_summary"), dict):
+        result["unit_summary"] = review["unit_summary"]
+    return result
+
+
+def _provider_failure(result):
+    if not isinstance(result, dict):
+        return "response"
+    return {
+        "llm_timeout": "timeout",
+        "llm_connection_error": "network",
+        "llm_request_error": "network",
+        "llm_http_error": "provider",
+        "llm_invalid_response": "response",
+        "llm_api_error": "provider",
+    }.get(result.get("error_type"), "service")
 
 
 def send_dialogue(
@@ -310,9 +382,14 @@ def send_dialogue(
             explained_part=action == "study" and bool(citations),
         )
         return "complete" if completed else "interrupted"
+    except CoachProviderError as error:
+        # Never persist raw provider exceptions: they can contain request text,
+        # service diagnostics, or credentials.
+        repository.fail(user_id, nonce, now=clock(), failure_code=error.failure_code)
+        return "failed"
     except Exception:
         # Provider exceptions may contain request bodies or credentials. Never store them.
-        repository.fail(user_id, nonce, now=clock())
+        repository.fail(user_id, nonce, now=clock(), failure_code="service")
         return "failed"
 
 
@@ -346,6 +423,7 @@ def make_llm_responder(call):
 
     def respond(history, message, learning, *, context=None):
         context = context or {}
+        review = _bounded_review(context.get("review"))
         result = call(
             _SYSTEM,
             json.dumps(
@@ -354,11 +432,11 @@ def make_llm_responder(call):
                     "message": message,
                     "learning_record": learning,
                     "learning_memories": context.get("learning_memories", []),
-                    "available_sources": context.get("sources", []),
+                    "available_sources": _bounded_sources(context.get("sources", [])),
                     "selected_material": context.get("material"),
                     "selected_part": context.get("selected_part"),
                     "unit_lesson": context.get("unit_lesson"),
-                    "review_lesson": context.get("review"),
+                    "review_lesson": review,
                     "draft_requested": context.get("draft_requested", False),
                     "can_suggest_draft": context.get("can_suggest_draft", False),
                 },
@@ -366,10 +444,10 @@ def make_llm_responder(call):
             ),
         )
         if not isinstance(result, dict) or result.get("status") != "success":
-            raise RuntimeError("coach unavailable")
+            raise CoachProviderError(_provider_failure(result))
         content = result.get("content")
         if not isinstance(content, str) or not 1 <= len(content.strip()) <= 32000:
-            raise RuntimeError("invalid reply")
+            raise CoachProviderError("response")
         raw = content.strip()
         if raw.startswith("```json") and raw.endswith("```"):
             raw = raw[7:-3].strip()
@@ -379,7 +457,7 @@ def make_llm_responder(call):
             # A usable plain-language answer is retained, without inventing progress.
             return CoachAnswer(content)
         if not isinstance(parsed, dict) or not isinstance(parsed.get("reply"), str):
-            raise RuntimeError("invalid reply")
+            raise CoachProviderError("response")
         return CoachAnswer(
             parsed["reply"],
             _learning(parsed.get("learning_update")),

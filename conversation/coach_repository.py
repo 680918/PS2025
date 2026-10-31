@@ -81,6 +81,7 @@ class CoachRepository:
                     user_content TEXT NOT NULL,
                     assistant_content TEXT,
                     status TEXT NOT NULL CHECK(status IN ('pending','complete','failed')),
+                    failure_code TEXT NOT NULL DEFAULT '',
                     created_at INTEGER NOT NULL,
                     completed_at INTEGER,
                     UNIQUE(user_id, nonce)
@@ -186,6 +187,12 @@ class CoachRepository:
             }:
                 connection.execute(
                     "ALTER TABLE coach_turns ADD COLUMN citations_json TEXT NOT NULL DEFAULT '[]'"
+                )
+            if "failure_code" not in {
+                row[1] for row in connection.execute("PRAGMA table_info(coach_turns)")
+            }:
+                connection.execute(
+                    "ALTER TABLE coach_turns ADD COLUMN failure_code TEXT NOT NULL DEFAULT ''"
                 )
             if "conversation_id" not in {
                 row[1] for row in connection.execute("PRAGMA table_info(coach_turns)")
@@ -1049,7 +1056,7 @@ class CoachRepository:
     def _expire(connection, user_id, now):
         # Never automatically resend an interrupted provider request.
         connection.execute(
-            "UPDATE coach_turns SET status='failed', completed_at=? "
+            "UPDATE coach_turns SET status='failed', failure_code='timeout', completed_at=? "
             "WHERE user_id=? AND status='pending' AND created_at<=?",
             (now, user_id, now - PENDING_LIFETIME),
         )
@@ -1057,7 +1064,7 @@ class CoachRepository:
     @staticmethod
     def _history_page(connection, user_id, conversation_id, before=None):
         rows = connection.execute(
-            "SELECT turn_id, user_content, assistant_content, status, created_at, citations_json "
+            "SELECT turn_id, user_content, assistant_content, status, failure_code, created_at, citations_json "
             "FROM coach_turns WHERE user_id=? AND conversation_id=? AND turn_id<? ORDER BY turn_id DESC LIMIT ?",
             (
                 user_id,
@@ -2023,10 +2030,18 @@ class CoachRepository:
             ).fetchone()
         return self.knowledge(user_id, row[0], saved_only=True) if row else None
 
-    def fail(self, user_id, nonce, *, now):
+    def fail(self, user_id, nonce, *, now, failure_code="service"):
+        if failure_code not in {
+            "timeout",
+            "network",
+            "provider",
+            "response",
+            "service",
+        }:
+            failure_code = "service"
         with closing(self._connect()) as connection, connection:
             connection.execute(
-                "UPDATE coach_turns SET status='failed', completed_at=? "
+                "UPDATE coach_turns SET status='failed', failure_code=?, completed_at=? "
                 "WHERE user_id=? AND nonce=? AND status='pending'",
-                (now, user_id, nonce),
+                (failure_code, now, user_id, nonce),
             )

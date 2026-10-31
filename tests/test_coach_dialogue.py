@@ -244,6 +244,38 @@ def test_adapter_accepts_plain_response_without_inventing_progress():
         )
 
 
+def test_provider_failures_are_classified_without_retaining_provider_text(repo):
+    responder = make_llm_responder(
+        lambda *a: {
+            "status": "error",
+            "error_type": "llm_timeout",
+            "message": "private",
+        }
+    )
+    assert send(repo, responder=responder, now=1000) == "failed"
+    turn = repo.view("one", now=1001)["turns"][0]
+    assert turn["status"] == "failed" and turn["failure_code"] == "timeout"
+
+
+def test_adapter_limits_long_retrieved_excerpts_before_calling_provider():
+    observed = []
+
+    def fake(_, payload):
+        observed.append(json.loads(payload))
+        return {"status": "success", "content": "可以。"}
+
+    make_llm_responder(fake)(
+        [],
+        "讲解",
+        None,
+        context={"sources": [{"source_id": "one", "excerpt": "x" * 3000}] * 8},
+    )
+    sources = observed[0]["available_sources"]
+    assert len(sources) == 6 and all(
+        len(source["excerpt"]) <= 2000 for source in sources
+    )
+
+
 def test_simulation_is_explicit_and_preserves_anchor_when_chatting():
     first = simulated_responder([], "我想学习时间管理", None)
     assert "模拟回复" in first.content and first.learning_update["topic"] == "时间管理"
