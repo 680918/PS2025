@@ -9,21 +9,6 @@
     let loading = false;
     let autoLoadBlocked = false;
     let sending = false;
-    const latest = document.getElementById("dialogue-latest");
-    function updateReadingControl() {
-        if (!latest) return;
-        latest.hidden = false;
-        latest.disabled = !messages.querySelector(".dialogue-message");
-    }
-    if (latest) {
-        latest.addEventListener("click", () => {
-            const target = messages.lastElementChild;
-            if (!target || latest.disabled) return;
-            history.focus({preventScroll: true});
-            showBeginning(target);
-        });
-    }
-    updateReadingControl();
 
     function message(role, content, rendered) {
         const article = document.createElement("article");
@@ -201,7 +186,6 @@
             const top = history.scrollTop;
             messages.prepend(fragment);
             document.dispatchEvent(new Event("coach-content-ready"));
-            updateReadingControl();
             load.dataset.before = page.before === null ? "" : String(page.before);
             load.hidden = page.before === null;
             status.textContent = "";
@@ -275,7 +259,6 @@
             for (let index = 0; index < 3; index++) dots.append(document.createElement("i"));
             waiting.append(dots, document.createTextNode("成长教练正在思考，请稍候…"));
             messages.append(waiting);
-            updateReadingControl();
             history.setAttribute("aria-busy", "true");
             showBeginning(waiting);
             const controller = new AbortController();

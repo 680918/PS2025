@@ -836,7 +836,14 @@ class CoachRepository:
         with closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             self._require_idle(db, user_id, now)
-            return self._activate_topic(db, user_id, identity)
+            topic = self._activate_topic(db, user_id, identity)
+            conversation = self._active_conversation(db, user_id)
+            if conversation is not None:
+                db.execute(
+                    "UPDATE coach_conversations SET topic_id=?,updated_at=? WHERE user_id=? AND conversation_id=?",
+                    (identity, now, user_id, conversation["conversation_id"]),
+                )
+            return topic
 
     def bind_topic_material(self, user_id, material_id, *, default_selector):
         with closing(self._connect()) as db, db:

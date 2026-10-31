@@ -355,7 +355,9 @@ def register_account_pages(
             assets_panel=assets_panel,
         )
         return HTMLResponse(
-            _render_layout("我的成长空间 · 知行", body, signed_in=True),
+            _render_layout(
+                "我的成长空间 · 知行", body, page="workspace", signed_in=True
+            ),
             headers=_DIALOGUE_HEADERS,
         )
 
@@ -648,12 +650,11 @@ def register_account_pages(
             dialogue_label
             or ("对话已启用。" if enabled else "对话准备中，当前暂不能发送消息。")
         )
-        composer = f'<div class="conversation-composer" aria-label="统一对话输入区">{material_notice}<label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability coach-input-help"{disabled}>{escape(initial_message)}</textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials/add">＋ 添加资料</a><button class="button button-outline dialogue-latest" id="dialogue-latest" type="button" aria-controls="dialogue-history" hidden disabled>回到最新对话</button><button class="button button-primary" type="submit"{disabled}>发送</button></div><p id="conversation-availability" class="conversation-availability">{availability} <a class="text-link" href="/web/usage">查看 AI 用量与上限</a></p><span id="coach-input-help" class="conversation-shortcut" hidden>Ctrl／⌘ + Enter 发送 · Enter 换行</span></div>'
+        composer = f'<div class="conversation-composer" aria-label="统一对话输入区">{material_notice}<label class="visually-hidden" for="coach-message">发送给成长教练的消息</label><textarea id="coach-message" name="message" rows="2" maxlength="2000" required placeholder="说说你的想法，或围绕所选资料提问…" aria-describedby="conversation-availability coach-input-help"{disabled}>{escape(initial_message)}</textarea><div class="conversation-tools"><a class="button button-outline" href="/web/materials/add">＋ 添加资料</a><button class="button button-primary" type="submit"{disabled}>发送</button></div><p id="conversation-availability" class="conversation-availability">{availability} <a class="text-link" href="/web/usage">查看 AI 用量与上限</a></p><span id="coach-input-help" class="conversation-shortcut" hidden>Ctrl／⌘ + Enter 发送 · Enter 换行</span></div>'
         if enabled:
             composer = dialogue_form(
                 token, "message", composer, study_id, form_part, review_guard
             )
-        learning = view["learning"]
         selected = discussion_material(
             dialogue_repository, materials_repository, user_id
         )
@@ -663,9 +664,23 @@ def register_account_pages(
         review = dialogue_repository.review(user_id)
         if review:
             selected, part, stored_part = None, None, None
+        conversation_topic = (
+            dialogue_repository.topic(user_id, current_conversation["topic_id"])
+            if current_conversation and current_conversation.get("topic_id")
+            else None
+        )
+        last_learning = next(
+            (
+                item
+                for item in dialogue_repository.list_topics(user_id, limit=2)
+                if not conversation_topic
+                or item["topic_id"] != conversation_topic["topic_id"]
+            ),
+            None,
+        )
         book_title_only = (
-            active_topic
-            and active_topic["title"].startswith("阅读《")
+            conversation_topic
+            and conversation_topic["title"].startswith("阅读《")
             and not selected
             and not review
         )
@@ -678,16 +693,14 @@ def register_account_pages(
                 + review["knowledge_id"]
                 + '">查看教案</a><a class="text-link" href="/web/studies">我的学习</a></div>'
             )
-        elif learning or selected:
+        elif conversation_topic:
             conversation_context = (
                 '<div class="conversation-learning-context" aria-label="当前学习状态">'
+                + "正在学习：<strong>"
+                + escape(conversation_topic["title"])
+                + "</strong>"
                 + (
-                    "正在学习：<strong>" + escape(learning["topic"]) + "</strong>"
-                    if learning
-                    else "正在围绕资料讨论"
-                )
-                + (
-                    '<span class="context-separator" aria-hidden="true">·</span>资料：'
+                    '<span class="context-separator" aria-hidden="true">·</span>本次资料：'
                     + escape(
                         selected["title"] + (" · " + part["locator"] if part else "")
                     )
@@ -697,6 +710,38 @@ def register_account_pages(
                 + (
                     '<span class="context-separator" aria-hidden="true">·</span><span class="context-note">按书名导读 · 未上传原书</span><a class="text-link" href="/web/materials/add">上传原书</a>'
                     if book_title_only
+                    else ""
+                )
+                + '<a class="text-link" href="/web/studies">我的学习</a></div>'
+            )
+        elif last_learning or selected:
+            switch = ""
+            if last_learning:
+                switch = (
+                    '<form class="conversation-topic-switch" method="post" action="/web/studies/'
+                    + last_learning["topic_id"]
+                    + '/open"><input type="hidden" name="csrf" value="'
+                    + library_csrf(key, token, "study-open", last_learning["topic_id"])
+                    + '"><button class="conversation-topic-switch-button" type="submit"'
+                    + (" disabled" if pending else "")
+                    + ">点击切换</button></form>"
+                )
+            conversation_context = (
+                '<div class="conversation-learning-context" aria-label="上次学习状态">'
+                + (
+                    "上次学习：<strong>"
+                    + escape(last_learning["title"])
+                    + "</strong>"
+                    + switch
+                    if last_learning
+                    else "正在围绕资料讨论"
+                )
+                + (
+                    '<span class="context-separator" aria-hidden="true">·</span>本次资料：'
+                    + escape(
+                        selected["title"] + (" · " + part["locator"] if part else "")
+                    )
+                    if selected
                     else ""
                 )
                 + '<a class="text-link" href="/web/studies">我的学习</a></div>'

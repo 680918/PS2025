@@ -174,6 +174,18 @@ def test_new_conversation_is_blank_isolated_and_reopens_old_learning(setup, tmp_
     assert 'id="dialogue-messages"></div>' in page.text
     assert "讨论了优先级。" not in page.text
     assert repository.active_topic(user.user_id) is None
+    assert 'aria-label="上次学习状态"' in page.text
+    assert "上次学习：<strong>时间管理</strong>" in page.text
+    switch_path = (
+        "/web/studies/"
+        + repository.list_topics(user.user_id, limit=1)[0]["topic_id"]
+        + "/open"
+    )
+    switch_values = Forms(page.text).values(switch_path)
+    switched = client.post(switch_path, data=switch_values, follow_redirects=False)
+    assert switched.status_code == 303
+    page = client.get(switched.headers["location"])
+    assert "正在学习：<strong>时间管理</strong>" in page.text
 
     fresh = form(client)
     client.post("/web/coach/message", data={**fresh, "message": "换个话题聊聊"})
@@ -369,10 +381,15 @@ def test_database_read_failure_is_sanitized(setup, monkeypatch):
 def test_clean_layout_has_scrolling_history_without_fixed_learning_panel(setup):
     _, client, _, _, _ = setup
     page = login(client)
+    header = page.text.split("<header", 1)[1].split("</header>", 1)[0]
+    assert 'class="layout-workspace"' in page.text
+    assert 'class="brand-cluster"' in header
+    assert 'class="button button-outline about-link"' in header
+    assert "了解知行" in header and "我的成长空间" not in header
     assert 'id="dialogue-history"' in page.text
     assert 'src="/static/coach-dialogue.js?v=chat-efficiency-1"' in page.text
-    assert 'id="dialogue-latest" type="button"' in page.text
-    assert 'aria-controls="dialogue-history"' in page.text
+    assert 'id="dialogue-latest"' not in page.text
+    assert 'aria-label="聊天记录"' in page.text
     assert 'id="coach-input-help"' in page.text
     assert 'src="/static/content-copy.js?v=1"' in page.text
     assert "script-src 'self'" in page.headers["content-security-policy"]

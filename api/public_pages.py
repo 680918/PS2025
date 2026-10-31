@@ -272,7 +272,7 @@ def _render_layout(title, content, page="", *, signed_in=False):
     login_current = 'aria-current="page"' if page == "login" else ""
     register_current = 'aria-current="page"' if page == "register" else ""
     navigation = (
-        '<a class="button button-primary" href="/web/welcome" aria-current="page">我的成长空间</a>'
+        ""
         if signed_in
         else f'<a class="button button-quiet" href="/web/login" {login_current}>登录</a>'
         f'<a class="button button-primary" href="/web/register" {register_current}>开始使用<span aria-hidden="true"> ↗</span></a>'
@@ -284,6 +284,7 @@ def _render_layout(title, content, page="", *, signed_in=False):
         home_current='aria-current="page"' if page == "home" else "",
         login_current='aria-current="page"' if page == "login" else "",
         register_current='aria-current="page"' if page == "register" else "",
+        layout_class="layout-workspace" if page == "workspace" else "",
     )
 
 

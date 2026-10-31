@@ -7,16 +7,18 @@
     <title>$title</title>
     <link rel="stylesheet" href="/static/public.css">
 </head>
-<body>
+<body class="$layout_class">
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <div class="site-shell">
         <header class="site-header">
-            <a class="brand" href="/" aria-label="知行成长教练首页" $home_current>
-                <span class="brand-mark" aria-hidden="true">知</span>
-                <span class="brand-name">知行<span class="brand-subtitle">AI 成长教练</span></span>
-            </a>
+            <div class="brand-cluster">
+                <a class="brand" href="/" aria-label="知行成长教练首页" $home_current>
+                    <span class="brand-mark" aria-hidden="true">知</span>
+                    <span class="brand-name">知行<span class="brand-subtitle">AI 成长教练</span></span>
+                </a>
+                <a class="button button-outline about-link" href="/#how-it-works">了解知行</a>
+            </div>
             <nav class="header-actions" aria-label="主要导航">
-                <a class="text-link about-link" href="/#how-it-works">了解知行</a>
                 $auth_navigation
             </nav>
         </header>
