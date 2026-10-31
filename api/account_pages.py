@@ -336,7 +336,7 @@ def register_account_pages(
                 if dialogue_repository
                 else {"turns": [], "learning": None}
             )
-            dialogue_body, assets_panel = workspace(
+            dialogue_body, assets_panel, conversation_panel = workspace(
                 view,
                 token,
                 account.user_id,
@@ -353,6 +353,7 @@ def register_account_pages(
             csrf=signature("logout", token),
             dialogue_body=dialogue_body,
             assets_panel=assets_panel,
+            conversation_panel=conversation_panel,
         )
         return HTMLResponse(
             _render_layout(
@@ -548,12 +549,8 @@ def register_account_pages(
         conversation_disabled = (
             " disabled" if pending or review_guard["knowledge_id"] else ""
         )
-        conversation_bar = (
-            '<section class="conversation-session-bar" aria-label="当前对话窗口"><div><p>当前对话</p><h2>'
-            + escape(
-                current_conversation["title"] if current_conversation else "新对话"
-            )
-            + "</h2></div>"
+        conversation_panel = (
+            '<section class="workspace-conversation-nav" aria-label="对话记录">'
             + conversation_form(
                 token,
                 "new",
@@ -561,19 +558,18 @@ def register_account_pages(
                 + conversation_disabled
                 + ">＋ 新开对话</button>",
             )
-            + "</section>"
+            + '<p class="workspace-conversation-title">对话记录</p><div class="workspace-recent-conversations">'
         )
         recent_conversations = view.get("conversations", [])
         if recent_conversations:
-            conversation_bar += '<details class="conversation-session-list"><summary>最近对话（可切换）</summary><div>'
-            for item in recent_conversations:
+            for item in recent_conversations[:3]:
                 label = escape(item["title"]) + " · " + str(item["turn_count"]) + " 轮"
                 if item["active"]:
-                    conversation_bar += (
+                    conversation_panel += (
                         '<p aria-current="page"><strong>' + label + "</strong></p>"
                     )
                 else:
-                    conversation_bar += conversation_form(
+                    conversation_panel += conversation_form(
                         token,
                         "open",
                         '<button class="history-load" type="submit"'
@@ -583,7 +579,7 @@ def register_account_pages(
                         + "</button>",
                         item["conversation_id"],
                     )
-            conversation_bar += "</div></details>"
+        conversation_panel += '</div><a class="text-link workspace-all-conversations" href="/web/conversations">查看全部对话记录 →</a></section>'
         history = []
         for index, turn in enumerate(view["turns"]):
             latest = ' id="latest-reply"' if index == len(view["turns"]) - 1 else ""
@@ -747,8 +743,7 @@ def register_account_pages(
                 + '<a class="text-link" href="/web/studies">我的学习</a></div>'
             )
         body = (
-            conversation_bar
-            + f'<div id="dialogue-history" class="dialogue-history" role="region" aria-label="聊天记录" tabindex="0"><div class="history-loader"><button id="history-load" class="history-load" type="button" data-before="{view.get("before") or ""}"{"" if view.get("before") else " hidden"}>加载更早的对话</button><p id="history-load-status" role="status"></p></div><div id="dialogue-messages">'
+            f'<div id="dialogue-history" class="dialogue-history" role="region" aria-label="聊天记录" tabindex="0"><div class="history-loader"><button id="history-load" class="history-load" type="button" data-before="{view.get("before") or ""}"{"" if view.get("before") else " hidden"}>加载更早的对话</button><p id="history-load-status" role="status"></p></div><div id="dialogue-messages">'
             + "".join(history)
             + '</div></div><div id="conversation-input">'
             + conversation_context
@@ -798,7 +793,7 @@ def register_account_pages(
             else ""
         )
         assets_panel += review_content
-        return body, assets_panel
+        return body, assets_panel, conversation_panel
 
     def dialogue_problem(message, code, *, input_text=None):
         body = f'<main id="main-content" class="verification-layout"><section class="verification-card"><h1>对话暂未完成</h1><p role="alert">{escape(message)}</p><a class="button button-primary" href="/web/welcome#conversation-input">返回对话</a></section></main>'

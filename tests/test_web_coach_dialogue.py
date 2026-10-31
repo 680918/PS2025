@@ -170,7 +170,7 @@ def test_new_conversation_is_blank_isolated_and_reopens_old_learning(setup, tmp_
     page = client.get(response.headers["location"])
     second_id = repository.active_conversation(user.user_id)["conversation_id"]
     assert second_id != first_id
-    assert "<h2>新对话</h2>" in page.text
+    assert "<strong>新对话 · 0 轮</strong>" in page.text
     assert 'id="dialogue-messages"></div>' in page.text
     assert "讨论了优先级。" not in page.text
     assert repository.active_topic(user.user_id) is None
@@ -386,6 +386,9 @@ def test_clean_layout_has_scrolling_history_without_fixed_learning_panel(setup):
     assert 'class="brand-cluster"' in header
     assert 'class="button button-outline about-link"' in header
     assert "了解知行" in header and "我的成长空间" not in header
+    assert 'class="workspace-conversation-nav"' in page.text
+    assert "＋ 新开对话" in page.text
+    assert "查看全部对话记录 →" in page.text
     assert 'id="dialogue-history"' in page.text
     assert 'src="/static/coach-dialogue.js?v=chat-efficiency-1"' in page.text
     assert 'id="dialogue-latest"' not in page.text
@@ -402,7 +405,8 @@ def test_clean_layout_has_scrolling_history_without_fixed_learning_panel(setup):
     ):
         assert removed not in page.text
     middle = page.text.split('id="coach-dialog"', 1)[1].split("</section>", 1)[0]
-    assert "模拟 AI 测试" not in middle and "知识成果保存功能准备中" not in middle
+    assert "模拟 AI 测试" in middle
+    assert "知识成果保存功能准备中" not in middle
     assert 'id="workspace-learning"' not in page.text
     assert 'class="mobile-learning-context"' not in page.text
     assert client.get("/static/coach-dialogue.js").status_code == 200

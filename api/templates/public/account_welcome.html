@@ -8,9 +8,8 @@
                 <form method="post" action="/web/auth/logout"><input type="hidden" name="csrf" value="$csrf"><button class="history-load" type="submit">退出登录</button></form>
             </section>
             <p class="workspace-nav-title">我的空间</p>
+            $conversation_panel
             <nav class="workspace-nav" aria-label="工作区入口">
-                <a class="workspace-nav-item workspace-nav-current" href="#coach-dialog" aria-current="location">对话</a>
-                <a class="workspace-nav-item" href="/web/conversations">对话记录</a>
                 <a class="workspace-nav-item" href="/web/growth">成长回顾</a>
                 <a class="workspace-nav-item" href="/web/usage">AI 用量</a>
                 <a class="workspace-nav-item" href="/web/studies">我的学习</a>
