@@ -207,6 +207,30 @@ def test_new_conversation_is_blank_isolated_and_reopens_old_learning(setup, tmp_
     assert len(repository.conversations(user.user_id)) == 2
 
 
+def test_ordinary_new_chat_shows_last_learning_instead_of_current_learning(
+    setup, tmp_path
+):
+    _, client, _, user, _ = setup
+    login(client)
+    client.post("/web/coach/message", data=form(client))
+    new_values = Forms(client.get("/web/welcome").text).values(
+        "/web/coach/conversations/new"
+    )
+    client.post("/web/coach/conversations/new", data=new_values)
+    values = form(client)
+    client.post(
+        "/web/coach/message",
+        data={**values, "message": "帮我规划一个可商用的 AI 产品"},
+    )
+    page = client.get("/web/welcome")
+    conversation = CoachRepository(
+        tmp_path / "coach_conversations.db"
+    ).active_conversation(user.user_id)
+    assert conversation["topic_id"] is None
+    assert 'aria-label="上次学习状态"' in page.text
+    assert "上次学习：<strong>时间管理</strong>" in page.text
+
+
 def test_new_conversation_rejects_invalid_or_cross_site_forms(setup):
     _, client, calls, _, _ = setup
     login(client)

@@ -1,4 +1,5 @@
 import json
+import re
 import secrets
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
@@ -241,6 +242,27 @@ def test_retry_after_failure_keeps_completed_detour_in_same_conversation(repo):
     assert any(item["content"] == "我想做一个墨水屏玩具" for item in observed)
     assert any(item["content"] == "第一版建议先选 7.5 寸。" for item in observed)
     assert not any(item["content"] == "选 7.5 寸的。" for item in observed)
+
+
+def test_ordinary_chat_cannot_create_or_inherit_a_learning_topic(repo):
+    send(repo, now=1000)
+    topic = repo.active_topic("one")
+    assert re.fullmatch(r"[a-f0-9]{32}", repo.new_conversation("one", now=1001))
+    assert repo.active_topic("one") is None
+
+    assert (
+        send(
+            repo,
+            "能帮我从零搭建一个可商用的 AI 产品吗？",
+            responder=lambda *a: CoachAnswer("可以，我们先定产品范围。", LEARNING),
+            now=1002,
+        )
+        == "complete"
+    )
+    view = repo.view("one", now=1003)
+    assert view["learning"] is None
+    assert view["conversation"]["topic_id"] is None
+    assert repo.topic("one", topic["topic_id"])["title"] == LEARNING["topic"]
 
 
 def test_adapter_sends_structured_context_and_no_unverified_sources():

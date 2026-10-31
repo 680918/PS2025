@@ -131,6 +131,18 @@ def _provider_failure(result):
     }.get(result.get("error_type"), "service")
 
 
+def _is_explicit_learning_request(action, text):
+    """Keep ordinary chat from becoming a study merely because a model guessed it."""
+    if action in {"continue", "lesson", "study"}:
+        return True
+    return bool(
+        re.search(
+            r"(?:开始|继续|今天|想要|我要|我想|带我|教我|一起)?(?:学习|学一学|学一下|复习|上课|课程)",
+            text,
+        )
+    )
+
+
 def send_dialogue(
     repository,
     user_id,
@@ -353,7 +365,11 @@ def send_dialogue(
                 "\n\n本次没有生成可保存的教案草稿，你可以补充想整理的知识点后再次请求。"
             )
             content = content[: 12000 - len(notice)] + notice
-        learning_update = _learning(answer.learning_update)
+        learning_update = (
+            _learning(answer.learning_update)
+            if _is_explicit_learning_request(action, text)
+            else None
+        )
         if review:
             learning_update = None
         if (

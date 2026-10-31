@@ -1338,11 +1338,10 @@ class CoachRepository:
             else:
                 conversation_id = conversation["conversation_id"]
                 connection.execute(
-                    "UPDATE coach_conversations SET title=CASE WHEN title='新对话' THEN ? ELSE title END,topic_id=CASE WHEN ? THEN ? ELSE COALESCE(topic_id,?) END,updated_at=? WHERE user_id=? AND conversation_id=?",
+                    "UPDATE coach_conversations SET title=CASE WHEN title='新对话' THEN ? ELSE title END,topic_id=CASE WHEN ? THEN ? ELSE topic_id END,updated_at=? WHERE user_id=? AND conversation_id=?",
                     (
                         _conversation_title(text),
                         study_id is not None,
-                        active_topic[0] if active_topic else None,
                         active_topic[0] if active_topic else None,
                         now,
                         user_id,
